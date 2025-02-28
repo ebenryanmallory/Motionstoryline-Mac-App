@@ -1,0 +1,35 @@
+# Cursor Rules for Motion Storyline Project
+
+# Build and Run Instructions
+- DO NOT run commands to build or start the project with Xcode
+- DO NOT use xcodebuild commands
+- The user will manually build and run the project in Xcode
+- Avoid suggesting commands that require the full Xcode application
+
+# Code Editing Guidelines
+- Prefer making changes to Swift files directly through the edit_file tool
+- When editing UI components, focus on SwiftUI modifications
+- Keep Swift code consistent with the existing project style
+- Use proper SwiftUI lifecycle methods and property wrappers
+
+# Error Handling
+- When a line number and error description are pasted with minimal context, this indicates a bug that needs to be fixed
+- Prioritize addressing the specific error mentioned in the file and line indicated
+- If the error message includes a file path, focus on that file first
+- Provide solutions that directly address the compiler or runtime error
+- When possible, explain the root cause of the error before implementing the fix
+
+# Project Structure
+- Keep all new files within the Motion Storyline directory structure
+- Follow the existing pattern of separating view components into their own files
+- Maintain the existing navigation structure using NavigationStack
+
+# Debugging Approach
+- Suggest code changes that can be tested by the user in Xcode
+- Provide clear explanations of what changes are being made and why
+- When addressing errors, focus on Swift and SwiftUI-specific solutions
+
+# Performance Considerations
+- Be mindful of memory usage in animation components
+- Suggest optimizations for rendering performance when appropriate
+- Consider macOS-specific UI guidelines when making interface changes 

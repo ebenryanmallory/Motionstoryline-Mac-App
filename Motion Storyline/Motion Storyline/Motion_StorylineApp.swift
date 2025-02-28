@@ -19,35 +19,32 @@ struct Motion_StorylineApp: App {
     
     var body: some Scene {
         WindowGroup {
-            if let project = selectedProject {
-                DesignCanvas(
-                    project: project,
-                    onClose: { selectedProject = nil },
-                    onCreateNewProject: { newProject in
-                        createNewProject(newProject)
-                    },
-                    onUpdateProject: { updatedProject in
-                        updateProject(updatedProject)
+            NavigationStack {
+                if let project = selectedProject {
+                    DesignCanvas()
+                        .navigationBarBackButtonHidden(true)
+                        .onAppear {
+                            // We can set up any necessary state here if needed
+                        }
+                } else {
+                    HomeView(
+                        recentProjects: $recentProjects,
+                        userProjects: $userProjects,
+                        statusMessage: $statusMessage,
+                        onProjectSelected: { project in
+                            selectedProject = project
+                            addToRecentProjects(project)
+                        },
+                        isCreatingNewProject: $isCreatingNewProject,
+                        onCreateNewProject: { name, type in
+                            createNewProject(name: name, type: type)
+                        }
+                    )
+                    .onAppear {
+                        loadRecentProjects()
+                        loadAllProjects()
+                        updateStatus()
                     }
-                )
-            } else {
-                HomeView(
-                    recentProjects: $recentProjects,
-                    userProjects: $userProjects,
-                    statusMessage: $statusMessage,
-                    onProjectSelected: { project in
-                        selectedProject = project
-                        addToRecentProjects(project)
-                    },
-                    isCreatingNewProject: $isCreatingNewProject,
-                    onCreateNewProject: { name, type in
-                        createNewProject(name: name, type: type)
-                    }
-                )
-                .onAppear {
-                    loadRecentProjects()
-                    loadAllProjects()
-                    updateStatus()
                 }
             }
         }
