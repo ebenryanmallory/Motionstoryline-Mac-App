@@ -7,6 +7,7 @@ struct HomeView: View {
     let onProjectSelected: (Project) -> Void
     @Binding var isCreatingNewProject: Bool
     let onCreateNewProject: (String, String) -> Void
+    @EnvironmentObject private var appState: AppStateManager
     
     @State private var selectedItem: String? = "Home"
     @State private var searchText: String = ""
@@ -139,6 +140,7 @@ struct HomeView: View {
                                 ForEach(recentProjects) { project in
                                     ProjectCard(project: project)
                                         .onTapGesture {
+                                            appState.navigateToProject(project)
                                             onProjectSelected(project)
                                         }
                                 }
@@ -163,6 +165,7 @@ struct HomeView: View {
                                 ForEach(userProjects) { project in
                                     ProjectCard(project: project)
                                         .onTapGesture {
+                                            appState.navigateToProject(project)
                                             onProjectSelected(project)
                                         }
                                 }
@@ -456,6 +459,8 @@ struct ProjectTypeCard: View {
     }
 }
 
+#if !DISABLE_PREVIEWS
 #Preview {
     HomeView(recentProjects: .constant([]), userProjects: .constant([]), statusMessage: .constant("Ready"), onProjectSelected: { _ in }, isCreatingNewProject: .constant(false), onCreateNewProject: { _, _ in })
 } 
+#endif

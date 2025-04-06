@@ -157,6 +157,7 @@ struct CurveEditorView: View {
     }
 }
 
+#if !DISABLE_PREVIEWS
 #Preview {
     CurveEditorView(
         property: "Opacity",
@@ -171,3 +172,4 @@ struct CurveEditorView: View {
     .frame(height: 200)
     .padding()
 } 
+#endif

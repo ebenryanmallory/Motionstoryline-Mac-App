@@ -126,6 +126,9 @@ public struct DesignToolbar: View {
     }
 }
 
+// Preview with proper conditional compilation
+#if !DISABLE_PREVIEWS
 #Preview {
     DesignToolbar(selectedTool: .constant(.select))
 } 
+#endif 

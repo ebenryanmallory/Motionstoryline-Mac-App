@@ -66,6 +66,7 @@ struct SidebarView: View {
     }
 }
 
+#if !DISABLE_PREVIEWS
 #Preview {
     SidebarView(
         selectedItem: .constant("Home"),
@@ -74,3 +75,4 @@ struct SidebarView: View {
         isCreatingNewProject: .constant(false)
     )
 } 
+#endif

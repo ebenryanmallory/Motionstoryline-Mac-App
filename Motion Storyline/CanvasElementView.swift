@@ -5,40 +5,42 @@ struct CanvasElementView: View {
     let isSelected: Bool
     var onResize: ((CGSize) -> Void)?
     var isTemporary: Bool = false
+    var isDragging: Bool = false
     
     var body: some View {
-        Group {
-            switch element.type {
-            case .rectangle:
-                Rectangle()
-                    .fill(element.color)
-                    .opacity(element.opacity)
-            case .ellipse:
-                Ellipse()
-                    .fill(element.color)
-                    .opacity(element.opacity)
-            case .text:
-                Text(element.text)
-                    .foregroundColor(element.color)
-                    .opacity(element.opacity)
-                    .frame(width: element.size.width)
-            default:
-                EmptyView()
+        ZStack {
+            // Main element content
+            Group {
+                switch element.type {
+                case .rectangle:
+                    Rectangle()
+                        .fill(element.color)
+                        .opacity(element.opacity)
+                case .ellipse:
+                    Ellipse()
+                        .fill(element.color)
+                        .opacity(element.opacity)
+                case .text:
+                    Text(element.text)
+                        .foregroundColor(element.color)
+                        .opacity(element.opacity)
+                        .frame(width: element.size.width)
+                default:
+                    EmptyView()
+                }
             }
-        }
-        .frame(width: element.size.width, height: element.size.height)
-        .position(element.position)
-        .rotationEffect(.degrees(element.rotation))
-        .overlay(
-            isSelected ? 
+            .frame(width: element.size.width, height: element.size.height)
+            
+            // Selection overlay
+            if isSelected {
                 SelectionOverlay(
                     size: element.size,
                     onResize: onResize
                 )
-                : nil
-        )
-        .overlay(
-            isTemporary ?
+            }
+            
+            // Temporary element style
+            if isTemporary {
                 Group {
                     if element.type == .rectangle {
                         Rectangle()
@@ -50,8 +52,13 @@ struct CanvasElementView: View {
                             .frame(width: element.size.width, height: element.size.height)
                     }
                 }
-                : nil
-        )
+            }
+        }
+        .position(element.position)
+        .rotationEffect(.degrees(element.rotation))
+        .shadow(color: isDragging ? Color.black.opacity(0.5) : Color.clear, radius: 8)
+        .scaleEffect(isDragging ? 1.02 : 1.0)
+        .animation(.interactiveSpring(), value: isDragging)
     }
 }
 
@@ -62,19 +69,20 @@ struct SelectionOverlay: View {
     
     // Handle positions
     private let handleSize: CGFloat = 8
+    private let outlineOffset: CGFloat = 4 // Offset for the selection border
     
     var body: some View {
         ZStack {
-            // Selection border
-            RoundedRectangle(cornerRadius: 2)
+            // Selection border - use a Rectangle directly positioned at the center
+            Rectangle()
                 .stroke(Color.blue, lineWidth: 2)
-                .frame(width: size.width + 8, height: size.height + 8)
+                .frame(width: size.width + 2*outlineOffset, height: size.height + 2*outlineOffset)
             
             // Corner handles
             Group {
                 // Top-left
                 ResizeHandle(position: .topLeft, size: handleSize)
-                    .position(x: -size.width/2 - 4, y: -size.height/2 - 4)
+                    .position(x: -outlineOffset, y: -outlineOffset)
                     .gesture(
                         DragGesture()
                             .onChanged { value in
@@ -84,7 +92,7 @@ struct SelectionOverlay: View {
                 
                 // Top-right
                 ResizeHandle(position: .topRight, size: handleSize)
-                    .position(x: size.width/2 + 4, y: -size.height/2 - 4)
+                    .position(x: size.width + outlineOffset, y: -outlineOffset)
                     .gesture(
                         DragGesture()
                             .onChanged { value in
@@ -94,7 +102,7 @@ struct SelectionOverlay: View {
                 
                 // Bottom-left
                 ResizeHandle(position: .bottomLeft, size: handleSize)
-                    .position(x: -size.width/2 - 4, y: size.height/2 + 4)
+                    .position(x: -outlineOffset, y: size.height + outlineOffset)
                     .gesture(
                         DragGesture()
                             .onChanged { value in
@@ -104,7 +112,7 @@ struct SelectionOverlay: View {
                 
                 // Bottom-right
                 ResizeHandle(position: .bottomRight, size: handleSize)
-                    .position(x: size.width/2 + 4, y: size.height/2 + 4)
+                    .position(x: size.width + outlineOffset, y: size.height + outlineOffset)
                     .gesture(
                         DragGesture()
                             .onChanged { value in
@@ -113,6 +121,7 @@ struct SelectionOverlay: View {
                     )
             }
         }
+        .frame(width: size.width, height: size.height) // Frame the whole overlay to match element size
     }
     
     private func handleResize(value: DragGesture.Value, corner: ResizeHandle.Position) {
@@ -120,33 +129,26 @@ struct SelectionOverlay: View {
         let deltaX = value.translation.width
         let deltaY = value.translation.height
         
-        // For constrained resizing (maintaining square/circle), use the larger dimension
-        let delta = max(abs(deltaX), abs(deltaY))
-        
-        // Determine the sign based on which corner is being dragged
-        let signX: CGFloat
-        let signY: CGFloat
+        // Calculate new size based on which corner is being dragged
+        var newWidth: CGFloat
+        var newHeight: CGFloat
         
         switch corner {
         case .topLeft:
-            signX = -1
-            signY = -1
+            newWidth = max(20, size.width - deltaX)
+            newHeight = max(20, size.height - deltaY)
         case .topRight:
-            signX = 1
-            signY = -1
+            newWidth = max(20, size.width + deltaX)
+            newHeight = max(20, size.height - deltaY)
         case .bottomLeft:
-            signX = -1
-            signY = 1
+            newWidth = max(20, size.width - deltaX)
+            newHeight = max(20, size.height + deltaY)
         case .bottomRight:
-            signX = 1
-            signY = 1
+            newWidth = max(20, size.width + deltaX)
+            newHeight = max(20, size.height + deltaY)
         }
         
-        // Calculate the new size, ensuring it doesn't go below minimum size
-        let newWidth = max(20, size.width + (signX * delta * 2))
-        let newHeight = max(20, size.height + (signY * delta * 2))
-        
-        // For constrained shapes, use the smaller dimension to ensure it stays a square/circle
+        // For constrained shapes (squares/circles), use the smaller dimension to ensure proportions
         let constrainedSize = min(newWidth, newHeight)
         let newSize = CGSize(width: constrainedSize, height: constrainedSize)
         
@@ -176,6 +178,7 @@ struct ResizeHandle: View {
     }
 }
 
+#if !DISABLE_PREVIEWS
 #Preview {
     ZStack {
         Color.gray.opacity(0.2)
@@ -188,3 +191,4 @@ struct ResizeHandle: View {
     }
     .frame(width: 400, height: 300)
 } 
+#endif

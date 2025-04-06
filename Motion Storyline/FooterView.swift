@@ -33,7 +33,9 @@ struct FooterView: View {
     }
 }
 
+#if !DISABLE_PREVIEWS
 #Preview {
     FooterView(status: .constant("Ready"))
         .frame(width: 600)
 } 
+#endif

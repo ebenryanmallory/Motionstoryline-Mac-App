@@ -9,7 +9,7 @@ import SwiftUI
 
 @main
 struct Motion_StorylineApp: App {
-    @State private var selectedProject: Project?
+    @StateObject private var appState = AppStateManager()
     @State private var isCreatingNewProject = false
     @AppStorage("recentProjects") private var recentProjectsData: Data = Data()
     @AppStorage("userProjects") private var userProjectsData: Data = Data()
@@ -20,9 +20,10 @@ struct Motion_StorylineApp: App {
     var body: some Scene {
         WindowGroup {
             NavigationStack {
-                if let project = selectedProject {
+                if let project = appState.selectedProject {
                     DesignCanvas()
                         .navigationBarBackButtonHidden(true)
+                        .environmentObject(appState)
                         .onAppear {
                             // We can set up any necessary state here if needed
                         }
@@ -32,7 +33,7 @@ struct Motion_StorylineApp: App {
                         userProjects: $userProjects,
                         statusMessage: $statusMessage,
                         onProjectSelected: { project in
-                            selectedProject = project
+                            appState.selectedProject = project
                             addToRecentProjects(project)
                         },
                         isCreatingNewProject: $isCreatingNewProject,
@@ -40,6 +41,7 @@ struct Motion_StorylineApp: App {
                             createNewProject(name: name, type: type)
                         }
                     )
+                    .environmentObject(appState)
                     .onAppear {
                         loadRecentProjects()
                         loadAllProjects()
@@ -92,7 +94,7 @@ struct Motion_StorylineApp: App {
     
     // Create a project from an existing Project object
     private func createNewProject(_ project: Project) {
-        selectedProject = project
+        appState.selectedProject = project
         addToRecentProjects(project)
         addToAllProjects(project)
         saveRecentProjects()
@@ -115,8 +117,8 @@ struct Motion_StorylineApp: App {
         }
         
         // Update selected project if it's the same one
-        if selectedProject?.id == updatedProject.id {
-            selectedProject = updatedProject
+        if appState.selectedProject?.id == updatedProject.id {
+            appState.selectedProject = updatedProject
         }
     }
     

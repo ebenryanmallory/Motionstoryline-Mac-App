@@ -115,6 +115,7 @@ struct DesignCanvas: View {
     
     // Navigation state
     @Environment(\.presentationMode) private var presentationMode
+    @EnvironmentObject private var appState: AppStateManager
     
     // Animation controller
     @StateObject private var animationController = AnimationController()
@@ -142,8 +143,8 @@ struct DesignCanvas: View {
             CanvasTopBar(
                 projectName: "Untitled Project",
                 onClose: {
-                    // Use presentation mode to navigate back
-                    presentationMode.wrappedValue.dismiss()
+                    // Set selectedProject to nil to navigate back to home view
+                    appState.selectedProject = nil
                 },
                 onNewFile: {
                     // Handle new file action
@@ -272,7 +273,20 @@ struct DesignCanvas: View {
                 Group {
                     if isInspectorVisible {
                         InspectorView(
-                            selectedElement: $selectedElement,
+                            selectedElement: Binding(
+                                get: { selectedElement },
+                                set: { newValue in
+                                    if let newValue = newValue, let index = canvasElements.firstIndex(where: { $0.id == newValue.id }) {
+                                        // Update the element in the canvasElements array
+                                        canvasElements[index] = newValue
+                                        // Update the selectedElement reference
+                                        selectedElement = newValue
+                                    } else {
+                                        // If newValue is nil or element not found, just update selectedElement
+                                        selectedElement = newValue
+                                    }
+                                }
+                            ),
                             onClose: {
                                 isInspectorVisible = false
                             }
@@ -382,6 +396,17 @@ struct DesignCanvas: View {
                 return .handled
             }
             return .ignored
+        }
+        .onKeyPress(.escape) {
+            // Deselect the current element if we're not editing text
+            if !isEditingText {
+                selectedElement = nil
+                return .handled
+            } else {
+                // If we're editing text, first exit text editing mode
+                isEditingText = false
+                return .handled
+            }
         }
     }
     
@@ -602,6 +627,7 @@ struct CanvasContentView: View {
     @State private var drawingMode: DrawingMode = .inactive
     @State private var currentMousePosition: CGPoint?
     @State private var editingText = ""
+    @State private var draggedElementId: UUID? = nil
     
     enum DrawingMode {
         case inactive
@@ -623,7 +649,9 @@ struct CanvasContentView: View {
                         if let index = elements.firstIndex(where: { $0.id == element.id }) {
                             elements[index].size = newSize
                         }
-                    }
+                    },
+                    isTemporary: false,
+                    isDragging: element.id == draggedElementId
                 )
                 .onTapGesture {
                     if selectedTool == .select {
@@ -649,9 +677,17 @@ struct CanvasContentView: View {
                     }
                 }
                 .gesture(
-                    selectedTool == .select && element.id == selectedElementId ?
+                    selectedTool == .select ?
                     DragGesture()
                         .onChanged { value in
+                            // Select the element if it's not already selected
+                            if selectedElementId != element.id {
+                                selectedElementId = element.id
+                            }
+                            
+                            // Set the dragged element ID
+                            draggedElementId = element.id
+                            
                             if dragStartPosition == nil {
                                 // Store the initial position when drag starts
                                 dragStartPosition = findElementById(element.id)?.position
@@ -671,6 +707,16 @@ struct CanvasContentView: View {
                         .onEnded { _ in
                             // Reset drag state
                             dragStartPosition = nil
+                            
+                            // Snap element to grid before ending drag
+                            if let index = elements.firstIndex(where: { $0.id == element.id }) {
+                                let currentPos = elements[index].position
+                                let snappedPos = snapToGrid(currentPos)
+                                elements[index].position = snappedPos
+                            }
+                            
+                            // Clear the dragged element ID
+                            draggedElementId = nil
                         } : nil
                 )
             }
@@ -691,7 +737,8 @@ struct CanvasContentView: View {
                             temporaryElement = element
                         }
                     },
-                    isTemporary: true
+                    isTemporary: true,
+                    isDragging: false
                 )
             }
             
@@ -701,9 +748,9 @@ struct CanvasContentView: View {
                 .onTapGesture { location in
                     // If we're editing text, finish editing
                     if isEditingText {
-                        if let elementId = selectedElementId, let index = elements.firstIndex(where: { $0.id == elementId }) {
-                            elements[index].text = editingText
-                            elements[index].displayName = editingText.isEmpty ? "Text" : editingText
+                        if let elementId = selectedElementId, let _ = elements.firstIndex(where: { $0.id == elementId }) {
+                            // No need to update text or displayName here since it's already updated in real-time
+                            // through the binding in the TextField
                         }
                         isEditingText = false
                     } else {
@@ -785,12 +832,20 @@ struct CanvasContentView: View {
             // Text editing overlay
             if isEditingText, let elementId = selectedElementId, let index = elements.firstIndex(where: { $0.id == elementId }), elements[index].type == .text {
                 let element = elements[index]
-                TextField("Enter text", text: $editingText, onCommit: {
-                    // Update the element text when editing is done
-                    if let index = elements.firstIndex(where: { $0.id == elementId }) {
-                        elements[index].text = editingText
-                        elements[index].displayName = editingText.isEmpty ? "Text" : editingText
+                TextField("Enter text", text: Binding(
+                    get: { editingText },
+                    set: { newValue in
+                        // Update local state
+                        editingText = newValue
+                        
+                        // Update the element text in real-time as user types
+                        if let index = elements.firstIndex(where: { $0.id == elementId }) {
+                            elements[index].text = newValue
+                            elements[index].displayName = newValue.isEmpty ? "Text" : newValue
+                        }
                     }
+                ), onCommit: {
+                    // Finalize editing when user presses return
                     isEditingText = false
                 })
                 .textFieldStyle(RoundedBorderTextFieldStyle())
@@ -842,7 +897,7 @@ struct CanvasContentView: View {
         }
         .onKeyPress(.upArrow) { [selectedElementId] in
             // Move the selected element up
-            if let elementId = selectedElementId, !isEditingText {
+            if let _ = selectedElementId, !isEditingText {
                 moveSelectedElement(by: CGPoint(x: 0, y: -10))
                 return .handled
             }
@@ -850,7 +905,7 @@ struct CanvasContentView: View {
         }
         .onKeyPress(.downArrow) { [selectedElementId] in
             // Move the selected element down
-            if let elementId = selectedElementId, !isEditingText {
+            if let _ = selectedElementId, !isEditingText {
                 moveSelectedElement(by: CGPoint(x: 0, y: 10))
                 return .handled
             }
@@ -858,7 +913,7 @@ struct CanvasContentView: View {
         }
         .onKeyPress(.leftArrow) { [selectedElementId] in
             // Move the selected element left
-            if let elementId = selectedElementId, !isEditingText {
+            if let _ = selectedElementId, !isEditingText {
                 moveSelectedElement(by: CGPoint(x: -10, y: 0))
                 return .handled
             }
@@ -866,7 +921,7 @@ struct CanvasContentView: View {
         }
         .onKeyPress(.rightArrow) { [selectedElementId] in
             // Move the selected element right
-            if let elementId = selectedElementId, !isEditingText {
+            if let _ = selectedElementId, !isEditingText {
                 moveSelectedElement(by: CGPoint(x: 10, y: 0))
                 return .handled
             }
@@ -891,8 +946,17 @@ struct CanvasContentView: View {
     // Status text for selection mode
     private var selectionStatusText: String {
         if let elementId = selectedElementId, let element = elements.first(where: { $0.id == elementId }) {
-            let position = "Position: (\(Int(element.position.x)), \(Int(element.position.y)))"
+            // Calculate edge-based position for display (X=0 means left edge at canvas boundary)
+            let leftEdgeX = element.position.x - element.size.width/2
+            let topEdgeY = element.position.y - element.size.height/2
+            
+            let position = "Position: (\(Int(leftEdgeX)), \(Int(topEdgeY)))"
             let size = "Size: \(Int(element.size.width)) × \(Int(element.size.height))"
+            
+            if draggedElementId == elementId {
+                return "Dragging \(element.displayName). \(position). \(size)."
+            }
+            
             return "\(element.displayName) selected. \(position). \(size). Drag to move, use handles to resize."
         } else {
             return "Click on an element to select it. Use the inspector panel to modify properties."
@@ -941,7 +1005,7 @@ struct CanvasContentView: View {
                 
             case .firstPointSet, .drawing:
                 // Second tap - finalize the shape
-                if let startPos = drawStartPosition, let tempElement = temporaryElement {
+                if let _ = drawStartPosition, let tempElement = temporaryElement {
                     // Add the finalized element to the canvas
                     elements.append(tempElement)
                     selectedElementId = tempElement.id
@@ -1091,6 +1155,22 @@ struct CanvasContentView: View {
                 y: newElement.position.y + offset.y
             )
             elements[index] = newElement
+        }
+    }
+    
+    // Helper function to snap position to grid
+    private func snapToGrid(_ position: CGPoint, gridSize: CGFloat = 20) -> CGPoint {
+        let snappedX = round(position.x / gridSize) * gridSize
+        let snappedY = round(position.y / gridSize) * gridSize
+        return CGPoint(x: snappedX, y: snappedY)
+    }
+    
+    // Snap the selected element to the grid
+    private func snapSelectedElementToGrid() {
+        if let elementId = selectedElementId, let index = elements.firstIndex(where: { $0.id == elementId }) {
+            let currentPos = elements[index].position
+            let snappedPos = snapToGrid(currentPos)
+            elements[index].position = snappedPos
         }
     }
 }
@@ -1400,6 +1480,8 @@ struct TimelineRuler: View {
     }
 }
 
+#if !DISABLE_PREVIEWS
 #Preview {
     DesignCanvas()
 } 
+#endif
