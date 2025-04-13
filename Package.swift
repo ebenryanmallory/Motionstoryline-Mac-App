@@ -17,9 +17,15 @@ let package = Package(
             name: "MotionStoryline",
             dependencies: [],
             path: "Motion Storyline",
+            exclude: [
+                // Exclude Info.plist and entitlements as they're build configuration files
+                "Info.plist",
+                "Motion_Storyline.entitlements"
+            ],
             resources: [
                 .process("Assets.xcassets"),
-                .process("Preview Content")
+                .process("Preview Content"),
+                .process("README.md")
             ]
         ),
         .testTarget(

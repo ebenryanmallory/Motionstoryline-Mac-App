@@ -19,39 +19,35 @@ import Foundation
 // Do not create duplicate definitions
 
 struct DesignCanvas: View {
+@State private var canvasElements: [CanvasElement] = [
+    CanvasElement(
+        type: .ellipse,
+        position: CGPoint(x: 500, y: 300),
+        size: CGSize(width: 120, height: 120),
+        color: .green,
+        displayName: "Green Circle"
+    ),
+    CanvasElement(
+        type: .text,
+        position: CGPoint(x: 400, y: 100),
+        size: CGSize(width: 300, height: 50),
+        color: .black,
+        text: "Title Text",
+        displayName: "Title Text"
+    )
+]
     @State private var zoom: CGFloat = 1.0
-    @State private var canvasElements: [CanvasElement] = [
-        CanvasElement(
-            type: .rectangle,
-            position: CGPoint(x: 300, y: 200),
-            size: CGSize(width: 200, height: 150),
-            color: .blue,
-            displayName: "Blue Rectangle"
-        ),
-        CanvasElement(
-            type: .ellipse,
-            position: CGPoint(x: 500, y: 300),
-            size: CGSize(width: 120, height: 120),
-            color: .green,
-            displayName: "Red Circle"
-        ),
-        CanvasElement(
-            type: .text,
-            position: CGPoint(x: 400, y: 100),
-            size: CGSize(width: 300, height: 50),
-            color: .black,
-            text: "Title Text",
-            displayName: "Title Text"
-        )
-    ]
-    @State private var selectedElement: CanvasElement?
-    @State private var selectedElementId: UUID?
+    // Timeline specific zoom and offset state
+    @State private var timelineScale: Double = 1.0
+    @State private var timelineOffset: Double = 0.0
     @State private var selectedTool: DesignTool = .select
     @State private var isInspectorVisible = true
     @State private var isEditingText = false
     @State private var editingText: String = ""
     @State private var currentMousePosition: CGPoint?
     @State private var draggedElementId: UUID?
+    @State private var selectedElementId: UUID?
+    @State private var selectedElement: CanvasElement?
     
     // Drawing state variables
     @State private var isDrawingRectangle = false
@@ -74,7 +70,8 @@ struct DesignCanvas: View {
     @StateObject private var animationController = AnimationController()
     @State private var isPlaying = false
     @State private var selectedProperty: String?
-    @State private var showAnimationPreview = true
+    @State private var showAnimationPreview = true // Ensure timeline is visible by default
+    @State private var timelineHeight: CGFloat = 400 // Default timeline height
     
     // Camera recording state
     @State private var isRecording = false
@@ -92,49 +89,36 @@ struct DesignCanvas: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Add CanvasTopBar at the top
-            CanvasTopBar(
-                projectName: "Untitled Project",
-                onClose: {
-                    // Set selectedProject to nil to navigate back to home view
-                    appState.selectedProject = nil
-                },
-                onNewFile: {
-                    // Handle new file action
-                    print("New file action triggered")
-                },
-                onCameraRecord: {
-                    // Show camera recording view
-                    showCameraView = true
-                },
-                isPlaying: $isPlaying,
-                showAnimationPreview: $showAnimationPreview,
-                onExport: { format in
-                    // Handle export action
-                    print("Exporting in format: \(format)")
-                },
-                onAccountSettings: {
-                    // Handle account settings action
-                    print("Account settings action triggered")
-                },
-                onPreferences: {
-                    // Handle preferences action
-                    print("Preferences action triggered")
-                },
-                onHelpAndSupport: {
-                    // Handle help and support action
-                    print("Help and support action triggered")
-                },
-                onCheckForUpdates: {
-                    // Handle check for updates action
-                    print("Check for updates action triggered")
-                },
-                onSignOut: {
-                    // Handle sign out action
-                    print("Sign out action triggered")
-                }
-            )
-            .background(Color(NSColor.windowBackgroundColor))
+            // Top navigation bar (commented out for now - we'll fix it properly later)
+            // TopBar(
+            //     onNewFile: {
+            //         print("New file action triggered")
+            //     },
+            //     onCameraRecord: {
+            //         showCameraView = true
+            //     },
+            //     isPlaying: $isPlaying,
+            //     showAnimationPreview: $showAnimationPreview,
+            //     onExport: { format in
+            //         print("Exporting in format: \(format)")
+            //     },
+            //     onAccountSettings: {
+            //         print("Account settings action triggered")
+            //     },
+            //     onPreferences: {
+            //         print("Preferences action triggered")
+            //     },
+            //     onHelpAndSupport: {
+            //         print("Help and support action triggered")
+            //     },
+            //     onCheckForUpdates: {
+            //         print("Check for updates action triggered")
+            //     },
+            //     onSignOut: {
+            //         print("Sign out action triggered")
+            //     }
+            // )
+            // .background(Color(NSColor.windowBackgroundColor))
             
             // Design toolbar full width below top bar
             DesignToolbar(selectedTool: $selectedTool)
@@ -156,8 +140,9 @@ struct DesignCanvas: View {
             
             // Timeline area at the bottom (if needed)
             if showAnimationPreview {
-                Divider()
+                timelineResizeHandle
                 timelineView
+                    .frame(height: timelineHeight)
             }
         }
         .sheet(isPresented: $showCameraView) {
@@ -697,7 +682,7 @@ struct DesignCanvas: View {
         }
     }
     
-    // Helper to convert color name to Color
+    // Helper function to convert color name to Color
     private func colorForName(_ name: String) -> Color {
         switch name.lowercased() {
         case "red": return .red
@@ -786,48 +771,80 @@ struct DesignCanvas: View {
     // Timeline component
     private var timelineView: some View {
         VStack(spacing: 0) {
-            // Simple animation timeline
-            TimelineRuler(currentTime: Binding(
-                get: { self.animationController.currentTime },
-                set: { self.animationController.currentTime = $0 }
-            ), duration: 5.0)
-                .frame(height: 30)
-                .padding(.horizontal)
-            
-            // Animation controls
+            // Animation controls toolbar
             HStack {
-                Button(action: {
-                    isPlaying.toggle()
-                    if isPlaying {
-                        animationController.play()
-                    } else {
-                        animationController.pause()
+                HStack(spacing: 12) {
+                    Button(action: {
+                        isPlaying.toggle()
+                        if isPlaying {
+                            animationController.play()
+                        } else {
+                            animationController.pause()
+                        }
+                    }) {
+                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                            .frame(width: 30, height: 20)
+                            .contentShape(Rectangle())
                     }
-                }) {
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .frame(width: 30, height: 20)
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.space, modifiers: [])
+                    .help(isPlaying ? "Pause Animation" : "Play Animation")
+                    
+                    Button(action: {
+                        animationController.reset()
+                        isPlaying = false
+                    }) {
+                        Image(systemName: "stop.fill")
+                            .frame(width: 30, height: 20)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut("r", modifiers: [])
+                    .help("Reset Animation")
                 }
-                .buttonStyle(.plain)
-                
-                Button(action: {
-                    animationController.reset()
-                    isPlaying = false
-                }) {
-                    Image(systemName: "stop.fill")
-                        .frame(width: 30, height: 20)
-                }
-                .buttonStyle(.plain)
                 
                 Spacer()
                 
-                Text(String(format: "%.1fs", animationController.currentTime))
+                Text(String(format: "%.1fs / %.1fs", animationController.currentTime, animationController.duration))
                     .font(.caption)
+                    .monospacedDigit()
                     .foregroundColor(.gray)
             }
-            .padding(.horizontal)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color(NSColor.controlBackgroundColor))
+            
+            Divider()
+            
+            // Animation editor area (timeline + keyframe editor)
+            VStack(spacing: 4) {
+                // Simple animation timeline ruler
+                TimelineRuler(
+                    duration: animationController.duration,
+                    currentTime: Binding(
+                        get: { animationController.currentTime },
+                        set: { animationController.currentTime = $0 }
+                    ),
+                    scale: timelineScale,
+                    offset: $timelineOffset
+                )
+                    .frame(height: 30)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                
+                // Divider between timeline ruler and keyframe editor
+                Divider()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                
+                // KeyframeEditorView component (main section)
+                KeyframeEditorView(animationController: animationController, selectedElement: $selectedElement)
+                    .layoutPriority(1) // Give this component layout priority
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+            }
+            .frame(maxHeight: .infinity) // Let this section expand
         }
-        .frame(height: 70)
         .background(Color(NSColor.controlBackgroundColor))
     }
     
@@ -859,91 +876,49 @@ struct DesignCanvas: View {
         
         return CGRect(x: originX, y: originY, width: abs(width), height: abs(height))
     }
-}
-
-struct TimelineRuler: View {
-    @Binding var currentTime: Double
-    let duration: Double
     
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                // Ruler background
-                Rectangle()
-                    .fill(Color(NSColor.controlBackgroundColor))
-                
-                // Time markers
-                timeMarkers(geometry: geometry)
-                
-                // Time labels
-                timeLabels(geometry: geometry)
-                
-                // Current time indicator
-                currentTimeIndicator(geometry: geometry)
+    // MARK: - Timeline Resize Handle
+    
+    /// A resize handle for the timeline area
+    private var timelineResizeHandle: some View {
+        ZStack {
+            // Background line/divider
+            Divider()
+            
+            // Visual handle indicator
+            HStack(spacing: 2) {
+                ForEach(0..<3) { _ in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color(NSColor.separatorColor))
+                        .frame(width: 20, height: 3)
+                }
             }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        updateCurrentTime(value: value, geometry: geometry)
+            
+            // Invisible hit area for the gesture
+            Color.clear
+                .contentShape(Rectangle())
+                .frame(height: 12) // Larger hit area for better UX
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            // Calculate new height based on drag
+                            let proposedHeight = timelineHeight - value.translation.height
+                            
+                            // Enforce constraints (min: 70, max: 600)
+                            timelineHeight = min(600, max(70, proposedHeight))
+                        }
+                )
+                .onHover { isHovering in
+                    // Change cursor to vertical resize cursor when hovering
+                    if isHovering {
+                        NSCursor.resizeUpDown.set()
+                    } else {
+                        NSCursor.arrow.set()
                     }
-            )
+                }
         }
-    }
-    
-    // Helper function to create time markers
-    private func timeMarkers(geometry: GeometryProxy) -> some View {
-        let durationInt = Int(duration)
-        return ForEach(0...durationInt, id: \.self) { second in
-            let height: CGFloat = second % 5 == 0 ? 12 : 8
-            let xPosition = calculateXPosition(for: second, width: geometry.size.width)
-            
-            Rectangle()
-                .fill(Color.gray)
-                .frame(width: 1, height: height)
-                .offset(x: xPosition)
-                .alignmentGuide(.leading) { _ in 0 }
-        }
-    }
-    
-    // Helper function to create time labels
-    private func timeLabels(geometry: GeometryProxy) -> some View {
-        let durationInt = Int(duration)
-        let stride = stride(from: 0, through: durationInt, by: 5)
-        return ForEach(Array(stride), id: \.self) { second in
-            let xPosition = calculateXPosition(for: second, width: geometry.size.width) + 2
-            
-            Text("\(second)s")
-                .font(.caption2)
-                .offset(x: xPosition)
-                .alignmentGuide(.leading) { _ in 0 }
-        }
-    }
-    
-    // Helper function to create current time indicator
-    private func currentTimeIndicator(geometry: GeometryProxy) -> some View {
-        let xPosition = calculateXPosition(for: currentTime, width: geometry.size.width)
-        
-        return Rectangle()
-            .fill(Color.red)
-            .frame(width: 2)
-            .frame(height: geometry.size.height)
-            .position(x: xPosition, y: geometry.size.height / 2)
-    }
-    
-    // Helper function to calculate x position
-    private func calculateXPosition(for time: Int, width: CGFloat) -> CGFloat {
-        return CGFloat(time) / CGFloat(duration) * width
-    }
-    
-    private func calculateXPosition(for time: Double, width: CGFloat) -> CGFloat {
-        return CGFloat(time / duration) * width
-    }
-    
-    // Helper function to update current time
-    private func updateCurrentTime(value: DragGesture.Value, geometry: GeometryProxy) {
-        let newTime = Double(value.location.x / geometry.size.width) * duration
-        currentTime = max(0, min(duration, newTime))
+        .frame(height: 12) // Height of the resize handle area
+        .padding(.vertical, 1)
     }
 }
 

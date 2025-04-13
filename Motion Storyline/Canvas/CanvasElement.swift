@@ -1,6 +1,6 @@
 import SwiftUI
 
-struct CanvasElement: Identifiable {
+struct CanvasElement: Identifiable, Equatable {
     var id = UUID()
     var type: ElementType
     var position: CGPoint

@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct HomeView: View {
     @Binding var recentProjects: [Project]
@@ -121,6 +122,13 @@ struct HomeView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .padding(.trailing, 16)
+                    .onHover { isHovered in
+                        if isHovered {
+                            NSCursor.pointingHand.push()
+                        } else {
+                            NSCursor.pop()
+                        }
+                    }
                 }
                 .background(designHeaderBg)
                 .border(designBorder, width: 0.5)
@@ -456,6 +464,26 @@ struct ProjectTypeCard: View {
                 .font(.caption)
                 .foregroundColor(isSelected ? .blue : .primary)
         }
+    }
+}
+
+// MARK: - Cursor Modifiers
+struct PointingHandCursorModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .onHover { isHovered in
+                if isHovered {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+    }
+}
+
+extension View {
+    func pointingHandCursor() -> some View {
+        modifier(PointingHandCursorModifier())
     }
 }
 
