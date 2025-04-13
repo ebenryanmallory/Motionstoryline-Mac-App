@@ -165,5 +165,7 @@ struct CanvasTopBar: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
+        .background(Color(NSColor.windowBackgroundColor))
+        .border(Color.gray.opacity(0.2), width: 0.5)
     }
 } 

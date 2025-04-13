@@ -20,7 +20,7 @@ struct Motion_StorylineApp: App {
     var body: some Scene {
         WindowGroup {
             NavigationStack {
-                if let project = appState.selectedProject {
+                if appState.selectedProject != nil {
                     DesignCanvas()
                         .navigationBarBackButtonHidden(true)
                         .environmentObject(appState)

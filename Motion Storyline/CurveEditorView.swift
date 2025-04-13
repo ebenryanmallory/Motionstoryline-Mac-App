@@ -127,7 +127,8 @@ struct CurveEditorView: View {
     }
     
     private func keyframePoints(size: CGSize) -> some View {
-        ForEach(keyframes, id: \.1) { keyframe in
+        ForEach(keyframes.indices, id: \.self) { index in
+            let keyframe = keyframes[index]
             let x = (keyframe.1 - minTime) / (maxTime - minTime) * size.width
             let y = size.height - (keyframe.2 - minValue) / (maxValue - minValue) * size.height
             

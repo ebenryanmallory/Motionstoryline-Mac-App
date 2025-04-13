@@ -378,6 +378,58 @@ struct InspectorView: View {
                                     RoundedRectangle(cornerRadius: 4)
                                         .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                                 )
+                                
+                                // Text alignment control - only for text elements
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text("Text Alignment")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    
+                                    HStack(spacing: 0) {
+                                        Button(action: {
+                                            if var updatedElement = selectedElement {
+                                                updatedElement.textAlignment = .leading
+                                                selectedElement = updatedElement
+                                            }
+                                        }) {
+                                            Image(systemName: "text.alignleft")
+                                                .padding(8)
+                                                .background(element.textAlignment == .leading ? Color.blue.opacity(0.2) : Color.clear)
+                                                .cornerRadius(4)
+                                        }
+                                        .buttonStyle(.plain)
+                                        
+                                        Button(action: {
+                                            if var updatedElement = selectedElement {
+                                                updatedElement.textAlignment = .center
+                                                selectedElement = updatedElement
+                                            }
+                                        }) {
+                                            Image(systemName: "text.aligncenter")
+                                                .padding(8)
+                                                .background(element.textAlignment == .center ? Color.blue.opacity(0.2) : Color.clear)
+                                                .cornerRadius(4)
+                                        }
+                                        .buttonStyle(.plain)
+                                        
+                                        Button(action: {
+                                            if var updatedElement = selectedElement {
+                                                updatedElement.textAlignment = .trailing
+                                                selectedElement = updatedElement
+                                            }
+                                        }) {
+                                            Image(systemName: "text.alignright")
+                                                .padding(8)
+                                                .background(element.textAlignment == .trailing ? Color.blue.opacity(0.2) : Color.clear)
+                                                .cornerRadius(4)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                                    )
+                                }
                             } else {
                                 TextField("Display Name", text: Binding(
                                     get: { element.displayName },
@@ -445,8 +497,30 @@ struct InspectorView: View {
                         
                         // Size controls
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("Size")
-                                .font(.headline)
+                            HStack {
+                                Text("Size")
+                                    .font(.headline)
+                                
+                                Spacer()
+                                
+                                // Only show the lock for non-text elements
+                                if element.type != .text {
+                                    // Aspect ratio lock toggle
+                                    Button(action: {
+                                        if var updatedElement = selectedElement {
+                                            // Toggle the isAspectRatioLocked property
+                                            updatedElement.isAspectRatioLocked.toggle()
+                                            selectedElement = updatedElement
+                                        }
+                                    }) {
+                                        Image(systemName: element.isAspectRatioLocked ? "lock" : "lock.open")
+                                            .foregroundColor(element.isAspectRatioLocked ? .blue : .secondary)
+                                            .font(.system(size: 12))
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help(element.isAspectRatioLocked ? "Unlock aspect ratio" : "Lock aspect ratio")
+                                }
+                            }
                             
                             // Width with NumericStepper
                             NumericStepper(
@@ -454,7 +528,15 @@ struct InspectorView: View {
                                     get: { element.size.width },
                                     set: { newValue in
                                         if var updatedElement = selectedElement {
-                                            updatedElement.size.width = max(10, newValue)
+                                            let constrainedWidth = max(10, newValue)
+                                            updatedElement.size.width = constrainedWidth
+                                            
+                                            // If aspect ratio is locked, adjust height proportionally
+                                            if updatedElement.isAspectRatioLocked && updatedElement.type != .text {
+                                                let ratio = element.size.height / element.size.width
+                                                updatedElement.size.height = constrainedWidth * ratio
+                                            }
+                                            
                                             selectedElement = updatedElement
                                         }
                                     }
@@ -469,7 +551,15 @@ struct InspectorView: View {
                                     get: { element.size.height },
                                     set: { newValue in
                                         if var updatedElement = selectedElement {
-                                            updatedElement.size.height = max(10, newValue)
+                                            let constrainedHeight = max(10, newValue)
+                                            updatedElement.size.height = constrainedHeight
+                                            
+                                            // If aspect ratio is locked, adjust width proportionally
+                                            if updatedElement.isAspectRatioLocked && updatedElement.type != .text {
+                                                let ratio = element.size.width / element.size.height
+                                                updatedElement.size.width = constrainedHeight * ratio
+                                            }
+                                            
                                             selectedElement = updatedElement
                                         }
                                     }

@@ -74,18 +74,18 @@ class CameraManager: NSObject, ObservableObject {
         var videoDevice: AVCaptureDevice?
         
         do {
-            // Safely try to get the front camera
+            // Safely try to get the built-in camera on Mac
             if let frontCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .front) {
                 videoDevice = frontCamera
-                print("Found front camera")
+                print("Found front-facing Mac camera")
             } else if let backCamera = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) {
                 videoDevice = backCamera
-                print("Found back camera")
+                print("Found rear-facing Mac camera")
             } else if let defaultCamera = AVCaptureDevice.default(for: .video) {
                 videoDevice = defaultCamera
-                print("Found default camera")
+                print("Found default Mac camera")
             } else {
-                print("No camera found")
+                print("No camera found on this Mac")
             }
             
             // Check if we found a camera
@@ -93,7 +93,7 @@ class CameraManager: NSObject, ObservableObject {
                 throw NSError(
                     domain: "CameraManager",
                     code: 1,
-                    userInfo: [NSLocalizedDescriptionKey: "No camera available on this device"]
+                    userInfo: [NSLocalizedDescriptionKey: "No camera available on this Mac"]
                 )
             }
             
@@ -614,7 +614,7 @@ struct CameraRecordingView: View {
                 cameraManager.error = NSError(
                     domain: "CameraManager",
                     code: 0,
-                    userInfo: [NSLocalizedDescriptionKey: "Camera access denied. Please enable it in Settings."]
+                    userInfo: [NSLocalizedDescriptionKey: "Camera access denied. Please enable it in System Settings > Privacy & Security > Camera."]
                 )
             @unknown default:
                 cameraManager.isAuthorized = false

@@ -1,16 +1,15 @@
 # Cursor Rules for Motion Storyline Project
 
-# Build and Run Instructions
-- DO NOT run commands to build or start the project with Xcode
-- DO NOT use xcodebuild commands
-- The user will manually build and run the project in Xcode
-- Avoid suggesting commands that require the full Xcode application
+# Run Instructions
+- The project will be built and run manually by the user in Xcode, not via command line
 
 # Code Editing Guidelines
 - Prefer making changes to Swift files directly through the edit_file tool
-- When editing UI components, focus on SwiftUI modifications
+- Focus on SwiftUI and AppKit modifications appropriate for macOS
 - Keep Swift code consistent with the existing project style
 - Use proper SwiftUI lifecycle methods and property wrappers
+- Never use UIKit or iOS-specific APIs as this is a macOS-only application
+- Always use macOS terminology (click, cursor, window) instead of mobile terms (tap, touch, screen)
 
 # Error Handling
 - When a line number and error description are pasted with minimal context, this indicates a bug that needs to be fixed
@@ -20,16 +19,26 @@
 - When possible, explain the root cause of the error before implementing the fix
 
 # Project Structure
-- Keep all new files within the Motion Storyline directory structure
 - Follow the existing pattern of separating view components into their own files
 - Maintain the existing navigation structure using NavigationStack
 
 # Debugging Approach
 - Suggest code changes that can be tested by the user in Xcode
 - Provide clear explanations of what changes are being made and why
-- When addressing errors, focus on Swift and SwiftUI-specific solutions
+- When addressing errors, focus on Swift, SwiftUI, and AppKit solutions for macOS
+- Never suggest iOS or mobile-specific solutions
+
+# macOS-Specific Guidelines
+- Design for mouse and keyboard interaction, not touch
+- Use NSCursor for cursor changes instead of touch feedback
+- Follow standard macOS UI conventions and HIG
+- Support window resizing and multiple windows where appropriate
+- Use macOS-specific conventions like menu bars, status bars, and preferences windows
+- Leverage macOS features like NSHapticFeedbackManager for feedback
+- Consider keyboard shortcuts and modifier keys for power users
 
 # Performance Considerations
 - Be mindful of memory usage in animation components
 - Suggest optimizations for rendering performance when appropriate
-- Consider macOS-specific UI guidelines when making interface changes 
+- Consider macOS-specific UI guidelines when making interface changes
+- Optimize for desktop hardware capabilities and constraints 
