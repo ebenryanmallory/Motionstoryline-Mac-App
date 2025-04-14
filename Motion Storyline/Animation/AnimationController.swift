@@ -98,6 +98,25 @@ public struct Keyframe<T: Interpolatable> {
     }
 }
 
+/// Protocol for all keyframe types to enable type-erased collections
+public protocol KeyframeProtocol {
+    /// The time position of this keyframe (in seconds)
+    var time: Double { get }
+    
+    /// The easing function used to interpolate to the next keyframe
+    var easingFunction: EasingFunction { get }
+    
+    /// The value at this keyframe as Any (for type-erased access)
+    var anyValue: Any { get }
+}
+
+// Make Keyframe conform to KeyframeProtocol
+extension Keyframe: KeyframeProtocol {
+    public var anyValue: Any {
+        return value
+    }
+}
+
 /// Protocol for values that can be interpolated between keyframes
 public protocol Interpolatable {
     /// Interpolate between two values
@@ -265,42 +284,43 @@ public class AnimationController: ObservableObject {
         self.duration = duration
         self.currentTime = 0.0
     }
-/// Start animation playback
-public func play() {
-    // Stop any existing timer
-    timer?.invalidate()
-    
-    // Record the current time for accurate timing
-    lastUpdateTime = Date()
-    
-    // Update playing state
-    isPlaying = true
-    
-    // Create a new timer that fires at least 30 times per second (using 60 for smoother animation)
-    timer = Timer.scheduledTimer(withTimeInterval: 1/60, repeats: true) { [weak self] _ in
-        guard let self = self else { return }
+
+    /// Start animation playback
+    public func play() {
+        // Stop any existing timer
+        timer?.invalidate()
         
-        // Calculate elapsed time since last update
-        let now = Date()
-        if let lastUpdate = self.lastUpdateTime {
-            let elapsed = now.timeIntervalSince(lastUpdate)
-            self.lastUpdateTime = now
+        // Record the current time for accurate timing
+        lastUpdateTime = Date()
+        
+        // Update playing state
+        isPlaying = true
+        
+        // Create a new timer that fires at least 30 times per second (using 60 for smoother animation)
+        timer = Timer.scheduledTimer(withTimeInterval: 1/60, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
             
-            // Update the current time
-            self.currentTime += elapsed
-            
-            // Loop back to the beginning if we reach the end
-            if self.currentTime >= self.duration {
-                self.currentTime = 0.0
+            // Calculate elapsed time since last update
+            let now = Date()
+            if let lastUpdate = self.lastUpdateTime {
+                let elapsed = now.timeIntervalSince(lastUpdate)
+                self.lastUpdateTime = now
+                
+                // Update the current time
+                self.currentTime += elapsed
+                
+                // Loop back to the beginning if we reach the end
+                if self.currentTime >= self.duration {
+                    self.currentTime = 0.0
+                }
+                
+                // Update all animated properties
+                self.updateAnimatedProperties()
             }
-            
-            // Update all animated properties
-            self.updateAnimatedProperties()
         }
-    }
-    
-    // Ensure the timer runs on the main thread with high priority for smoother animation
-    RunLoop.main.add(timer!, forMode: .common)
+        
+        // Ensure the timer runs on the main thread with high priority for smoother animation
+        RunLoop.main.add(timer!, forMode: .common)
     }
     
     /// Update all animated properties based on current time
@@ -376,38 +396,56 @@ public func play() {
     public func getTrack<T: Interpolatable>(id: String) -> KeyframeTrack<T>? {
         return keyframeTracks[id] as? KeyframeTrack<T>
     }
-    
-/// Remove a keyframe track
-/// - Parameter id: The track id
-public func removeTrack(id: String) {
-    keyframeTracks.removeValue(forKey: id)
-    propertyUpdateCallbacks.removeValue(forKey: id)
-}
 
-/// Get all keyframe track IDs
-public func getAllTracks() -> [String] {
-    return Array(keyframeTracks.keys)
-}
-
-/// Get all keyframe times from all tracks
-public func getAllKeyframeTimes() -> [Double] {
-    var times: Set<Double> = []
-    
-    for trackId in getAllTracks() {
-        if let track = getTrack(id: trackId) as KeyframeTrack<CGPoint>? {
-            times.formUnion(track.allKeyframes.map { $0.time })
-        } else if let track = getTrack(id: trackId) as KeyframeTrack<CGFloat>? {
-            times.formUnion(track.allKeyframes.map { $0.time })
-        } else if let track = getTrack(id: trackId) as KeyframeTrack<Double>? {
-            times.formUnion(track.allKeyframes.map { $0.time })
-        } else if let track = getTrack(id: trackId) as KeyframeTrack<Color>? {
-            times.formUnion(track.allKeyframes.map { $0.time })
-        }
+    /// Remove a keyframe track
+    /// - Parameter id: The track id
+    public func removeTrack(id: String) {
+        keyframeTracks.removeValue(forKey: id)
+        propertyUpdateCallbacks.removeValue(forKey: id)
     }
-    
-    return Array(times).sorted()
-}
-    
+
+    /// Get all tracks with their IDs and keyframes
+    public func getAllTracksWithKeyframes() -> [(id: String, keyframes: [KeyframeProtocol])] {
+        var result: [(id: String, keyframes: [KeyframeProtocol])] = []
+        
+        for (id, track) in keyframeTracks {
+            if let doubleTrack = track as? KeyframeTrack<Double> {
+                result.append((id: id, keyframes: doubleTrack.allKeyframes))
+            } else if let cgFloatTrack = track as? KeyframeTrack<CGFloat> {
+                result.append((id: id, keyframes: cgFloatTrack.allKeyframes))
+            } else if let pointTrack = track as? KeyframeTrack<CGPoint> {
+                result.append((id: id, keyframes: pointTrack.allKeyframes))
+            } else if let colorTrack = track as? KeyframeTrack<Color> {
+                result.append((id: id, keyframes: colorTrack.allKeyframes))
+            }
+        }
+        
+        return result
+    }
+
+    /// Get all keyframe track IDs
+    public func getAllTracks() -> [String] {
+        return Array(keyframeTracks.keys)
+    }
+
+    /// Get all keyframe times from all tracks
+    public func getAllKeyframeTimes() -> [Double] {
+        var times: Set<Double> = []
+        
+        for trackId in getAllTracks() {
+            if let track = getTrack(id: trackId) as KeyframeTrack<CGPoint>? {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            } else if let track = getTrack(id: trackId) as KeyframeTrack<CGFloat>? {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            } else if let track = getTrack(id: trackId) as KeyframeTrack<Double>? {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            } else if let track = getTrack(id: trackId) as KeyframeTrack<Color>? {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            }
+        }
+        
+        return Array(times).sorted()
+    }
     
     /// Add a keyframe to a track
     /// - Parameters:
@@ -518,7 +556,6 @@ struct AnimationControllerPreview: View {
                         .font(.title2)
                 }
                 .buttonStyle(.plain)
-                .keyboardShortcut(.space, modifiers: [])
                 .help(animationController.isPlaying ? "Pause Animation" : "Play Animation")
                 
                 // Current time indicator
@@ -672,7 +709,6 @@ struct AnimationControllerPreview: View {
         animationController.removeTrack(id: "rotation")
         animationController.removeTrack(id: "color")
         
-        // Create a position track
         // Create a position track
         let positionTrack = animationController.addTrack(id: "position") { (newPosition: CGPoint) in
             position = newPosition

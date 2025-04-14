@@ -8,6 +8,20 @@ This project includes Swift Package Manager (SPM) support through the `Package.s
 2. Use the project as a dependency in other Swift packages
 3. Manage dependencies more easily
 
+## Features
+
+### Animation System
+- Keyframe-based animation with support for various interpolation methods
+- Timeline editor with playback controls
+- Property inspector for animation parameters
+- Multiple easing functions (linear, ease-in, ease-out, cubic bezier, etc.)
+
+### Export Capabilities
+- Video export with various quality options via AVFoundation
+- ProRes export for professional workflows
+- Image sequence export (PNG, JPEG)
+- Support for various export formats
+
 ## Build Instructions
 
 To build the project using Swift Package Manager:
@@ -60,6 +74,21 @@ The `Package.swift` file defines:
 - **Targets**:
   - Main target: "MotionStoryline" (source code in "Motion Storyline" directory)
   - Test targets: "MotionStorylineTests" and "MotionStorylineUITests"
+
+## Project Organization
+
+The project is organized into several key directories:
+
+- **Animation/**: Core animation components
+  - `AnimationController.swift`: Keyframe animation engine
+  - `TimelineView.swift`: Timeline interface
+  - `KeyframeEditorView.swift`: Keyframe editing UI
+  
+- **Utilities/**: Helper classes
+  - `VideoExporter.swift`: Export functionality for videos and image sequences
+  
+- **Common/**: Shared components and models
+  - `ExportFormat.swift`: Export format definitions
 
 ## Handling SwiftUI Previews
 

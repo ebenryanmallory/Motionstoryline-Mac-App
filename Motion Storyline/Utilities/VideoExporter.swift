@@ -251,6 +251,8 @@ public class VideoExporter {
             DispatchQueue.main.async {
                 switch exportSession.status {
                 case .completed:
+                    // Ensure we report 100% progress on completion
+                    self.progressHandler?(1.0)
                     self.completionHandler?(.success(configuration.outputURL))
                 case .failed:
                     if let error = exportSession.error {

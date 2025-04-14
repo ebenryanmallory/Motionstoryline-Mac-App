@@ -448,48 +448,44 @@ struct InspectorView: View {
                         
                         Divider()
                         
-                        // Position controls
+                        // Position controls - add explicit X/Y controls to position elements off-canvas
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Position")
                                 .font(.headline)
                             
-                            // X Position with NumericStepper
-                            NumericStepper(
-                                value: Binding(
-                                    get: { 
-                                        // Calculate left edge X position
-                                        element.position.x - element.size.width/2
-                                    },
-                                    set: { newValue in
-                                        if var updatedElement = selectedElement {
-                                            // Convert edge position back to center position
-                                            updatedElement.position.x = newValue + updatedElement.size.width/2
-                                            selectedElement = updatedElement
+                            HStack {
+                                // X position control
+                                NumericStepper(
+                                    value: Binding(
+                                        get: { element.position.x },
+                                        set: { newValue in
+                                            if var updatedElement = selectedElement {
+                                                updatedElement.position.x = newValue
+                                                selectedElement = updatedElement
+                                            }
                                         }
-                                    }
-                                ),
-                                label: "X:",
-                                range: nil // Allow negative values for off-canvas positioning
-                            )
-                            
-                            // Y Position with NumericStepper
-                            NumericStepper(
-                                value: Binding(
-                                    get: { 
-                                        // Calculate top edge Y position
-                                        element.position.y - element.size.height/2
-                                    },
-                                    set: { newValue in
-                                        if var updatedElement = selectedElement {
-                                            // Convert edge position back to center position
-                                            updatedElement.position.y = newValue + updatedElement.size.height/2
-                                            selectedElement = updatedElement
+                                    ),
+                                    label: "X:",
+                                    // Allow full range of positions including off-canvas
+                                    range: -5000...5000
+                                )
+                                
+                                // Y position control
+                                NumericStepper(
+                                    value: Binding(
+                                        get: { element.position.y },
+                                        set: { newValue in
+                                            if var updatedElement = selectedElement {
+                                                updatedElement.position.y = newValue
+                                                selectedElement = updatedElement
+                                            }
                                         }
-                                    }
-                                ),
-                                label: "Y:",
-                                range: nil // Allow negative values for off-canvas positioning
-                            )
+                                    ),
+                                    label: "Y:",
+                                    // Allow full range of positions including off-canvas
+                                    range: -5000...5000
+                                )
+                            }
                         }
                         .padding(.horizontal)
                         
@@ -528,6 +524,7 @@ struct InspectorView: View {
                                     get: { element.size.width },
                                     set: { newValue in
                                         if var updatedElement = selectedElement {
+                                            // Keep 10px minimum size constraint
                                             let constrainedWidth = max(10, newValue)
                                             updatedElement.size.width = constrainedWidth
                                             
@@ -542,7 +539,8 @@ struct InspectorView: View {
                                     }
                                 ),
                                 label: "W:",
-                                range: 10...2000
+                                // Keep -5000...5000 range for position but enforce 10px minimum in the setter
+                                range: -5000...5000
                             )
                             
                             // Height with NumericStepper
@@ -551,6 +549,7 @@ struct InspectorView: View {
                                     get: { element.size.height },
                                     set: { newValue in
                                         if var updatedElement = selectedElement {
+                                            // Keep 10px minimum size constraint
                                             let constrainedHeight = max(10, newValue)
                                             updatedElement.size.height = constrainedHeight
                                             
@@ -565,7 +564,8 @@ struct InspectorView: View {
                                     }
                                 ),
                                 label: "H:",
-                                range: 10...2000
+                                // Keep -5000...5000 range for position but enforce 10px minimum in the setter
+                                range: -5000...5000
                             )
                         }
                         .padding(.horizontal)

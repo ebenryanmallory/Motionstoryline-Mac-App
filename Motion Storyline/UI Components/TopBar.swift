@@ -7,7 +7,6 @@ struct CanvasTopBar: View {
     let onCameraRecord: () -> Void
     
     // Add bindings and callbacks for the functionality
-    @Binding var isPlaying: Bool
     @Binding var showAnimationPreview: Bool
     let onExport: (ExportFormat) -> Void
     let onAccountSettings: () -> Void
@@ -98,20 +97,6 @@ struct CanvasTopBar: View {
             
             // Right side items
             HStack(spacing: 16) {
-                Button(action: {
-                    // Toggle playback state
-                    isPlaying.toggle()
-                    
-                    // If starting playback, ensure animation preview is visible
-                    if isPlaying && !showAnimationPreview {
-                        showAnimationPreview = true
-                    }
-                }) {
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .foregroundColor(.black)
-                }
-                .help(isPlaying ? "Pause Animation" : "Play Animation")
-                
                 Button(action: onCameraRecord) {
                     Image(systemName: "camera.fill")
                         .foregroundColor(.black)
@@ -171,8 +156,31 @@ struct CanvasTopBar: View {
                     
                     Divider()
                     
-                    Button("Export Project File") {
-                        onExport(.projectFile)
+                    Menu("Export Project File") {
+                        Button {
+                            onExport(.projectFile)
+                        } label: {
+                            Label("Motion Storyline Project (.msproj)", systemImage: "doc.badge.arrow.down")
+                        }
+                        .help("Export as a Motion Storyline native project file that can be reopened later")
+                        
+                        Divider()
+                        
+                        Text("Project file contains:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Label("All canvas elements", systemImage: "square.on.square")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Label("Animation keyframes", systemImage: "timeline.selection")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Label("Project settings", systemImage: "gearshape")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 } label: {
                     Image(systemName: "square.and.arrow.up")

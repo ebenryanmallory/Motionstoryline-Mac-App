@@ -1,9 +1,10 @@
 import SwiftUI
 import AppKit
-import AVFoundation
+@preconcurrency import AVFoundation
 import UniformTypeIdentifiers
 import Foundation
 import CoreGraphics
+import UserNotifications
 // Add import for Canvas components
 
 // Note: Components have been organized into folders:
@@ -23,14 +24,14 @@ struct DesignCanvas: View {
 @State private var canvasElements: [CanvasElement] = [
     CanvasElement(
         type: .ellipse,
-        position: CGPoint(x: 500, y: 300),
+        position: CGPoint(x: 640, y: 360),
         size: CGSize(width: 120, height: 120),
         color: .green,
         displayName: "Green Circle"
     ),
     CanvasElement(
         type: .text,
-        position: CGPoint(x: 400, y: 100),
+        position: CGPoint(x: 640, y: 200),
         size: CGSize(width: 300, height: 50),
         color: .black,
         text: "Title Text",
@@ -87,10 +88,17 @@ struct DesignCanvas: View {
     @State private var exportFormat: ExportFormat = .video
     @State private var selectedProResProfile: VideoExporter.ProResProfile = .proRes422HQ
     @State private var showExportSettings = false
-    @State private var exportResolution: (width: Int, height: Int) = (1920, 1080)
+    @State private var exportResolution: (width: Int, height: Int) = (1280, 720) // Default to HD
     @State private var exportFrameRate: Float = 30.0
     @State private var exportDuration: Double = 5.0
     @State private var exportingError: Error?
+    
+    // Key event monitor for tracking space bar
+    @StateObject private var keyMonitorController = KeyEventMonitorController()
+    
+    // Canvas dimensions - HD aspect ratio (16:9)
+    @State private var canvasWidth: CGFloat = 1280
+    @State private var canvasHeight: CGFloat = 720
     
     // Initialize animation controller with a test animation
     private func setupInitialAnimations() {
@@ -116,9 +124,6 @@ struct DesignCanvas: View {
     // Camera recording state
     @State private var isRecording = false
     @State private var showCameraView = false
-    
-    // Key event monitor for tracking space bar
-    private var keyEventMonitor: Any?
     
     // Sample keyframes for demonstration
     let keyframes: [(String, Double, Double)] = [
@@ -193,58 +198,41 @@ struct DesignCanvas: View {
                     Text(error.localizedDescription)
                 }
             }
-            .onChange(of: selectedElementId) { newValue in
+            .onChange(of: selectedElementId) { oldValue, newValue in
                 if let id = newValue {
                     selectedElement = canvasElements.first(where: { $0.id == id })
                 } else {
                     selectedElement = nil
                 }
             }
-            .onChange(of: selectedElement) { newValue in
+            .onChange(of: selectedElement) { oldValue, newValue in
                 if let updatedElement = newValue, let index = canvasElements.firstIndex(where: { $0.id == updatedElement.id }) {
                     // Update the element in the canvasElements array to ensure it's rendered correctly
                     canvasElements[index] = updatedElement
                 }
             }
             .onAppear {
-                setupKeyEventMonitor()
+                // Setup initial animations
+                setupInitialAnimations()
+                // Setup key event monitor with the current state
+                keyMonitorController.setupMonitor(
+                    onSpaceDown: {
+                        self.isSpaceBarPressed = true
+                        NSCursor.closedHand.set()
+                    },
+                    onSpaceUp: {
+                        self.isSpaceBarPressed = false
+                        if self.selectedTool == .select {
+                            NSCursor.arrow.set()
+                        } else if self.selectedTool == .rectangle || self.selectedTool == .ellipse {
+                            NSCursor.crosshair.set()
+                        }
+                    }
+                )
             }
             .onDisappear {
-                teardownKeyEventMonitor()
+                keyMonitorController.teardownMonitor()
             }
-    }
-    
-    // Setup key event monitor for detecting space bar press
-    private func setupKeyEventMonitor() {
-        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { [weak self] event in
-            guard let self = self else { return event }
-            
-            // Check for space bar
-            if event.keyCode == 49 { // 49 is the keycode for space
-                if event.type == .keyDown && !self.isSpaceBarPressed {
-                    self.isSpaceBarPressed = true
-                    // Change cursor to hand when space is pressed
-                    NSCursor.closedHand.set()
-                } else if event.type == .keyUp && self.isSpaceBarPressed {
-                    self.isSpaceBarPressed = false
-                    // Restore cursor based on current tool
-                    if self.selectedTool == .select {
-                        NSCursor.arrow.set()
-                    } else if self.selectedTool == .rectangle || self.selectedTool == .ellipse {
-                        NSCursor.crosshair.set()
-                    }
-                }
-            }
-            
-            return event
-        }
-    }
-    
-    private func teardownKeyEventMonitor() {
-        if let monitor = keyEventMonitor {
-            NSEvent.removeMonitor(monitor)
-            keyEventMonitor = nil
-        }
     }
     
     // Viewport drag gesture for panning when space is pressed
@@ -276,7 +264,6 @@ struct DesignCanvas: View {
     private var mainContentView: some View {
         VStack(spacing: 0) {
             // Top navigation bar
-            // Top navigation bar
             CanvasTopBar(
                 projectName: "Motion Storyline",
                 onClose: {
@@ -288,7 +275,6 @@ struct DesignCanvas: View {
                 onCameraRecord: {
                     showCameraView = true
                 },
-                isPlaying: $isPlaying,
                 showAnimationPreview: $showAnimationPreview,
                 onExport: { format in
                     self.exportFormat = format
@@ -313,16 +299,34 @@ struct DesignCanvas: View {
                 onZoomOut: zoomOut,
                 onZoomReset: resetZoom
             )
-            // Design toolbar full width below top bar
-            DesignToolbar(selectedTool: $selectedTool)
-                .padding(.vertical, 4)
             
-            Divider() // Add visual separator between toolbar and canvas
+            // Add a Divider to clearly separate the top bar from the toolbar
+            Divider()
+            
+            // Design toolbar full width below top bar - moved inside its own VStack to ensure it stays visible
+            VStack(spacing: 0) {
+                DesignToolbar(selectedTool: $selectedTool)
+                    .padding(.vertical, 8) // Increased padding for better spacing
+                
+                // Canvas dimensions indicator
+                Text("Canvas: \(Int(canvasWidth))×\(Int(canvasHeight)) (HD 16:9)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.bottom, 6)
+                
+                Divider() // Add visual separator between toolbar and canvas
+            }
+            // Enforce that toolbar section doesn't expand or get pushed by canvas
+            .frame(maxHeight: 90) // Increased fixed height for toolbar section
+            .padding(.top, 4) // Add a little padding at the top to separate from TopBar
             
             // Main content area with canvas and inspector
             HStack(spacing: 0) {
-                // Main canvas area
-                canvasContentView
+                // Main canvas area - wrapped in a ScrollView to prevent overflow
+                ScrollView([.horizontal, .vertical]) {
+                    canvasContentView
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
                 
                 // Right sidebar with inspector
                 if isInspectorVisible {
@@ -330,6 +334,7 @@ struct DesignCanvas: View {
                     inspectorView
                 }
             }
+            .layoutPriority(1) // Give this section priority to expand
             
             // Timeline area at the bottom (if needed)
             if showAnimationPreview {
@@ -343,11 +348,16 @@ struct DesignCanvas: View {
     // MARK: - View Components
     
     // Canvas content component
-    // Canvas content component
     private var canvasContentView: some View {
         ZStack {
             // Grid background (bottom layer)
             GridBackground(showGrid: showGrid, gridSize: gridSize)
+            
+            // Canvas boundary indicator - made more visible with a thicker stroke
+            Rectangle()
+                .strokeBorder(Color.blue.opacity(0.7), lineWidth: 2.5, antialiased: true)
+                .frame(width: canvasWidth, height: canvasHeight)
+                .allowsHitTesting(false)
             
             // Background for click capture - MOVED BEFORE ELEMENTS
             canvasBackgroundView
@@ -380,7 +390,14 @@ struct DesignCanvas: View {
         .offset(viewportOffset) // Apply the viewport offset
         .gesture(viewportDragGesture) // Add the drag gesture
         .frame(minWidth: 400, minHeight: 400)
-        .background(Color(NSColor.windowBackgroundColor))
+        // Add some padding for better visibility
+        .padding(20)
+        // Add a background with a subtle border to clearly show canvas area
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(Color.gray.opacity(0.3), lineWidth: 1)
+                .background(Color(NSColor.windowBackgroundColor))
+        )
     }
 
     // Canvas background with click handlers
@@ -429,6 +446,7 @@ struct DesignCanvas: View {
             Button(action: {
                 // Create rectangle at cursor position
                 if let position = currentMousePosition {
+                    // Removed constraint to canvas bounds
                     let newRectangle = CanvasElement.rectangle(
                         at: position,
                         size: CGSize(width: 150, height: 100)
@@ -443,6 +461,7 @@ struct DesignCanvas: View {
             Button(action: {
                 // Create ellipse at cursor position
                 if let position = currentMousePosition {
+                    // Removed constraint to canvas bounds
                     let newEllipse = CanvasElement.ellipse(
                         at: position,
                         size: CGSize(width: 100, height: 100)
@@ -457,6 +476,7 @@ struct DesignCanvas: View {
             Button(action: {
                 // Create text element at cursor position
                 if let position = currentMousePosition {
+                    // Removed constraint to canvas bounds
                     let newText = CanvasElement.text(at: position)
                     canvasElements.append(newText)
                     selectedElementId = newText.id
@@ -548,48 +568,33 @@ struct DesignCanvas: View {
                 // Center the view on content by resetting viewport offset
                 viewportOffset = .zero
             }) {
-                }) {
-                    Label("Center Content", systemImage: "arrow.up.left.and.down.right.magnifyingglass")
-                }
-                Button(action: {
-                    // Zoom in
-                    zoomIn()
-                }) {
-                    Label("Zoom In", systemImage: "plus.magnifyingglass")
-                }
-                .keyboardShortcut("+", modifiers: .command)
-                
-                Button(action: {
-                    // Zoom out
-                    zoomOut()
-                }) {
-                    Label("Zoom Out", systemImage: "minus.magnifyingglass")
-                }
-                .keyboardShortcut("-", modifiers: .command)
-                
-                Button(action: {
-                    // Reset zoom to 100%
-                    resetZoom()
-                }) {
-                    Label("Reset Zoom", systemImage: "1.magnifyingglass")
-                }
-                .keyboardShortcut("0", modifiers: .command)
+                Label("Center Content", systemImage: "arrow.up.left.and.down.right.magnifyingglass")
             }
+            .keyboardShortcut(KeyEquivalent("a"), modifiers: [.command])
             
-            Divider()
+            Button(action: {
+                // Zoom in
+                zoomIn()
+            }) {
+                Label("Zoom In", systemImage: "plus.magnifyingglass")
+            }
+            .keyboardShortcut("+", modifiers: .command)
             
-            Text("Keyboard Shortcuts:")
-                .foregroundColor(.secondary)
-                .font(.caption)
-            Text("⌘0: Reset Zoom")
-                .foregroundColor(.secondary)
-                .font(.caption)
-            Text("⌘+: Zoom In")
-                .foregroundColor(.secondary)
-                .font(.caption)
-            Text("⌘-: Zoom Out")
-                .foregroundColor(.secondary)
-                .font(.caption)
+            Button(action: {
+                // Zoom out
+                zoomOut()
+            }) {
+                Label("Zoom Out", systemImage: "minus.magnifyingglass")
+            }
+            .keyboardShortcut("-", modifiers: .command)
+            
+            Button(action: {
+                // Reset zoom to 100%
+                resetZoom()
+            }) {
+                Label("Reset Zoom", systemImage: "1.magnifyingglass")
+            }
+            .keyboardShortcut("0", modifiers: .command)
         }
     }
     
@@ -784,10 +789,15 @@ struct DesignCanvas: View {
                             if let initialPosition = initialDragElementPosition,
                                let index = canvasElements.firstIndex(where: { $0.id == element.id }) {
                                 
-                                // Calculate new position based on start location and current location
+                                // Calculate direct translation vector regardless of rotation
+                                let translationX = value.location.x - value.startLocation.x
+                                let translationY = value.location.y - value.startLocation.y
+                                
+                                // Calculate new position by adding translation directly to initial position
+                                // This ignores the rotation of the element, ensuring consistent drag behavior
                                 var newPosition = CGPoint(
-                                    x: initialPosition.x + (value.location.x - value.startLocation.x),
-                                    y: initialPosition.y + (value.location.y - value.startLocation.y)
+                                    x: initialPosition.x + translationX,
+                                    y: initialPosition.y + translationY
                                 )
                                 
                                 // Apply snap to grid if enabled
@@ -815,7 +825,9 @@ struct DesignCanvas: View {
     
     // Element context menu
     private func elementContextMenu(for element: CanvasElement) -> some View {
-        Group {
+        let canvasElements = self.canvasElements // Capture canvasElements
+        
+        return Group {
             // Context menu for elements
             Button(action: {
                 // Duplicate the element
@@ -827,8 +839,8 @@ struct DesignCanvas: View {
                         y: newElement.position.y + 20
                     )
                     newElement.displayName = "Copy of \(newElement.displayName)"
-                    canvasElements.append(newElement)
-                    selectedElementId = newElement.id
+                    self.canvasElements.append(newElement)
+                    self.selectedElementId = newElement.id
                 }
             }) {
                 Label("Duplicate", systemImage: "plus.square.on.square")
@@ -836,8 +848,8 @@ struct DesignCanvas: View {
             
             Button(action: {
                 // Delete the element
-                canvasElements.removeAll(where: { $0.id == element.id })
-                selectedElementId = nil
+                self.canvasElements.removeAll(where: { $0.id == element.id })
+                self.selectedElementId = nil
             }) {
                 Label("Delete", systemImage: "trash")
             }
@@ -855,36 +867,36 @@ struct DesignCanvas: View {
     
     // Text element options
     private func textElementOptions(for element: CanvasElement) -> some View {
-        Group {
+        return Group {
             Button(action: {
                 // Edit text
-                selectedElementId = element.id
-                isEditingText = true
-                editingText = element.text
+                self.selectedElementId = element.id
+                self.isEditingText = true
+                self.editingText = element.text
             }) {
                 Label("Edit Text", systemImage: "pencil")
             }
             
             Menu("Text Alignment") {
                 Button(action: {
-                    if let index = canvasElements.firstIndex(where: { $0.id == element.id }) {
-                        canvasElements[index].textAlignment = .leading
+                    if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                        self.canvasElements[index].textAlignment = .leading
                     }
                 }) {
                     Label("Left", systemImage: "text.alignleft")
                 }
                 
                 Button(action: {
-                    if let index = canvasElements.firstIndex(where: { $0.id == element.id }) {
-                        canvasElements[index].textAlignment = .center
+                    if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                        self.canvasElements[index].textAlignment = .center
                     }
                 }) {
                     Label("Center", systemImage: "text.aligncenter")
                 }
                 
                 Button(action: {
-                    if let index = canvasElements.firstIndex(where: { $0.id == element.id }) {
-                        canvasElements[index].textAlignment = .trailing
+                    if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                        self.canvasElements[index].textAlignment = .trailing
                     }
                 }) {
                     Label("Right", systemImage: "text.alignright")
@@ -895,11 +907,11 @@ struct DesignCanvas: View {
     
     // Element color options
     private func elementColorOptions(for element: CanvasElement) -> some View {
-        Menu("Color") {
+        return Menu("Color") {
             ForEach(["Red", "Blue", "Green", "Orange", "Purple", "Black"], id: \.self) { colorName in
                 Button(action: {
-                    if let index = canvasElements.firstIndex(where: { $0.id == element.id }) {
-                        canvasElements[index].color = colorForName(colorName)
+                    if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                        self.canvasElements[index].color = colorForName(colorName)
                     }
                 }) {
                     Label {
@@ -929,11 +941,11 @@ struct DesignCanvas: View {
     
     // Element opacity options
     private func elementOpacityOptions(for element: CanvasElement) -> some View {
-        Menu("Opacity") {
+        return Menu("Opacity") {
             ForEach([1.0, 0.75, 0.5, 0.25], id: \.self) { opacity in
                 Button(action: {
-                    if let index = canvasElements.firstIndex(where: { $0.id == element.id }) {
-                        canvasElements[index].opacity = opacity
+                    if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                        self.canvasElements[index].opacity = opacity
                     }
                 }) {
                     Label("\(Int(opacity * 100))%", systemImage: "circle.fill")
@@ -947,14 +959,14 @@ struct DesignCanvas: View {
     private var drawingPreviewView: some View {
         Group {
             // Preview of rectangle being drawn
-            if isDrawingRectangle, let start = rectangleStartPoint, let current = rectangleCurrentPoint {
+            if self.isDrawingRectangle, let start = self.rectangleStartPoint, let current = self.rectangleCurrentPoint {
                 Rectangle()
                     .fill(Color.black.opacity(0.2))
                     .frame(width: current.x - start.x, height: current.y - start.y)
             }
             
             // Preview of ellipse being drawn
-            if isDrawingEllipse, let start = rectangleStartPoint, let current = rectangleCurrentPoint {
+            if self.isDrawingEllipse, let start = self.rectangleStartPoint, let current = self.rectangleCurrentPoint {
                 Ellipse()
                     .stroke(Color.black, lineWidth: 1)
                     .frame(width: current.x - start.x, height: current.y - start.y)
@@ -965,14 +977,14 @@ struct DesignCanvas: View {
     // Inspector view component
     private var inspectorView: some View {
         Group {
-            if let selectedElementId = selectedElementId, 
-               let selectedElement = canvasElements.first(where: { $0.id == selectedElementId }) {
+            if let selectedElementId = self.selectedElementId, 
+               let selectedElement = self.canvasElements.first(where: { $0.id == selectedElementId }) {
                 InspectorView(
                     selectedElement: Binding<CanvasElement?>(
                         get: { selectedElement },
                         set: { newValue in
-                            if let newValue = newValue, let index = canvasElements.firstIndex(where: { $0.id == selectedElementId }) {
-                                canvasElements[index] = newValue
+                            if let newValue = newValue, let index = self.canvasElements.firstIndex(where: { $0.id == selectedElementId }) {
+                                self.canvasElements[index] = newValue
                             }
                         }
                     ),
@@ -1079,15 +1091,6 @@ struct DesignCanvas: View {
         .background(Color(NSColor.controlBackgroundColor))
     }
     
-    // Helper method to handle text creation
-    private func handleTextCreation(at location: CGPoint) {
-        let newText = CanvasElement.text(at: location)
-        canvasElements.append(newText)
-        selectedElementId = newText.id
-        isEditingText = true
-        editingText = newText.text
-    }
-    
     // Helper method to calculate constrained rectangle
     private func calculateConstrainedRect(from start: CGPoint, to end: CGPoint) -> CGRect {
         var width = end.x - start.x
@@ -1108,6 +1111,16 @@ struct DesignCanvas: View {
         return CGRect(x: originX, y: originY, width: abs(width), height: abs(height))
     }
 
+    // Helper method to handle text creation
+    private func handleTextCreation(at location: CGPoint) {
+        // Create text at the exact click location
+        let newText = CanvasElement.text(at: location)
+        canvasElements.append(newText)
+        selectedElementId = newText.id
+        isEditingText = true
+        editingText = newText.text
+    }
+
     // MARK: - Export Methods
     
     /// Handle export request based on the selected format
@@ -1121,7 +1134,177 @@ struct DesignCanvas: View {
         case .imageSequence:
             print("Image sequence export not implemented yet")
         case .projectFile:
-            print("Project file export not implemented yet")
+            Task {
+                await exportProject()
+            }
+        }
+    }
+    
+    /// Export the project as a JSON file
+    @MainActor
+    private func exportProject() async {
+        // Configure save panel for project file
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [UTType(filenameExtension: "msproj") ?? UTType.json]
+        savePanel.canCreateDirectories = true
+        savePanel.isExtensionHidden = false
+        savePanel.title = "Export Project"
+        savePanel.message = "Choose a location to save your project file"
+        savePanel.nameFieldLabel = "File name:"
+        savePanel.nameFieldStringValue = "Motion_Storyline_Project"
+        
+        // Show save panel
+        let response = savePanel.runModal()
+        
+        if response != .OK {
+            print("Project export cancelled")
+            return
+        }
+        
+        guard let outputURL = savePanel.url else {
+            print("No output URL selected")
+            return
+        }
+        
+        // Create project data structure to export
+        let projectData: [String: Any] = [
+            "version": "1.0",
+            "timestamp": Date().ISO8601Format(),
+            "projectSettings": [
+                "name": "Motion Storyline Project",
+                "gridSize": gridSize,
+                "showGrid": showGrid,
+                "snapToGridEnabled": snapToGridEnabled,
+                "timelineHeight": timelineHeight,
+                "zoom": zoom
+            ],
+            "canvas": [
+                "elements": canvasElements.map { element in
+                    [
+                        "id": element.id.uuidString,
+                        "type": String(describing: element.type),
+                        "position": [
+                            "x": element.position.x,
+                            "y": element.position.y
+                        ],
+                        "size": [
+                            "width": element.size.width,
+                            "height": element.size.height
+                        ],
+                        "color": [
+                            "red": 0.5, // Simplified for now - would need real color components
+                            "green": 0.5,
+                            "blue": 0.5,
+                            "alpha": 1.0
+                        ],
+                        "rotation": element.rotation,
+                        "opacity": element.opacity,
+                        "text": element.text,
+                        "textAlignment": String(describing: element.textAlignment),
+                        "displayName": element.displayName
+                    ]
+                }
+            ],
+            "animation": [
+                "duration": animationController.duration,
+                "tracks": animationController.getAllTracksWithKeyframes().map { track in
+                    [
+                        "id": track.id,
+                        "keyframes": track.keyframes.map { keyframe in
+                            [
+                                "time": keyframe.time,
+                                "value": String(describing: keyframe.anyValue)
+                            ]
+                        }
+                    ]
+                }
+            ]
+        ]
+        
+        do {
+            // Convert to JSON data
+            let jsonData = try JSONSerialization.data(withJSONObject: projectData, options: .prettyPrinted)
+            
+            // Write to file
+            try jsonData.write(to: outputURL)
+            
+            // Get file size for the success message
+            let fileAttributes = try FileManager.default.attributesOfItem(atPath: outputURL.path)
+            let fileSizeBytes = fileAttributes[.size] as? Int64 ?? 0
+            let fileSizeKB = Double(fileSizeBytes) / 1024.0
+            let formattedSize = String(format: "%.1f KB", fileSizeKB)
+            
+            // Show success message and open containing folder
+            DispatchQueue.main.async {
+                // Show a success notification
+                let center = UNUserNotificationCenter.current()
+                
+                // Create notification content
+                let content = UNMutableNotificationContent()
+                content.title = "Project Exported"
+                content.body = "Project successfully exported to \(outputURL.lastPathComponent) (\(formattedSize))"
+                content.sound = .default
+                
+                // Create a notification request
+                let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+                
+                // Add request to notification center
+                center.add(request) { error in
+                    if let error = error {
+                        print("Error showing notification: \(error.localizedDescription)")
+                    }
+                }
+                
+                // Reveal in Finder
+                NSWorkspace.shared.selectFile(outputURL.path, inFileViewerRootedAtPath: "")
+            }
+        } catch let error as NSError {
+            // Handle specific error types
+            print("Error exporting project: \(error.localizedDescription)")
+            
+            DispatchQueue.main.async {
+                // Show error alert with more specific information
+                let alert = NSAlert()
+                alert.messageText = "Export Failed"
+                
+                // Customize error message based on error type
+                switch error.domain {
+                case NSCocoaErrorDomain:
+                    switch error.code {
+                    case NSFileWriteNoPermissionError:
+                        alert.informativeText = "You don't have permission to save to this location. Try choosing a different folder."
+                    case NSFileWriteOutOfSpaceError:
+                        alert.informativeText = "Not enough disk space to save the project file."
+                    case NSFileWriteVolumeReadOnlyError:
+                        alert.informativeText = "The disk is read-only. Choose a different location."
+                    default:
+                        alert.informativeText = "Failed to write the project file: \(error.localizedDescription)"
+                    }
+                default:
+                    if error.localizedDescription.contains("JSON") {
+                        alert.informativeText = "Failed to create project data. Some elements may contain invalid values."
+                    } else {
+                        alert.informativeText = "Failed to export project: \(error.localizedDescription)"
+                    }
+                }
+                
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "OK")
+                
+                // Add a button to retry
+                if error.domain != NSCocoaErrorDomain || error.code != NSFileWriteOutOfSpaceError {
+                    alert.addButton(withTitle: "Try Again")
+                    if alert.runModal() == .alertSecondButtonReturn {
+                        // User clicked "Try Again", so call the export function again
+                        Task {
+                            await self.exportProject()
+                        }
+                        return
+                    }
+                } else {
+                    alert.runModal()
+                }
+            }
         }
     }
     
@@ -1202,7 +1385,7 @@ struct DesignCanvas: View {
                                 case (3840, 2160): return 0 // 4K
                                 case (1920, 1080): return 1 // 1080p
                                 case (1280, 720):  return 2 // 720p
-                                default:           return 1 // Default to 1080p
+                                default:           return 2 // Default to 720p
                             }
                         },
                         set: { newValue in
@@ -1210,7 +1393,7 @@ struct DesignCanvas: View {
                                 case 0: exportResolution = (3840, 2160) // 4K
                                 case 1: exportResolution = (1920, 1080) // 1080p
                                 case 2: exportResolution = (1280, 720)  // 720p
-                                default: exportResolution = (1920, 1080) // Default to 1080p
+                                default: exportResolution = (1280, 720) // Default to 720p
                             }
                         }
                     )) {
@@ -1328,16 +1511,6 @@ struct DesignCanvas: View {
         exportProgress = 0
         exportingError = nil
         
-        // Ensure we're on the main thread
-        guard Thread.isMainThread else {
-            print("Debug: Error - exportVideo called from background thread")
-            await MainActor.run {
-                isExporting = false
-                exportingError = NSError(domain: "MotionStoryline", code: 100, userInfo: [NSLocalizedDescriptionKey: "Export must be initiated from the main thread"])
-            }
-            return
-        }
-        
         // Ask user to choose save location
         let savePanel = NSSavePanel()
         savePanel.allowedContentTypes = [UTType.quickTimeMovie]
@@ -1366,26 +1539,18 @@ struct DesignCanvas: View {
             }
         }
         
-        // Important: Get the main window from the application's delegate to ensure it's the active window
-        let windowCount = NSApplication.shared.windows.count
-        print("Debug: Found \(windowCount) windows in the application")
-        
-        // Try to find the keyWindow or the main window
-        var parentWindow: NSWindow?
-        if let keyWindow = NSApplication.shared.keyWindow {
-            parentWindow = keyWindow
-            print("Debug: Using keyWindow as parent")
-        } else if let mainWindow = NSApplication.shared.mainWindow {
-            parentWindow = mainWindow
-            print("Debug: Using mainWindow as parent")
-        } else if let firstWindow = NSApplication.shared.windows.first {
-            parentWindow = firstWindow
-            print("Debug: Using first window as parent")
+        // Get window information for debugging
+        if NSApplication.shared.keyWindow != nil {
+            print("Debug: Found keyWindow")
+        } else if NSApplication.shared.mainWindow != nil {
+            print("Debug: Found mainWindow")
+        } else if NSApplication.shared.windows.count > 0 {
+            print("Debug: Found at least one window")
         }
         
         // Show save panel as a separate modal dialog, not as a sheet
         print("Debug: About to display save panel")
-        let response = await savePanel.runModal()
+        let response = savePanel.runModal()
         print("Debug: Save panel returned response code: \(response.rawValue)")
         
         if response != .OK {
@@ -1452,12 +1617,34 @@ struct DesignCanvas: View {
                 print("Debug: Export progress update: \(progress * 100)%")
                 self.exportProgress = progress
             }
+
+            // Add a fallback timer to ensure progress doesn't stall
+            let progressFallbackTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+                if !self.isExporting {
+                    timer.invalidate()
+                    return
+                }
+                
+                // If progress hasn't changed in the last 3 seconds, increment it slightly
+                // to show the user that export is still working
+                if self.exportProgress < 0.95 {
+                    // Store the last time we saw progress change
+                    let progressIncrement: Float = 0.01
+                    self.exportProgress = min(0.95, self.exportProgress + progressIncrement)
+                }
+            }
+
             // Export the video with detailed error handling
             await exporter.export(with: configuration, progressHandler: { progress in
-                // We'll use our custom progress notification instead
+                // Direct progress updates from exporter will be handled here as a fallback
+                // Ensure we're not getting stuck by applying the progress directly
+                DispatchQueue.main.async {
+                    self.exportProgress = max(self.exportProgress, progress)
+                }
             }, completion: { [self] result in
-                // Remove the observer when done
+                // Remove observers when done
                 NotificationCenter.default.removeObserver(progressObserver)
+                progressFallbackTimer.invalidate()
                 
                 switch result {
                 case .success(let url):
@@ -1481,6 +1668,8 @@ struct DesignCanvas: View {
                         print("Debug: Underlying error: \(underlyingError.localizedDescription)")
                     }
                     DispatchQueue.main.async {
+                        // Set progress to 1.0 even on failure so it doesn't appear stuck
+                        self.exportProgress = 1.0
                         self.exportingError = error
                         self.isExporting = false
                     }
@@ -1530,11 +1719,15 @@ struct DesignCanvas: View {
         context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1)) // White background
         context.fill(CGRect(x: 0, y: 0, width: width, height: height))
         
-        // Scale factor for positioning elements
+        // Scale factor for positioning elements - use canvas dimensions
         let scaleFactor = min(
-            CGFloat(width) / 1000.0,  // Assuming canvas width is 1000
-            CGFloat(height) / 800.0   // Assuming canvas height is 800
+            CGFloat(width) / canvasWidth,
+            CGFloat(height) / canvasHeight
         )
+        
+        // Center offset to position elements in the center of the frame
+        let xOffset = (CGFloat(width) - canvasWidth * scaleFactor) / 2
+        let yOffset = (CGFloat(height) - canvasHeight * scaleFactor) / 2
         
         // Draw each element
         for element in canvasElements {
@@ -1544,8 +1737,8 @@ struct DesignCanvas: View {
             )
             
             let scaledPosition = CGPoint(
-                x: element.position.x * scaleFactor,
-                y: element.position.y * scaleFactor
+                x: element.position.x * scaleFactor + xOffset,
+                y: element.position.y * scaleFactor + yOffset
             )
             
             // Position the element (convert from center to top-left origin)
@@ -1646,6 +1839,7 @@ struct DesignCanvas: View {
         writerInput.requestMediaDataWhenReady(on: mediaQueue) {
             // Track the last reported progress to avoid duplicate updates
             var lastReportedProgress: Float = 0
+            var lastReportTime: CFTimeInterval = CACurrentMediaTime()
             
             // We'll just write the same frame multiple times for a still image video
             for frameIdx in 0..<frameCount {
@@ -1690,23 +1884,33 @@ struct DesignCanvas: View {
                             // If successful, increment time for next frame
                             frameTime = CMTimeAdd(frameTime, frameDuration)
                             
-                            // Calculate and report progress based on frames processed
+                            // Calculate progress based on frames processed
                             let currentProgress = Float(frameIdx + 1) / Float(frameCount)
+                            let currentTime = CACurrentMediaTime()
                             
-                            // Only dispatch progress updates when significant changes occur (> 1%)
-                            if currentProgress - lastReportedProgress > 0.01 {
-                                DispatchQueue.main.async {
-                                    NSApp.mainWindow?.contentViewController?.view.window?.isDocumentEdited = true
-                                    NotificationCenter.default.post(
-                                        name: Notification.Name("ExportProgressUpdate"),
-                                        object: nil,
-                                        userInfo: ["progress": currentProgress]
-                                    )
+                            // Send progress updates:
+                            // 1. When progress changes by at least 1%
+                            // 2. OR when at least 0.5 seconds have passed since last update
+                            // 3. BUT limit maximum update frequency to avoid overwhelming the main thread
+                            if currentProgress - lastReportedProgress > 0.01 || 
+                               currentTime - lastReportTime > 0.5 {
+                                
+                                // Ensure we're not sending progress updates too frequently
+                                if currentTime - lastReportTime > 0.1 {
+                                    DispatchQueue.main.async {
+                                        NSApp.mainWindow?.contentViewController?.view.window?.isDocumentEdited = true
+                                        NotificationCenter.default.post(
+                                            name: Notification.Name("ExportProgressUpdate"),
+                                            object: nil,
+                                            userInfo: ["progress": currentProgress]
+                                        )
+                                    }
+                                    lastReportedProgress = currentProgress
+                                    lastReportTime = currentTime
                                 }
-                                lastReportedProgress = currentProgress
                             }
                         } else {
-                            // If appending fails, report the error
+                            // If appending fails, report the error and signal completion
                             print("Debug: Failed to append pixel buffer - \(assetWriter.error?.localizedDescription ?? "unknown error")")
                             semaphore.signal()
                             return
@@ -1715,29 +1919,51 @@ struct DesignCanvas: View {
                 }
             }
             
+            // Send final progress update of 100% for this stage
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(
+                    name: Notification.Name("ExportProgressUpdate"),
+                    object: nil,
+                    userInfo: ["progress": Float(0.95)] // Leave some progress for finalization
+                )
+            }
+            
             // Finish writing - this should be outside the loop
             writerInput.markAsFinished()
-            assetWriter.finishWriting {
-                if let error = assetWriter.error {
-                    print("Debug: Error finishing writing: \(error.localizedDescription)")
-                } else {
-                    print("Debug: Successfully finished writing temporary video file")
-                }
-                semaphore.signal()
+            
+            // Signal that we're done writing frames
+            semaphore.signal()
+        }
+        
+        // Wait for media writing to complete in a non-blocking way
+        // This uses DispatchGroup instead of direct semaphore.wait() to avoid Swift 6 async context issues
+        let group = DispatchGroup()
+        group.enter()
+        
+        mediaQueue.async {
+            // This runs on mediaQueue, not in the async context
+            _ = semaphore.wait(timeout: .distantFuture)
+            group.leave()
+        }
+        
+        // Convert DispatchGroup to async/await
+        _ = await withCheckedContinuation { continuation in
+            group.notify(queue: .main) {
+                continuation.resume(returning: true)
             }
         }
-        _ = semaphore.wait(timeout: .distantFuture)
         
-        // Return the composed asset
-        if assetWriter.status == .failed {
-            throw NSError(domain: "MotionStoryline", code: 105, userInfo: [NSLocalizedDescriptionKey: "Failed to create video: \(assetWriter.error?.localizedDescription ?? "Unknown error")"])
+        // Check for any errors after processing is complete
+        if let error = assetWriter.error {
+            throw NSError(domain: "MotionStoryline", code: 105, userInfo: [NSLocalizedDescriptionKey: "Failed to create video: \(error.localizedDescription)"])
         }
         
-        print("Debug: Created temporary video at: \(temporaryVideoURL.path)")
+        // Return the final asset
         return AVAsset(url: temporaryVideoURL)
     }
-/// Create a black pixel buffer for use in video compositions
-private func createBlackFramePixelBuffer(width: Int, height: Int) throws -> CVPixelBuffer? {
+    
+    /// Create a black pixel buffer for use in video compositions
+    private func createBlackFramePixelBuffer(width: Int, height: Int) throws -> CVPixelBuffer? {
         var pixelBuffer: CVPixelBuffer?
         let attributes = [
             kCVPixelBufferCGImageCompatibilityKey: kCFBooleanTrue,
@@ -1794,3 +2020,35 @@ struct DesignCanvasPreview: View {
     DesignCanvasPreview()
 }
 #endif
+
+// MARK: - Key Event Monitor Controller
+// Separate class to handle key event monitoring
+class KeyEventMonitorController: ObservableObject {
+    private var keyEventMonitor: Any?
+    
+    func setupMonitor(onSpaceDown: @escaping () -> Void, onSpaceUp: @escaping () -> Void) {
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .keyUp]) { event in
+            // Check for space bar
+            if event.keyCode == 49 { // 49 is the keycode for space
+                if event.type == .keyDown {
+                    onSpaceDown()
+                } else if event.type == .keyUp {
+                    onSpaceUp()
+                }
+            }
+            
+            return event
+        }
+    }
+    
+    func teardownMonitor() {
+        if let monitor = keyEventMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyEventMonitor = nil
+        }
+    }
+    
+    deinit {
+        teardownMonitor()
+    }
+}

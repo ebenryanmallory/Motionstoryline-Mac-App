@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-DesignStudio is a macOS application built with SwiftUI that provides a Figma-like design experience. The application allows users to create, manage, and edit design projects with a professional interface that includes project management, design canvas, and inspector tools.
+DesignStudio is a macOS application built with SwiftUI that provides a Figma-like design experience. The application allows users to create, manage, and edit design projects with a professional interface that includes project management, design canvas, and inspector tools. It also features advanced animation capabilities with keyframe editing and timeline controls.
 
 ## Development Environment
 
@@ -49,8 +49,21 @@ Motion Storyline/
 ├── HomeView.swift               # Project selection view
 ├── DesignCanvas.swift           # Main design workspace
 ├── SidebarView.swift            # Left navigation sidebar
-├── RightSidebarView.swift       # Properties and inspector panel
+├── InspectorView.swift          # Properties and inspector panel
 ├── FooterView.swift             # Status bar at bottom of app
+├── Animation/                   # Animation components
+│   ├── AnimationController.swift         # Core animation logic
+│   ├── TimelineView.swift                # Timeline UI
+│   ├── KeyframeEditorView.swift          # Keyframe editing
+│   ├── PropertyInspectorView.swift       # Animation properties
+│   └── AnimatableProperty.swift          # Animatable property definition
+├── Utilities/                   # Utility components
+│   ├── VideoExporter.swift                # Video export functionality
+│   └── MousePositionView.swift            # Mouse tracking
+├── Common/                      # Shared components
+│   └── ExportFormat.swift                 # Export format definitions
+├── UI Components/               # Reusable UI elements
+├── Canvas/                      # Canvas-related components
 ├── Info.plist                   # App configuration
 ├── Assets.xcassets/             # Images and resources
 └── Preview Content/             # Preview assets
@@ -82,6 +95,39 @@ The main workspace for design editing:
 - Top navigation bar with menus
 - Grid background with customizable visibility
 
+### Animation Components
+
+#### AnimationController.swift
+Core animation engine that provides:
+- Keyframe-based animation system
+- Multiple interpolation methods (linear, ease-in, ease-out, etc.)
+- Support for various animatable properties (position, size, opacity, color)
+- Timeline synchronization
+
+#### TimelineView.swift
+Timeline interface for animation control:
+- Timeline scrubbing
+- Playback controls (play, pause, stop)
+- Frame markers and time indicators
+- Track visualization
+
+#### KeyframeEditorView.swift
+Interface for editing keyframes:
+- Adding/removing keyframes
+- Adjusting keyframe timing
+- Setting easing functions
+- Multi-property editing
+
+### Utilities
+
+#### VideoExporter.swift
+Handles exporting animations to various formats:
+- Multiple video formats with quality settings
+- ProRes export options
+- Image sequence export
+- GIF generation
+- Progress reporting and error handling
+
 ### SidebarView.swift
 Left navigation sidebar providing:
 - Main app navigation (Home, Projects, Tasks, Settings)
@@ -89,7 +135,7 @@ Left navigation sidebar providing:
 - Dark mode toggle
 - Quick access to create new projects
 
-### RightSidebarView.swift
+### InspectorView.swift
 Properties and inspector panel:
 - Collapsible interface
 - Properties panel for adjusting element attributes
@@ -125,12 +171,24 @@ Represents a design project with:
    - Selection and transformation
    - Hand tool for canvas navigation
 
-3. **Inspector**
+3. **Animation System**
+   - Keyframe-based animation
+   - Timeline editor with playback controls
+   - Multiple interpolation methods and easing functions
+   - Property inspector for animation parameters
+
+4. **Export Capabilities**
+   - Video export with various quality options
+   - ProRes export for professional workflows
+   - Image sequence export
+   - GIF generation
+
+5. **Inspector**
    - Properties panel for adjusting element attributes
    - Transform controls (position, size, rotation)
    - Style controls (fill, stroke, effects)
 
-4. **Navigation**
+6. **Navigation**
    - Multi-level navigation (projects → canvas)
    - Sidebar for app-level navigation
    - Tab-based filtering of projects
@@ -142,6 +200,7 @@ Represents a design project with:
 - The UI is designed to be responsive with minimum size constraints
 - SwiftUI's `Canvas` is used for grid rendering
 - Custom components are created for specialized UI elements
+- AVFoundation is used for video export functionality
 
 ## Future Development Considerations
 
