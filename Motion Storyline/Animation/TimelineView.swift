@@ -1,85 +1,70 @@
 import SwiftUI
 import AppKit
 
-/// A view that displays a timeline with keyframes for a specific property
-struct TimelineView: View {
-    @ObservedObject var animationController: AnimationController
-    let propertyId: String
-    let propertyType: AnimatableProperty.PropertyType
-    @Binding var selectedKeyframeTime: Double?
-    @Binding var newKeyframeTime: Double
-    @Binding var isAddingKeyframe: Bool
-    @State var timelineScale: Double = 1.0
-    @Binding var timelineOffset: Double
-    var onAddKeyframe: (Double) -> Void
-    
-    var body: some View {
-        VStack(spacing: 4) {
-            // Timeline ruler
-            TimelineRuler(
-                duration: animationController.duration,
-                currentTime: $animationController.currentTime,
-                scale: timelineScale,
-                offset: $timelineOffset
-            )
-            .frame(height: 30)
-            
-            // Keyframes visualization
-            KeyframeTimelineView(
-                animationController: animationController,
-                propertyId: propertyId,
-                propertyType: propertyType,
-                currentTime: $animationController.currentTime,
-                selectedKeyframeTime: $selectedKeyframeTime,
-                newKeyframeTime: $newKeyframeTime,
-                isAddingKeyframe: $isAddingKeyframe,
-                scale: timelineScale,
-                offset: $timelineOffset,
-                onAddKeyframe: onAddKeyframe
-            )
-        }
-    }
-}
-
 /// Ruler component for the timeline
 struct TimelineRuler: View {
     let duration: Double
     @Binding var currentTime: Double
     let scale: Double
     @Binding var offset: Double
+    let keyframeTimes: [Double]
+    
+    // Snap threshold in seconds
+    private let snapThreshold: Double = 0.1
+    
+    // Convert time to position in the timeline
+    private func timeToPosition(_ time: Double, width: CGFloat) -> CGFloat {
+        return CGFloat(((time - offset) * scale / duration) * Double(width))
+    }
+    
+    /// Convert position to time in the timeline
+    private func positionToTime(_ position: CGFloat, width: CGFloat) -> Double {
+        return (Double(position) / Double(width)) * (duration / scale) + offset
+    }
+    
+    /// Snap to the closest significant time point (keyframe, whole second, or half second)
+    private func snapToClosestTimePoint(_ time: Double) -> Double {
+        // Points to snap to: keyframes, whole seconds, half seconds
+        var snapPoints = keyframeTimes
+        
+        // Add whole and half second points
+        for i in 0...Int(duration * 2) {
+            let tickTime = Double(i) / 2.0
+            if tickTime <= duration {
+                snapPoints.append(tickTime)
+            }
+        }
+        
+        // Find the closest snap point
+        if let closestPoint = snapPoints.min(by: { abs($0 - time) < abs($1 - time) }) {
+            // Snap only if we're within threshold
+            if abs(closestPoint - time) <= snapThreshold / scale {
+                return closestPoint
+            }
+        }
+        
+        // If no snap point is close enough, return the original time
+        return time
+    }
     
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .topLeading) {
+            ZStack {
                 // Background
                 Rectangle()
-                    .fill(Color(NSColor.controlBackgroundColor))
+                    .fill(Color(NSColor.controlBackgroundColor).opacity(0.5))
                 
                 // Time markers
-                ForEach(0...Int(duration * 2), id: \.self) { tick in
-                    let tickTime = Double(tick) / 2.0
+                ForEach(0...Int(duration * 2), id: \.self) { i in
+                    let tickTime = Double(i) / 2.0
                     if tickTime <= duration {
                         let x = timeToPosition(tickTime, width: geometry.size.width)
+                        let isWholeSec = i % 2 == 0
                         
-                        // Major tick (whole seconds)
-                        if tick % 2 == 0 {
-                            Rectangle()
-                                .fill(Color(NSColor.separatorColor))
-                                .frame(width: 1, height: 15)
-                                .position(x: x, y: 15)
-                            
-                            Text("\(Int(tickTime))s")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .position(x: x, y: 24)
-                        } 
-                        // Minor tick (half seconds)
-                        else {
-                            Rectangle()
-                                .fill(Color(NSColor.separatorColor))
-                                .frame(width: 1, height: 8)
-                                .position(x: x, y: 10)
-                        }
+                        Rectangle()
+                            .fill(Color.gray)
+                            .frame(width: isWholeSec ? 1 : 0.5, height: isWholeSec ? 10 : 5)
+                            .position(x: x, y: isWholeSec ? 10 : 8)
                     }
                 }
                 
@@ -103,16 +88,6 @@ struct TimelineRuler: View {
                     }
             )
         }
-    }
-    
-    /// Convert time to position in the timeline
-    private func timeToPosition(_ time: Double, width: CGFloat) -> CGFloat {
-        return CGFloat(((time - offset) * scale / duration) * Double(width))
-    }
-    
-    /// Convert position to time in the timeline
-    private func positionToTime(_ position: CGFloat, width: CGFloat) -> Double {
-        return (Double(position) / Double(width)) * (duration / scale) + offset
     }
 }
 
@@ -252,20 +227,115 @@ struct KeyframeTimelineView: View {
     }
     
     // Convert time to position in the timeline
-    func timeToPosition(_ time: Double, width: CGFloat) -> CGFloat {
+    private func timeToPosition(_ time: Double, width: CGFloat) -> CGFloat {
         return CGFloat(((time - offset) * scale / animationController.duration) * Double(width))
     }
     
     // Convert position to time in the timeline
-    func positionToTime(_ position: CGFloat, width: CGFloat) -> Double {
+    private func positionToTime(_ position: CGFloat, width: CGFloat) -> Double {
         return (Double(position) / Double(width)) * (animationController.duration / scale) + offset
     }
     
     // Find the nearest keyframe time to a given time
-    func findNearestKeyframeTime(to time: Double) -> Double? {
+    private func findNearestKeyframeTime(to time: Double) -> Double? {
         guard !keyframeTimes.isEmpty else { return nil }
         
         return keyframeTimes.min(by: { abs($0 - time) < abs($1 - time) })
+    }
+    
+    // Helper to create a bezier curve that mimics easing functions
+    private func getEasingCurve(fromX: CGFloat, toX: CGFloat, midY: CGFloat, ease: EasingFunction) -> (control1: CGPoint, control2: CGPoint) {
+        let width = toX - fromX
+        
+        switch ease {
+        case .linear:
+            return (
+                CGPoint(x: fromX + width * 0.33, y: midY),
+                CGPoint(x: fromX + width * 0.66, y: midY)
+            )
+        case .easeIn:
+            return (
+                CGPoint(x: fromX + width * 0.1, y: midY),
+                CGPoint(x: fromX + width * 0.7, y: midY)
+            )
+        case .easeOut:
+            return (
+                CGPoint(x: fromX + width * 0.3, y: midY),
+                CGPoint(x: fromX + width * 0.9, y: midY)
+            )
+        case .easeInOut:
+            return (
+                CGPoint(x: fromX + width * 0.25, y: midY),
+                CGPoint(x: fromX + width * 0.75, y: midY)
+            )
+        default:
+            return (
+                CGPoint(x: fromX + width * 0.33, y: midY),
+                CGPoint(x: fromX + width * 0.66, y: midY)
+            )
+        }
+    }
+}
+
+/// A view that displays a timeline with keyframes for a specific property
+struct TimelineView: View {
+    @ObservedObject var animationController: AnimationController
+    let propertyId: String
+    let propertyType: AnimatableProperty.PropertyType
+    @Binding var selectedKeyframeTime: Double?
+    @Binding var newKeyframeTime: Double
+    @Binding var isAddingKeyframe: Bool
+    @State var timelineScale: Double = 1.0
+    @Binding var timelineOffset: Double
+    var onAddKeyframe: (Double) -> Void
+    
+    // Computed property for keyframe times to pass to TimelineRuler
+    private var keyframeTimes: [Double] {
+        var times: Set<Double> = []
+        
+        let tracks = animationController.getAllTracks()
+        for trackId in tracks {
+            if let track = animationController.getTrack(id: trackId) as KeyframeTrack<CGPoint>? {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            } else if let track = animationController.getTrack(id: trackId) as KeyframeTrack<CGFloat>? {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            } else if let track = animationController.getTrack(id: trackId) as KeyframeTrack<Double>? {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            } else if let track = animationController.getTrack(id: trackId) as KeyframeTrack<Color>? {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            }
+        }
+        
+        return Array(times).sorted()
+    }
+    
+    var body: some View {
+        VStack(spacing: 4) {
+            // Timeline ruler
+            TimelineRuler(
+                duration: animationController.duration,
+                currentTime: $animationController.currentTime,
+                scale: timelineScale,
+                offset: $timelineOffset,
+                keyframeTimes: keyframeTimes  // Pass keyframe times for snapping
+            )
+            .frame(height: 30)
+            
+            // Keyframe timeline
+            KeyframeTimelineView(
+                animationController: animationController,
+                propertyId: propertyId,
+                propertyType: propertyType,
+                currentTime: $animationController.currentTime,
+                selectedKeyframeTime: $selectedKeyframeTime,
+                newKeyframeTime: $newKeyframeTime,
+                isAddingKeyframe: $isAddingKeyframe,
+                scale: timelineScale,
+                offset: $timelineOffset,
+                onAddKeyframe: onAddKeyframe
+            )
+            .frame(height: 80)
+        }
     }
 }
 

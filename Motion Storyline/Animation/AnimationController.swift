@@ -265,40 +265,42 @@ public class AnimationController: ObservableObject {
         self.duration = duration
         self.currentTime = 0.0
     }
-    /// Start animation playback
-    public func play() {
-        // Stop any existing timer
-        timer?.invalidate()
+/// Start animation playback
+public func play() {
+    // Stop any existing timer
+    timer?.invalidate()
+    
+    // Record the current time for accurate timing
+    lastUpdateTime = Date()
+    
+    // Update playing state
+    isPlaying = true
+    
+    // Create a new timer that fires at least 30 times per second (using 60 for smoother animation)
+    timer = Timer.scheduledTimer(withTimeInterval: 1/60, repeats: true) { [weak self] _ in
+        guard let self = self else { return }
         
-        // Record the current time for accurate timing
-        lastUpdateTime = Date()
-        
-        // Update playing state
-        isPlaying = true
-        
-        // Create a new timer that fires 60 times per second
-        // Create a new timer that fires 60 times per second
-        timer = Timer.scheduledTimer(withTimeInterval: 1/60, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
+        // Calculate elapsed time since last update
+        let now = Date()
+        if let lastUpdate = self.lastUpdateTime {
+            let elapsed = now.timeIntervalSince(lastUpdate)
+            self.lastUpdateTime = now
             
-            // Calculate elapsed time since last update
-            let now = Date()
-            if let lastUpdate = self.lastUpdateTime {
-                let elapsed = now.timeIntervalSince(lastUpdate)
-                self.lastUpdateTime = now
-                
-                // Update the current time
-                self.currentTime += elapsed
-                
-                // Loop back to the beginning if we reach the end
-                if self.currentTime >= self.duration {
-                    self.currentTime = 0.0
-                }
-                
-                // Update all animated properties
-                self.updateAnimatedProperties()
+            // Update the current time
+            self.currentTime += elapsed
+            
+            // Loop back to the beginning if we reach the end
+            if self.currentTime >= self.duration {
+                self.currentTime = 0.0
             }
+            
+            // Update all animated properties
+            self.updateAnimatedProperties()
         }
+    }
+    
+    // Ensure the timer runs on the main thread with high priority for smoother animation
+    RunLoop.main.add(timer!, forMode: .common)
     }
     
     /// Update all animated properties based on current time
@@ -375,12 +377,37 @@ public class AnimationController: ObservableObject {
         return keyframeTracks[id] as? KeyframeTrack<T>
     }
     
-    /// Remove a keyframe track
-    /// - Parameter id: The track id
-    public func removeTrack(id: String) {
-        keyframeTracks.removeValue(forKey: id)
-        propertyUpdateCallbacks.removeValue(forKey: id)
+/// Remove a keyframe track
+/// - Parameter id: The track id
+public func removeTrack(id: String) {
+    keyframeTracks.removeValue(forKey: id)
+    propertyUpdateCallbacks.removeValue(forKey: id)
+}
+
+/// Get all keyframe track IDs
+public func getAllTracks() -> [String] {
+    return Array(keyframeTracks.keys)
+}
+
+/// Get all keyframe times from all tracks
+public func getAllKeyframeTimes() -> [Double] {
+    var times: Set<Double> = []
+    
+    for trackId in getAllTracks() {
+        if let track = getTrack(id: trackId) as KeyframeTrack<CGPoint>? {
+            times.formUnion(track.allKeyframes.map { $0.time })
+        } else if let track = getTrack(id: trackId) as KeyframeTrack<CGFloat>? {
+            times.formUnion(track.allKeyframes.map { $0.time })
+        } else if let track = getTrack(id: trackId) as KeyframeTrack<Double>? {
+            times.formUnion(track.allKeyframes.map { $0.time })
+        } else if let track = getTrack(id: trackId) as KeyframeTrack<Color>? {
+            times.formUnion(track.allKeyframes.map { $0.time })
+        }
     }
+    
+    return Array(times).sorted()
+}
+    
     
     /// Add a keyframe to a track
     /// - Parameters:

@@ -49,6 +49,22 @@ struct Motion_StorylineApp: App {
                     }
                 }
             }
+            .onAppear {
+                // Configure window to prevent automatic snapping during resize
+                if let window = NSApplication.shared.windows.first {
+                    // Disable automatic collection behavior that might cause snapping
+                    window.collectionBehavior = [.managed, .participatesInCycle, .fullScreenPrimary]
+                    
+                    // Enable resizing and ensure it doesn't snap to screen edges
+                    window.styleMask.insert(.resizable)
+                    
+                    // Disable full screen transitions which can cause snapping
+                    window.animationBehavior = .documentWindow
+                    
+                    // Set a reasonable minimum size for the window
+                    window.minSize = NSSize(width: 800, height: 600)
+                }
+            }
         }
         .windowToolbarStyle(.unified)
         .commands {

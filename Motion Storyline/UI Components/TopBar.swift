@@ -16,6 +16,11 @@ struct CanvasTopBar: View {
     let onCheckForUpdates: () -> Void
     let onSignOut: () -> Void
     
+    // Zoom callbacks
+    let onZoomIn: () -> Void
+    let onZoomOut: () -> Void
+    let onZoomReset: () -> Void
+    
     @State private var isShowingMenu = false
     
     var body: some View {
@@ -66,10 +71,14 @@ struct CanvasTopBar: View {
             }
             
             // View menu
+            // View menu
             Menu {
-                Button("Zoom In", action: {})
-                Button("Zoom Out", action: {})
-                Button("Zoom to 100%", action: {})
+                Button("Zoom In", action: onZoomIn)
+                    .keyboardShortcut("+", modifiers: .command)
+                Button("Zoom Out", action: onZoomOut)
+                    .keyboardShortcut("-", modifiers: .command)
+                Button("Zoom to 100%", action: onZoomReset)
+                    .keyboardShortcut("0", modifiers: .command)
                 Divider()
                 Button("Show Grid", action: {})
                 Button("Show Rulers", action: {})
@@ -109,16 +118,55 @@ struct CanvasTopBar: View {
                 }
                 
                 Menu {
-                    Button("Export as Video") {
-                        onExport(.video)
+                    Menu("Export as Video") {
+                        Button("Standard MP4") {
+                            onExport(.video)
+                        }
+                        
+                        Divider()
+                        
+                        Text("ProRes Options:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Button("ProRes 422 Proxy") {
+                            // We'll handle the ProRes option in DesignCanvas
+                            onExport(.video)
+                        }
+                        
+                        Button("ProRes 422 LT") {
+                            onExport(.video)
+                        }
+                        
+                        Button("ProRes 422") {
+                            onExport(.video)
+                        }
+                        
+                        Button("ProRes 422 HQ") {
+                            onExport(.video)
+                        }
+                        
+                        Button("ProRes 4444") {
+                            onExport(.video)
+                        }
+                        
+                        Button("ProRes 4444 XQ") {
+                            onExport(.video)
+                        }
                     }
                     
                     Button("Export as GIF") {
                         onExport(.gif)
                     }
                     
-                    Button("Export as Image Sequence") {
-                        onExport(.imageSequence)
+                    Menu("Export as Image Sequence") {
+                        Button("PNG Sequence") {
+                            onExport(.imageSequence(.png))
+                        }
+                        
+                        Button("JPEG Sequence") {
+                            onExport(.imageSequence(.jpeg))
+                        }
                     }
                     
                     Divider()

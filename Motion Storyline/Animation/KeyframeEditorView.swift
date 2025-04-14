@@ -40,28 +40,34 @@ struct KeyframeEditorView: View {
                 
                 Divider()
                 
-                List(properties, selection: $selectedProperty) { property in
-                    HStack {
-                        Image(systemName: property.icon)
-                            .frame(width: 24)
-                        
-                        Text(property.name)
-                        
-                        Spacer()
-                        
-                        // Show active keyframe count
-                        if let count = getKeyframeCount(for: property.id) {
-                            Text("\(count)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color(NSColor.controlBackgroundColor))
-                                .cornerRadius(8)
+                List {
+                    ForEach(properties) { property in
+                        HStack {
+                            Image(systemName: property.icon)
+                                .frame(width: 24)
+                            
+                            Text(property.name)
+                            
+                            Spacer()
+                            
+                            // Show active keyframe count
+                            if let count = getKeyframeCount(for: property.id) {
+                                Text("\(count)")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color(NSColor.controlBackgroundColor))
+                                    .cornerRadius(8)
+                            }
+                        }
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                        .background(selectedProperty?.id == property.id ? Color(NSColor.selectedContentBackgroundColor) : Color.clear)
+                        .onTapGesture {
+                            selectedProperty = property
                         }
                     }
-                    .padding(.vertical, 4)
-                    .contentShape(Rectangle())
                 }
                 .listStyle(.sidebar)
             }
@@ -161,6 +167,7 @@ struct KeyframeEditorView: View {
                         )
                         .padding()
                         .frame(height: 200)
+                        .id(property.id) // Force view refresh when property changes
                     }
                 } else {
                     // Empty state
@@ -191,6 +198,10 @@ struct KeyframeEditorView: View {
                     setupTracksForSelectedElement(element)
                 }
             }
+        }
+        .onChange(of: selectedProperty) { newValue in
+            // Reset keyframe selection when property changes
+            selectedKeyframeTime = nil
         }
         .onAppear {
             // Setup tracks for the initially selected element, if any
