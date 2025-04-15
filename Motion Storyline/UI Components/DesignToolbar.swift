@@ -3,7 +3,7 @@ import AppKit
 
 // Enum defining the available design tools
 public enum DesignTool {
-    case select, text, rectangle, ellipse
+    case select, text, rectangle, ellipse, path
 }
 
 public struct DesignToolbar: View {
@@ -21,7 +21,8 @@ public struct DesignToolbar: View {
                     (DesignTool.select, "arrow.up.left.and.arrow.down.right", "Select & Move"),
                     (DesignTool.text, "text.cursor", "Text"),
                     (DesignTool.rectangle, "rectangle", "Rectangle"),
-                    (DesignTool.ellipse, "circle", "Ellipse")
+                    (DesignTool.ellipse, "circle", "Ellipse"),
+                    (DesignTool.path, "scribble", "Path")
                 ], id: \.0) { tool, icon, label in
                     Button(action: {
                         selectedTool = tool
@@ -83,6 +84,8 @@ public struct DesignToolbar: View {
             return "Click and drag to create a square. Hold Shift to create a rectangle with free proportions"
         case .ellipse:
             return "Click and drag to create a circle. Hold Shift to create an ellipse with free proportions"
+        case .path:
+            return "Click and drag to draw a path. Release to complete the path"
         default:
             return ""
         }
@@ -99,6 +102,8 @@ public struct DesignToolbar: View {
             return "Rectangle Tool: Click and drag to create rectangles"
         case .ellipse:
             return "Ellipse Tool: Click and drag to create ellipses and circles"
+        case .path:
+            return "Path Tool: Click and drag to draw custom paths"
         }
     }
 }

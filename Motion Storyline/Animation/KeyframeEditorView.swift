@@ -12,6 +12,9 @@ struct KeyframeEditorView: View {
     @State private var timelineScale: Double = 1.0
     @State private var timelineOffset: Double = 0.0
     
+    // Add keyboard shortcut controller
+    @StateObject private var keyEventController = KeyEventMonitorController()
+    
     // Dynamically generate properties based on the selected element
     private var properties: [AnimatableProperty] {
         guard let element = selectedElement else { return [] }
@@ -208,6 +211,13 @@ struct KeyframeEditorView: View {
             if let element = selectedElement {
                 setupTracksForSelectedElement(element)
             }
+            
+            // Setup keyboard shortcuts for timeline navigation
+            setupKeyboardShortcuts()
+        }
+        .onDisappear {
+            // Clean up keyboard shortcuts when view disappears
+            keyEventController.teardownMonitor()
         }
         .sheet(isPresented: $isAddingKeyframe) {
             if let property = selectedProperty {
@@ -225,18 +235,24 @@ struct KeyframeEditorView: View {
         }
     }
     
-    /// Get the number of keyframes for a property
-    private func getKeyframeCount(for propertyId: String) -> Int? {
-        if let track = animationController.getTrack(id: propertyId) as KeyframeTrack<CGPoint>? {
-            return track.allKeyframes.count
-        } else if let track = animationController.getTrack(id: propertyId) as KeyframeTrack<CGFloat>? {
-            return track.allKeyframes.count
-        } else if let track = animationController.getTrack(id: propertyId) as KeyframeTrack<Double>? {
-            return track.allKeyframes.count
-        } else if let track = animationController.getTrack(id: propertyId) as KeyframeTrack<Color>? {
-            return track.allKeyframes.count
-        }
-        return nil
+    /// Setup keyboard shortcuts for timeline navigation
+    private func setupKeyboardShortcuts() {
+        keyEventController.setupTimelineKeyboardShortcuts(
+            animationController: animationController,
+            selectedElement: selectedElement,
+            selectedKeyframeTime: $selectedKeyframeTime,
+            onAddKeyframe: { time in
+                // Add keyframe at the current time
+                newKeyframeTime = time
+                isAddingKeyframe = true
+            },
+            onDeleteKeyframe: { time in
+                // Delete the selected keyframe
+                if let property = selectedProperty {
+                    animationController.removeKeyframe(trackId: property.id, time: time)
+                }
+            }
+        )
     }
     
     /// Setup keyframe tracks for the selected element
@@ -245,7 +261,7 @@ struct KeyframeEditorView: View {
         
         // Position track
         let positionTrackId = "\(idPrefix)_position"
-        if animationController.getTrack(id: positionTrackId) as KeyframeTrack<CGPoint>? == nil {
+        if animationController.getTrack(id: positionTrackId) as? KeyframeTrack<CGPoint> == nil {
             let track = animationController.addTrack(id: positionTrackId) { (newPosition: CGPoint) in
                 // Update the element's position when the animation plays
                 if var updatedElement = selectedElement, updatedElement.id == element.id {
@@ -259,7 +275,7 @@ struct KeyframeEditorView: View {
         
         // Size track (using width as the animatable property for simplicity)
         let sizeTrackId = "\(idPrefix)_size"
-        if animationController.getTrack(id: sizeTrackId) as KeyframeTrack<CGFloat>? == nil {
+        if animationController.getTrack(id: sizeTrackId) as? KeyframeTrack<CGFloat> == nil {
             let track = animationController.addTrack(id: sizeTrackId) { (newSize: CGFloat) in
                 // Update the element's size when the animation plays
                 if var updatedElement = selectedElement, updatedElement.id == element.id {
@@ -279,7 +295,7 @@ struct KeyframeEditorView: View {
         
         // Rotation track
         let rotationTrackId = "\(idPrefix)_rotation"
-        if animationController.getTrack(id: rotationTrackId) as KeyframeTrack<Double>? == nil {
+        if animationController.getTrack(id: rotationTrackId) as? KeyframeTrack<Double> == nil {
             let track = animationController.addTrack(id: rotationTrackId) { (newRotation: Double) in
                 // Update the element's rotation when the animation plays
                 if var updatedElement = selectedElement, updatedElement.id == element.id {
@@ -293,7 +309,7 @@ struct KeyframeEditorView: View {
         
         // Color track
         let colorTrackId = "\(idPrefix)_color"
-        if animationController.getTrack(id: colorTrackId) as KeyframeTrack<Color>? == nil {
+        if animationController.getTrack(id: colorTrackId) as? KeyframeTrack<Color> == nil {
             let track = animationController.addTrack(id: colorTrackId) { (newColor: Color) in
                 // Update the element's color when the animation plays
                 if var updatedElement = selectedElement, updatedElement.id == element.id {
@@ -307,7 +323,7 @@ struct KeyframeEditorView: View {
         
         // Opacity track
         let opacityTrackId = "\(idPrefix)_opacity"
-        if animationController.getTrack(id: opacityTrackId) as KeyframeTrack<Double>? == nil {
+        if animationController.getTrack(id: opacityTrackId) as? KeyframeTrack<Double> == nil {
             let track = animationController.addTrack(id: opacityTrackId) { (newOpacity: Double) in
                 // Update the element's opacity when the animation plays
                 if var updatedElement = selectedElement, updatedElement.id == element.id {
@@ -318,6 +334,38 @@ struct KeyframeEditorView: View {
             // Add initial keyframe at time 0
             track.add(keyframe: Keyframe(time: 0.0, value: element.opacity))
         }
+        
+        // Path track - only for path elements
+        if element.type == .path {
+            let pathTrackId = "\(idPrefix)_path"
+            if animationController.getTrack(id: pathTrackId) as? KeyframeTrack<[CGPoint]> == nil {
+                let track = animationController.addTrack(id: pathTrackId) { (newPath: [CGPoint]) in
+                    // Update the element's path when the animation plays
+                    if var updatedElement = selectedElement, updatedElement.id == element.id {
+                        updatedElement.path = newPath
+                        selectedElement = updatedElement
+                    }
+                }
+                // Add initial keyframe at time 0
+                track.add(keyframe: Keyframe(time: 0.0, value: element.path))
+            }
+        }
+    }
+    
+    /// Get the number of keyframes for a property
+    private func getKeyframeCount(for propertyId: String) -> Int? {
+        if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<CGPoint> {
+            return track.allKeyframes.count
+        } else if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<CGFloat> {
+            return track.allKeyframes.count
+        } else if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<Double> {
+            return track.allKeyframes.count
+        } else if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<Color> {
+            return track.allKeyframes.count
+        } else if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<[CGPoint]> {
+            return track.allKeyframes.count
+        }
+        return nil
     }
 }
 

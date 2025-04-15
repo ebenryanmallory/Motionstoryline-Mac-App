@@ -29,31 +29,30 @@ struct CanvasElementView: View {
                 switch element.type {
                 case .rectangle:
                     Rectangle()
-                        .fill(element.color)
-                        .opacity(element.opacity)
+                        .fill(element.color.opacity(element.opacity))
+                        .frame(width: element.size.width, height: element.size.height)
+                        .contentShape(Rectangle())
                 case .ellipse:
                     Ellipse()
-                        .fill(element.color)
-                        .opacity(element.opacity)
+                        .fill(element.color.opacity(element.opacity))
+                        .frame(width: element.size.width, height: element.size.height)
+                        .contentShape(Ellipse())
                 case .text:
-                    // Use a VStack with full width to properly align the text
-                    VStack {
-                        Text(element.text)
-                            .foregroundColor(element.color)
-                            .opacity(element.opacity)
-                            .multilineTextAlignment(element.textAlignment)
-                            // Use the frame with alignment to ensure proper text positioning
-                            .frame(width: element.size.width, alignment: element.textAlignment == .leading ? .leading : 
-                                                                       element.textAlignment == .trailing ? .trailing : .center)
-                    }
-                    .frame(width: element.size.width, height: element.size.height)
+                    Text(element.text)
+                        .foregroundColor(element.color)
+                        .frame(width: element.size.width, height: element.size.height)
+                        .multilineTextAlignment(element.textAlignment)
+                        .opacity(element.opacity)
+                        .contentShape(Rectangle())
+                case .path:
+                    PathView(points: element.path, color: element.color, opacity: element.opacity)
+                        .frame(width: element.size.width, height: element.size.height)
                 default:
                     EmptyView()
                 }
             }
-            .frame(width: element.size.width, height: element.size.height)
             
-            // Selection overlay
+            // Selected element indicator - drawn on top
             if isSelected {
                 SelectionOverlay(
                     size: element.size,
@@ -64,7 +63,7 @@ struct CanvasElementView: View {
                 )
             }
             
-            // Temporary element style
+            // Draw temporary element outlines for dragging
             if isTemporary {
                 Group {
                     if element.type == .rectangle {
@@ -74,6 +73,9 @@ struct CanvasElementView: View {
                     } else if element.type == .ellipse {
                         Ellipse()
                             .stroke(Color.blue, style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
+                            .frame(width: element.size.width, height: element.size.height)
+                    } else if element.type == .path {
+                        PathView(points: element.path, color: .blue, opacity: 0.5, isOutlineOnly: true)
                             .frame(width: element.size.width, height: element.size.height)
                     }
                 }
@@ -90,6 +92,97 @@ struct CanvasElementView: View {
         .zIndex(isSelected ? 10 : 5)
         // Explicitly allow hit testing
         .allowsHitTesting(true)
+    }
+}
+
+struct PathView: View {
+    let points: [CGPoint]
+    let color: Color
+    let opacity: Double
+    var isOutlineOnly: Bool = false
+    
+    var body: some View {
+        GeometryReader { geometry in
+            if !points.isEmpty {
+                ZStack {
+                    // For filled paths
+                    if !isOutlineOnly && points.count > 2 {
+                        FilledPathShape(points: points.map { scalePoint($0, in: geometry) })
+                            .fill(color.opacity(opacity))
+                    }
+                    
+                    // For outline paths or paths with few points
+                    if isOutlineOnly || points.count <= 2 {
+                        StrokedPathShape(points: points.map { scalePoint($0, in: geometry) }, shouldClose: points.count > 2)
+                            .stroke(color.opacity(opacity), lineWidth: 2)
+                    }
+                }
+            }
+        }
+    }
+    
+    // Scale points to fit within the geometry bounds
+    private func scalePoint(_ point: CGPoint, in geometry: GeometryProxy) -> CGPoint {
+        return CGPoint(
+            x: point.x * geometry.size.width,
+            y: point.y * geometry.size.height
+        )
+    }
+}
+
+// Shape for filled paths
+struct FilledPathShape: Shape {
+    let points: [CGPoint]
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        
+        if let firstPoint = points.first {
+            path.move(to: firstPoint)
+            
+            for point in points.dropFirst() {
+                path.addLine(to: point)
+            }
+            
+            path.closeSubpath()
+        }
+        
+        return path
+    }
+}
+
+// Shape for stroked paths
+struct StrokedPathShape: Shape {
+    let points: [CGPoint]
+    let shouldClose: Bool
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        
+        if let firstPoint = points.first {
+            path.move(to: firstPoint)
+            
+            for point in points.dropFirst() {
+                path.addLine(to: point)
+            }
+            
+            if shouldClose {
+                path.closeSubpath()
+            }
+        }
+        
+        return path
+    }
+}
+
+// Helper extension for conditional view modifiers
+extension View {
+    @ViewBuilder func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
     }
 }
 

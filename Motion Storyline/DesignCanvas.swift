@@ -1,10 +1,19 @@
 import SwiftUI
 import AppKit
 @preconcurrency import AVFoundation
+import CoreGraphics
+import CoreImage
+import CoreMedia
 import UniformTypeIdentifiers
 import Foundation
-import CoreGraphics
 import UserNotifications
+// Add import for haptic feedback
+import Foundation
+
+// Import for haptic feedback
+import Foundation
+
+@preconcurrency import UniformTypeIdentifiers
 // Add import for Canvas components
 
 // Note: Components have been organized into folders:
@@ -100,6 +109,18 @@ struct DesignCanvas: View {
     @State private var canvasWidth: CGFloat = 1280
     @State private var canvasHeight: CGFloat = 720
     
+    // State variables for path drawing
+    @State private var isDrawingPath: Bool = false
+    @State private var pathPoints: [CGPoint] = []
+    @State private var currentPathPoint: CGPoint? = nil
+    
+    // Media management
+    @State private var showMediaBrowser = false
+    @State private var showCameraView = false
+    
+    // Before the handleExportRequest method, add these properties:
+    @State private var showBatchExportSettings = false
+    
     // Initialize animation controller with a test animation
     private func setupInitialAnimations() {
         // Setup the animation controller
@@ -123,7 +144,6 @@ struct DesignCanvas: View {
     
     // Camera recording state
     @State private var isRecording = false
-    @State private var showCameraView = false
     
     // Sample keyframes for demonstration
     let keyframes: [(String, Double, Double)] = [
@@ -168,104 +188,76 @@ struct DesignCanvas: View {
     }
 
     var body: some View {
-        mainContentView
-            .sheet(isPresented: $showCameraView) {
-                CameraRecordingView(isPresented: $showCameraView)
-            }
-            .sheet(isPresented: $showExportSettings) {
-                exportSettingsView
-            }
-            .overlay {
-                if isExporting {
-                    exportProgressView
+        ZStack {
+            mainContentView
+                .toolbar {
+                    // ... existing toolbar items ...
                 }
-            }
-            .alert(
-                "Export Error",
-                isPresented: Binding<Bool>(
-                    get: { exportingError != nil && !isExporting },
-                    set: { if !$0 { exportingError = nil } }
-                ),
-                presenting: exportingError
-            ) { error in
-                Button("OK") {
-                    exportingError = nil
+                .onAppear {
+                    // ... existing onAppear code ...
                 }
-            } message: { error in
-                if let videoError = error as? VideoExporter.ExportError {
-                    Text(videoError.localizedDescription)
-                } else {
-                    Text(error.localizedDescription)
+                .onChange(of: selectedElement) { oldValue, newValue in
+                    // ... existing onChange code ...
                 }
-            }
-            .onChange(of: selectedElementId) { oldValue, newValue in
-                if let id = newValue {
-                    selectedElement = canvasElements.first(where: { $0.id == id })
-                } else {
-                    selectedElement = nil
+                .onAppear {
+                    // ... existing onAppear code ...
                 }
-            }
-            .onChange(of: selectedElement) { oldValue, newValue in
-                if let updatedElement = newValue, let index = canvasElements.firstIndex(where: { $0.id == updatedElement.id }) {
-                    // Update the element in the canvasElements array to ensure it's rendered correctly
-                    canvasElements[index] = updatedElement
+                .onDisappear {
+                    // ... existing onDisappear code ...
                 }
+            
+            // Export sheet
+            if showExportSettings {
+                // ... existing export sheet code ...
             }
-            .onAppear {
-                // Setup initial animations
-                setupInitialAnimations()
-                // Setup key event monitor with the current state
-                keyMonitorController.setupMonitor(
-                    onSpaceDown: {
-                        self.isSpaceBarPressed = true
-                        NSCursor.closedHand.set()
-                    },
-                    onSpaceUp: {
-                        self.isSpaceBarPressed = false
-                        if self.selectedTool == .select {
-                            NSCursor.arrow.set()
-                        } else if self.selectedTool == .rectangle || self.selectedTool == .ellipse {
-                            NSCursor.crosshair.set()
-                        }
+        }
+        .sheet(isPresented: $showMediaBrowser) {
+            if let currentProject = appState.selectedProject {
+                // Use a binding for the project to update it when media is imported
+                MediaBrowserView(project: Binding<Project>(
+                    get: { currentProject },
+                    set: { updatedProject in
+                        // Update the project in the app state when it changes in the media browser
+                        appState.updateProject(updatedProject)
                     }
-                )
+                ))
+                .frame(minWidth: 800, minHeight: 600)
+                .interactiveDismissDisabled(false)
             }
-            .onDisappear {
-                keyMonitorController.teardownMonitor()
-            }
+        }
+        .sheet(isPresented: $showCameraView) {
+            CameraRecordingView(isPresented: $showCameraView)
+                .frame(minWidth: 800, minHeight: 600)
+        }
+        .sheet(isPresented: $showBatchExportSettings) {
+            // Reset the flag when sheet is dismissed
+            showBatchExportSettings = false
+        } content: {
+            BatchExportSettingsView(
+                projectName: appState.selectedProject?.name ?? "Motion_Storyline_Project",
+                onCreateComposition: { width, height, duration, frameRate in
+                    // Create the composition for export
+                    return try await createCompositionFromCanvas(
+                        width: width,
+                        height: height,
+                        duration: duration,
+                        frameRate: frameRate
+                    )
+                },
+                onDismiss: {
+                    showBatchExportSettings = false
+                }
+            )
+        }
     }
     
-    // Viewport drag gesture for panning when space is pressed
-    private var viewportDragGesture: some Gesture {
-        DragGesture()
-            .onChanged { value in
-                guard isSpaceBarPressed else { return }
-                
-                if dragStartLocation == nil {
-                    dragStartLocation = value.startLocation
-                }
-                
-                // Calculate new offset based on drag movement
-                viewportOffset = CGSize(
-                    width: viewportOffset.width + value.translation.width - (dragStartLocation?.x ?? 0),
-                    height: viewportOffset.height + value.translation.height - (dragStartLocation?.y ?? 0)
-                )
-                
-                // Update drag start location for next change
-                dragStartLocation = CGPoint(x: value.translation.width, y: value.translation.height)
-            }
-            .onEnded { _ in
-                guard isSpaceBarPressed else { return }
-                dragStartLocation = nil
-            }
-    }
-
-    // Main content view for better compiler performance
+    // MARK: - View Components
+    
     private var mainContentView: some View {
         VStack(spacing: 0) {
             // Top navigation bar
             CanvasTopBar(
-                projectName: "Motion Storyline",
+                projectName: appState.selectedProject?.name ?? "Motion Storyline",
                 onClose: {
                     appState.navigateToHome()
                 },
@@ -275,6 +267,9 @@ struct DesignCanvas: View {
                 onCameraRecord: {
                     showCameraView = true
                 },
+                onMediaLibrary: {
+                    showMediaBrowser = true
+                },
                 showAnimationPreview: $showAnimationPreview,
                 onExport: { format in
                     self.exportFormat = format
@@ -282,9 +277,6 @@ struct DesignCanvas: View {
                 },
                 onAccountSettings: {
                     print("Account settings action triggered")
-                },
-                onPreferences: {
-                    print("Preferences action triggered")
                 },
                 onHelpAndSupport: {
                     print("Help and support action triggered")
@@ -346,6 +338,20 @@ struct DesignCanvas: View {
     }
     
     // MARK: - View Components
+    
+    // Define viewport drag gesture for panning the canvas
+    private var viewportDragGesture: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                // Only pan when using the spacebar pan tool or middle mouse button
+                if selectedTool == .select {
+                    viewportOffset = CGSize(
+                        width: viewportOffset.width + value.translation.width,
+                        height: viewportOffset.height + value.translation.height
+                    )
+                }
+            }
+    }
     
     // Canvas content component
     private var canvasContentView: some View {
@@ -420,6 +426,9 @@ struct DesignCanvas: View {
                 } else if selectedTool == .select {
                     // Deselect the current element when clicking on empty canvas area
                     selectedElementId = nil
+                } else if selectedTool == .path {
+                    // Deselect the current element when clicking on empty canvas area
+                    selectedElementId = nil
                 }
             }
             .contextMenu {
@@ -433,6 +442,9 @@ struct DesignCanvas: View {
                     NSCursor.arrow.set()
                 } else if selectedTool == .rectangle || selectedTool == .ellipse {
                     // Change cursor to crosshair when in shape drawing mode
+                    NSCursor.crosshair.set()
+                } else if selectedTool == .path {
+                    // Change cursor to pen when in path drawing mode
                     NSCursor.crosshair.set()
                 }
             }
@@ -628,10 +640,10 @@ struct DesignCanvas: View {
         }
     }
     
-    // Canvas drawing gesture logic
+    // Canvas drawing gesture
     private var canvasDrawingGesture: some Gesture {
         selectedTool == .rectangle ? 
-        DragGesture()
+            DragGesture(minimumDistance: 4)
             .onChanged { value in
                 if !isDrawingRectangle {
                     // Start drawing rectangle
@@ -684,7 +696,7 @@ struct DesignCanvas: View {
                 }
             } : 
         selectedTool == .ellipse ? 
-        DragGesture()
+            DragGesture(minimumDistance: 4)
             .onChanged { value in
                 if !isDrawingEllipse {
                     // Start drawing ellipse
@@ -735,6 +747,68 @@ struct DesignCanvas: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                     aspectRatioInfoVisible = false
                 }
+            } :
+        selectedTool == .path ?
+            DragGesture(minimumDistance: 2)
+            .onChanged { value in
+                // Start path drawing if not already started
+                if !isDrawingPath {
+                    isDrawingPath = true
+                    pathPoints = [value.startLocation]
+                }
+                
+                // Add the current point to the path
+                pathPoints.append(value.location)
+                currentPathPoint = value.location
+            }
+            .onEnded { value in
+                // Finalize path
+                if isDrawingPath {
+                    // Only create path if it has enough points
+                    if pathPoints.count > 2 {
+                        // Calculate the bounds of the path to determine position and size
+                        let xPoints = pathPoints.map { $0.x }
+                        let yPoints = pathPoints.map { $0.y }
+                        
+                        let minX = xPoints.min() ?? 0
+                        let maxX = xPoints.max() ?? 0
+                        let minY = yPoints.min() ?? 0
+                        let maxY = yPoints.max() ?? 0
+                        
+                        let width = max(50, maxX - minX)
+                        let height = max(50, maxY - minY)
+                        let center = CGPoint(x: minX + width / 2, y: minY + height / 2)
+                        
+                        // Normalize the points relative to the element's coordinate space (0-1)
+                        let normalizedPoints = pathPoints.map { point in
+                            CGPoint(
+                                x: (point.x - minX) / width,
+                                y: (point.y - minY) / height
+                            )
+                        }
+                        
+                        // Create path element
+                        let newPath = CanvasElement.path(
+                            at: center,
+                            points: normalizedPoints
+                        )
+                        
+                        // Set the size based on the path bounds
+                        var mutablePath = newPath
+                        mutablePath.size = CGSize(width: width, height: height)
+                        
+                        // Add the path to the canvas
+                        canvasElements.append(mutablePath)
+                        
+                        // Select the new path
+                        selectedElementId = mutablePath.id
+                    }
+                }
+                
+                // Reset path drawing state
+                isDrawingPath = false
+                pathPoints = []
+                currentPathPoint = nil
             } :
         DragGesture().onChanged { _ in }.onEnded { _ in }
     }
@@ -971,6 +1045,22 @@ struct DesignCanvas: View {
                     .stroke(Color.black, lineWidth: 1)
                     .frame(width: current.x - start.x, height: current.y - start.y)
             }
+            
+            // Preview of path being drawn
+            if self.isDrawingPath && pathPoints.count > 1 {
+                Path { path in
+                    path.move(to: pathPoints.first!)
+                    
+                    for point in pathPoints.dropFirst() {
+                        path.addLine(to: point)
+                    }
+                    
+                    if let currentPoint = currentPathPoint {
+                        path.addLine(to: currentPoint)
+                    }
+                }
+                .stroke(Color.purple, lineWidth: 2)
+            }
         }
     }
     
@@ -1022,8 +1112,12 @@ struct DesignCanvas: View {
                         isPlaying.toggle()
                         if isPlaying {
                             animationController.play()
+                            // Provide play haptic feedback
+                            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
                         } else {
                             animationController.pause()
+                            // Provide pause haptic feedback
+                            NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
                         }
                     }) {
                         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
@@ -1031,12 +1125,14 @@ struct DesignCanvas: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .keyboardShortcut(.space, modifiers: [])
-                    .help(isPlaying ? "Pause Animation" : "Play Animation")
+                    .keyboardShortcut("p", modifiers: [])
+                    .help(isPlaying ? "Pause Animation (P)" : "Play Animation (P)")
                     
                     Button(action: {
                         animationController.reset()
                         isPlaying = false
+                        // Provide reset haptic feedback
+                        NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .default)
                     }) {
                         Image(systemName: "stop.fill")
                             .frame(width: 30, height: 20)
@@ -1044,7 +1140,7 @@ struct DesignCanvas: View {
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut("r", modifiers: [])
-                    .help("Reset Animation")
+                    .help("Reset Animation (R)")
                 }
                 
                 Spacer()
@@ -1137,6 +1233,9 @@ struct DesignCanvas: View {
             Task {
                 await exportProject()
             }
+        case .batchExport:
+            // Show batch export settings view
+            showBatchExportSettings = true
         }
     }
     
@@ -1691,7 +1790,7 @@ struct DesignCanvas: View {
         duration: Double,
         frameRate: Float
     ) async throws -> AVAsset {
-        // Create a simple blank video with a still image approach
+        // Create a video with animated frames
         let frameCount = Int(duration * Double(frameRate))
         let tempDir = FileManager.default.temporaryDirectory
         let temporaryVideoURL = tempDir.appendingPathComponent("temp_canvas_\(UUID().uuidString).mov")
@@ -1701,93 +1800,26 @@ struct DesignCanvas: View {
             try FileManager.default.removeItem(at: temporaryVideoURL)
         }
         
-        // Create a CGContext to render our frames into
-        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
-        guard let context = CGContext(
-            data: nil,
-            width: width,
-            height: height,
-            bitsPerComponent: 8,
-            bytesPerRow: width * 4,
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: bitmapInfo.rawValue
-        ) else {
-            throw NSError(domain: "MotionStoryline", code: 101, userInfo: [NSLocalizedDescriptionKey: "Failed to create graphics context"])
+        // Helper function to properly convert SwiftUI Color to CGColor
+        func convertToCGColor(_ color: Color) -> CGColor {
+            // Convert through NSColor to ensure consistent color space
+            let nsColor = NSColor(color) ?? NSColor.white
+            // Use sRGB color space for consistent rendering across canvas and export
+            let colorInRGB = nsColor.usingColorSpace(.sRGB) ?? nsColor
+            return colorInRGB.cgColor
         }
         
-        // Draw the canvas elements onto the context
-        context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1)) // White background
-        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        // Store the current animation state
+        let currentAnimationTime = animationController.currentTime
+        let isCurrentlyPlaying = animationController.isPlaying
         
-        // Scale factor for positioning elements - use canvas dimensions
-        let scaleFactor = min(
-            CGFloat(width) / canvasWidth,
-            CGFloat(height) / canvasHeight
-        )
-        
-        // Center offset to position elements in the center of the frame
-        let xOffset = (CGFloat(width) - canvasWidth * scaleFactor) / 2
-        let yOffset = (CGFloat(height) - canvasHeight * scaleFactor) / 2
-        
-        // Draw each element
-        for element in canvasElements {
-            let scaledSize = CGSize(
-                width: element.size.width * scaleFactor,
-                height: element.size.height * scaleFactor
-            )
-            
-            let scaledPosition = CGPoint(
-                x: element.position.x * scaleFactor + xOffset,
-                y: element.position.y * scaleFactor + yOffset
-            )
-            
-            // Position the element (convert from center to top-left origin)
-            let rect = CGRect(
-                x: scaledPosition.x - scaledSize.width / 2,
-                y: scaledPosition.y - scaledSize.height / 2,
-                width: scaledSize.width,
-                height: scaledSize.height
-            )
-            
-            // Save the context state before transformations
-            context.saveGState()
-            
-            // Apply rotation (around the center of the element)
-            context.translateBy(x: scaledPosition.x, y: scaledPosition.y)
-            context.rotate(by: element.rotation * .pi / 180)
-            context.translateBy(x: -scaledPosition.x, y: -scaledPosition.y)
-            
-            // Apply opacity
-            context.setAlpha(CGFloat(element.opacity))
-            
-            // Draw based on element type
-            switch element.type {
-            case .rectangle:
-                context.setFillColor(element.color.cgColor ?? CGColor(gray: 0, alpha: 1.0))
-                context.fill(rect)
-                
-            case .ellipse:
-                context.setFillColor(element.color.cgColor ?? CGColor(gray: 0, alpha: 1.0))
-                context.fillEllipse(in: rect)
-            case .text:
-                // For text, we'll draw a colored rectangle as a placeholder
-                // (Full text rendering would require Core Text)
-                context.setFillColor(element.color.cgColor ?? CGColor(gray: 0, alpha: 1.0))
-                context.fill(rect)
-            case .image, .video:
-                // Draw a placeholder for images/videos
-                context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
-                context.fill(rect)
-            }
-            
-            // Restore the context state
-            context.restoreGState()
+        // Pause the animation during export (if playing)
+        if isCurrentlyPlaying {
+            animationController.pause()
         }
         
-        // Create an image from the context
-        guard let image = context.makeImage() else {
-            throw NSError(domain: "MotionStoryline", code: 102, userInfo: [NSLocalizedDescriptionKey: "Failed to create image from context"])
-        }
+        // Create a copy of the current canvas elements to restore later
+        let originalElements = canvasElements
         
         // Create an asset writer to generate a video
         guard let assetWriter = try? AVAssetWriter(outputURL: temporaryVideoURL, fileType: .mov) else {
@@ -1828,6 +1860,19 @@ struct DesignCanvas: View {
         assetWriter.startWriting()
         assetWriter.startSession(atSourceTime: .zero)
         
+        // Bitmap info for context creation
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        
+        // Scale factor for positioning elements
+        let scaleFactor = min(
+            CGFloat(width) / canvasWidth,
+            CGFloat(height) / canvasHeight
+        )
+        
+        // Center offset to position elements in the center of the frame
+        let xOffset = (CGFloat(width) - canvasWidth * scaleFactor) / 2
+        let yOffset = (CGFloat(height) - canvasHeight * scaleFactor) / 2
+        
         // Write frames
         var frameTime = CMTime.zero
         let frameDuration = CMTime(value: 1, timescale: CMTimeScale(frameRate))
@@ -1841,9 +1886,198 @@ struct DesignCanvas: View {
             var lastReportedProgress: Float = 0
             var lastReportTime: CFTimeInterval = CACurrentMediaTime()
             
-            // We'll just write the same frame multiple times for a still image video
+            // Render each frame with the animation state at that time
             for frameIdx in 0..<frameCount {
                 if writerInput.isReadyForMoreMediaData {
+                    // Calculate time for this frame
+                    let frameTimeInSeconds = Double(frameIdx) / Double(frameRate)
+                    
+                    // Update animation controller to this time and update canvas elements
+                    DispatchQueue.main.sync {
+                        // Set animation time (this updates all animated properties)
+                        animationController.currentTime = frameTimeInSeconds
+                    }
+                    
+                    // Create a context for this frame
+                    guard let context = CGContext(
+                        data: nil,
+                        width: width,
+                        height: height,
+                        bitsPerComponent: 8,
+                        bytesPerRow: width * 4,
+                        space: CGColorSpaceCreateDeviceRGB(),
+                        bitmapInfo: bitmapInfo.rawValue
+                    ) else {
+                        continue
+                    }
+                    
+                    // Draw white background
+                    context.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1))
+                    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+                    
+                    // Get current elements state (which may have been updated by the animation controller)
+                    let elementsToRender = canvasElements
+                    
+                    // Draw each element
+                    for element in elementsToRender {
+                        let scaledSize = CGSize(
+                            width: element.size.width * scaleFactor,
+                            height: element.size.height * scaleFactor
+                        )
+                        
+                        let scaledPosition = CGPoint(
+                            x: element.position.x * scaleFactor + xOffset,
+                            y: element.position.y * scaleFactor + yOffset
+                        )
+                        
+                        // Position the element (convert from center to top-left origin)
+                        let rect = CGRect(
+                            x: scaledPosition.x - scaledSize.width / 2,
+                            y: scaledPosition.y - scaledSize.height / 2,
+                            width: scaledSize.width,
+                            height: scaledSize.height
+                        )
+                        
+                        // Save the context state before transformations
+                        context.saveGState()
+                        
+                        // Apply rotation (around the center of the element)
+                        context.translateBy(x: scaledPosition.x, y: scaledPosition.y)
+                        context.rotate(by: element.rotation * .pi / 180)
+                        context.translateBy(x: -scaledPosition.x, y: -scaledPosition.y)
+                        
+                        // Apply opacity
+                        context.setAlpha(CGFloat(element.opacity))
+                        
+                        // Draw based on element type
+                        switch element.type {
+                        case .rectangle:
+                            // Save graphics state
+                            context.saveGState()
+                            
+                            // Apply opacity to the fill color
+                            let fillColor = convertToCGColor(element.color)
+                            context.setFillColor(fillColor)
+                            context.setAlpha(element.opacity)
+                            
+                            // Draw the rectangle
+                            context.fill(rect)
+                            
+                            // Restore graphics state
+                            context.restoreGState()
+                        case .ellipse:
+                            // Save graphics state
+                            context.saveGState()
+                            
+                            // Apply opacity to the fill color
+                            let fillColor = convertToCGColor(element.color)
+                            context.setFillColor(fillColor)
+                            context.setAlpha(element.opacity)
+                            
+                            // Draw the ellipse
+                            context.fillEllipse(in: rect)
+                            
+                            // Restore graphics state
+                            context.restoreGState()
+                        case .path:
+                            // Save graphics state
+                            context.saveGState()
+                            
+                            // Set stroke color and width
+                            let pathColor = convertToCGColor(element.color)
+                            context.setStrokeColor(pathColor)
+                            context.setAlpha(element.opacity)
+                            context.setLineWidth(2.0)
+                            
+                            // Draw the path if points are available
+                            if element.path.count > 1 {
+                                context.beginPath()
+                                
+                                // Scale points to the element rect
+                                let scaledPoints = element.path.map { point in
+                                    CGPoint(
+                                        x: rect.origin.x + point.x * rect.width,
+                                        y: rect.origin.y + point.y * rect.height
+                                    )
+                                }
+                                
+                                // Start at the first point
+                                context.move(to: scaledPoints[0])
+                                
+                                // Add lines to remaining points
+                                for point in scaledPoints.dropFirst() {
+                                    context.addLine(to: point)
+                                }
+                                
+                                // Stroke the path
+                                context.strokePath()
+                            }
+                            
+                            // Restore graphics state
+                            context.restoreGState()
+                        case .text:
+                            // Implement proper text rendering using Core Text
+                            let attributedString = NSAttributedString(
+                                string: element.text,
+                                attributes: [
+                                    // Use a size relative to the element's height for better proportional scaling
+                                    .font: NSFont.systemFont(ofSize: min(rect.height * 0.7, 36)),
+                                    // Ensure consistent color conversion
+                                    .foregroundColor: {
+                                        // First create NSColor from SwiftUI Color
+                                        let nsColor = NSColor(element.color) ?? NSColor.white
+                                        // Then try to use a consistent color space
+                                        return nsColor.usingColorSpace(.sRGB) ?? nsColor
+                                    }(),
+                                    .paragraphStyle: {
+                                        let style = NSMutableParagraphStyle()
+                                        switch element.textAlignment {
+                                        case .leading:
+                                            style.alignment = .left
+                                        case .center:
+                                            style.alignment = .center
+                                        case .trailing:
+                                            style.alignment = .right
+                                        default:
+                                            style.alignment = .left
+                                        }
+                                        return style
+                                    }()
+                                ]
+                            )
+                            
+                            // Save the graphics state before drawing text
+                            context.saveGState()
+                            
+                            // Apply element opacity to the entire text
+                            context.setAlpha(element.opacity)
+                            
+                            // Create the text frame to draw in
+                            let textPath = CGPath(rect: rect, transform: nil)
+                            let frameSetter = CTFramesetterCreateWithAttributedString(attributedString)
+                            let textFrame = CTFramesetterCreateFrame(frameSetter, CFRange(location: 0, length: attributedString.length), textPath, nil)
+                            
+                            // Draw the text
+                            CTFrameDraw(textFrame, context)
+                            
+                            // Restore the graphics state after drawing
+                            context.restoreGState()
+                        case .image, .video:
+                            // Draw a placeholder for images/videos
+                            context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
+                            context.fill(rect)
+                        }
+                        
+                        // Restore the context state
+                        context.restoreGState()
+                    }
+                    
+                    // Create an image from the context
+                    guard let image = context.makeImage() else {
+                        continue
+                    }
+                    
+                    // Create a pixel buffer
                     var pixelBuffer: CVPixelBuffer?
                     let status = CVPixelBufferCreate(
                         kCFAllocatorDefault,
@@ -1888,17 +2122,13 @@ struct DesignCanvas: View {
                             let currentProgress = Float(frameIdx + 1) / Float(frameCount)
                             let currentTime = CACurrentMediaTime()
                             
-                            // Send progress updates:
-                            // 1. When progress changes by at least 1%
-                            // 2. OR when at least 0.5 seconds have passed since last update
-                            // 3. BUT limit maximum update frequency to avoid overwhelming the main thread
+                            // Send progress updates
                             if currentProgress - lastReportedProgress > 0.01 || 
                                currentTime - lastReportTime > 0.5 {
                                 
                                 // Ensure we're not sending progress updates too frequently
                                 if currentTime - lastReportTime > 0.1 {
                                     DispatchQueue.main.async {
-                                        NSApp.mainWindow?.contentViewController?.view.window?.isDocumentEdited = true
                                         NotificationCenter.default.post(
                                             name: Notification.Name("ExportProgressUpdate"),
                                             object: nil,
@@ -1912,6 +2142,16 @@ struct DesignCanvas: View {
                         } else {
                             // If appending fails, report the error and signal completion
                             print("Debug: Failed to append pixel buffer - \(assetWriter.error?.localizedDescription ?? "unknown error")")
+                            
+                            // Restore original animation state
+                            DispatchQueue.main.async {
+                                self.canvasElements = originalElements
+                                self.animationController.currentTime = currentAnimationTime
+                                if isCurrentlyPlaying {
+                                    self.animationController.play()
+                                }
+                            }
+                            
                             semaphore.signal()
                             return
                         }
@@ -1919,29 +2159,36 @@ struct DesignCanvas: View {
                 }
             }
             
-            // Send final progress update of 100% for this stage
+            // Send final progress update
             DispatchQueue.main.async {
                 NotificationCenter.default.post(
                     name: Notification.Name("ExportProgressUpdate"),
                     object: nil,
-                    userInfo: ["progress": Float(0.95)] // Leave some progress for finalization
+                    userInfo: ["progress": Float(0.95)]
                 )
             }
             
-            // Finish writing - this should be outside the loop
+            // Restore original animation state
+            DispatchQueue.main.async {
+                self.canvasElements = originalElements
+                self.animationController.currentTime = currentAnimationTime
+                if isCurrentlyPlaying {
+                    self.animationController.play()
+                }
+            }
+            
+            // Finish writing
             writerInput.markAsFinished()
             
-            // Signal that we're done writing frames
+            // Signal completion
             semaphore.signal()
         }
         
         // Wait for media writing to complete in a non-blocking way
-        // This uses DispatchGroup instead of direct semaphore.wait() to avoid Swift 6 async context issues
         let group = DispatchGroup()
         group.enter()
         
         mediaQueue.async {
-            // This runs on mediaQueue, not in the async context
             _ = semaphore.wait(timeout: .distantFuture)
             group.leave()
         }
@@ -1949,6 +2196,8 @@ struct DesignCanvas: View {
         // Convert DispatchGroup to async/await
         _ = await withCheckedContinuation { continuation in
             group.notify(queue: .main) {
+                // Provide haptic feedback when export is completed
+                NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
                 continuation.resume(returning: true)
             }
         }
@@ -2050,5 +2299,127 @@ class KeyEventMonitorController: ObservableObject {
     
     deinit {
         teardownMonitor()
+    }
+}
+
+// MARK: - Timeline Keyboard Shortcuts Extension
+extension KeyEventMonitorController {
+    /// Setup keyboard shortcuts for timeline navigation and keyframe manipulation
+    func setupTimelineKeyboardShortcuts(
+        animationController: AnimationController,
+        selectedElement: CanvasElement?,
+        selectedKeyframeTime: Binding<Double?>,
+        onAddKeyframe: @escaping (Double) -> Void,
+        onDeleteKeyframe: @escaping (Double) -> Void
+    ) {
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak animationController, weak self] event in
+            guard let animationController = animationController, let self = self else { return event }
+            
+            // Only process events if we have focus (not in a text field, etc.)
+            guard !NSApp.isActive || !(NSApp.keyWindow?.firstResponder is NSTextView) else {
+                return event
+            }
+            
+            switch event.keyCode {
+            // Left arrow key - move back by 0.1 seconds
+            case 123:
+                let newTime = max(0, animationController.currentTime - 0.1)
+                animationController.seek(to: newTime)
+                return nil // Consume the event
+                
+            // Right arrow key - move forward by 0.1 seconds
+            case 124:
+                let newTime = min(animationController.duration, animationController.currentTime + 0.1)
+                animationController.seek(to: newTime)
+                return nil // Consume the event
+                
+            // K key - add keyframe at current time
+            case 40: // K key
+                if selectedElement != nil {
+                    onAddKeyframe(animationController.currentTime)
+                }
+                return nil // Consume the event
+                
+            // Delete or Backspace key - delete selected keyframe
+            case 51, 117: // Backspace or Delete
+                if let time = selectedKeyframeTime.wrappedValue {
+                    onDeleteKeyframe(time)
+                    selectedKeyframeTime.wrappedValue = nil
+                }
+                return nil // Consume the event
+                
+            // Tab key - jump to next keyframe
+            case 48: // Tab
+                if let nextKeyframeTime = self.findNextKeyframeTime(after: animationController.currentTime, in: animationController) {
+                    animationController.seek(to: nextKeyframeTime)
+                }
+                return nil // Consume the event
+                
+            // Shift + Tab key - jump to previous keyframe
+            case 48 where event.modifierFlags.contains(.shift): // Shift+Tab
+                if let prevKeyframeTime = self.findPreviousKeyframeTime(before: animationController.currentTime, in: animationController) {
+                    animationController.seek(to: prevKeyframeTime)
+                }
+                return nil // Consume the event
+                
+            // P key - toggle playback (changed from space)
+            case 35: // P key
+                if animationController.isPlaying {
+                    animationController.pause()
+                } else {
+                    animationController.play()
+                }
+                return nil // Consume the event
+                
+            // Home key - go to beginning of timeline
+            case 115: // Home
+                animationController.seek(to: 0)
+                return nil // Consume the event
+                
+            // End key - go to end of timeline
+            case 119: // End
+                animationController.seek(to: animationController.duration)
+                return nil // Consume the event
+                
+            default:
+                break
+            }
+            
+            return event
+        }
+    }
+    
+    /// Find the next keyframe time after the specified time
+    private func findNextKeyframeTime(after time: Double, in animationController: AnimationController) -> Double? {
+        let allKeyframeTimes = getAllKeyframeTimes(from: animationController)
+        return allKeyframeTimes.first { $0 > time }
+    }
+    
+    /// Find the previous keyframe time before the specified time
+    private func findPreviousKeyframeTime(before time: Double, in animationController: AnimationController) -> Double? {
+        let allKeyframeTimes = getAllKeyframeTimes(from: animationController)
+        return allKeyframeTimes.last { $0 < time }
+    }
+    
+    /// Get all keyframe times from all tracks in the animation controller
+    private func getAllKeyframeTimes(from animationController: AnimationController) -> [Double] {
+        var times: Set<Double> = []
+        
+        let tracks = animationController.getAllTracks()
+        for trackId in tracks {
+            if let track = animationController.getTrack(id: trackId) as? KeyframeTrack<CGPoint> {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            } else if let track = animationController.getTrack(id: trackId) as? KeyframeTrack<CGFloat> {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            } else if let track = animationController.getTrack(id: trackId) as? KeyframeTrack<Double> {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            } else if let track = animationController.getTrack(id: trackId) as? KeyframeTrack<Color> {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            } else if let track = animationController.getTrack(id: trackId) as? KeyframeTrack<[CGPoint]> {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            }
+        }
+        
+        return Array(times).sorted()
     }
 }

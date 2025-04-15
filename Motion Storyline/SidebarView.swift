@@ -3,8 +3,8 @@ import SwiftUI
 struct SidebarView: View {
     @Binding var selectedItem: String?
     @Binding var searchText: String
-    @Binding var isDarkMode: Bool
     @Binding var isCreatingNewProject: Bool
+    @EnvironmentObject var appState: AppStateManager
     
     let sidebarItems = ["Home", "Projects", "Tasks", "Settings"]
     
@@ -34,7 +34,10 @@ struct SidebarView: View {
                         .textFieldStyle(.roundedBorder)
                         .padding(.vertical, 5)
                     
-                    Toggle("Dark Mode", isOn: $isDarkMode)
+                    Toggle("Dark Mode", isOn: Binding<Bool>(
+                        get: { appState.isDarkMode },
+                        set: { _ in appState.toggleAppearance() }
+                    ))
                         .toggleStyle(.switch)
                     
                     Button(action: {
@@ -71,8 +74,8 @@ struct SidebarView: View {
     SidebarView(
         selectedItem: .constant("Home"),
         searchText: .constant(""),
-        isDarkMode: .constant(false),
         isCreatingNewProject: .constant(false)
     )
+    .environmentObject(AppStateManager())
 } 
 #endif

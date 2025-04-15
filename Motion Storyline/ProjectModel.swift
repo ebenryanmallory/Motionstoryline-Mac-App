@@ -31,23 +31,23 @@ extension Image {
     }
 }
 
-struct MediaAsset: Identifiable, Hashable, Codable {
-    let id: UUID
-    var name: String
-    var type: MediaType
-    var url: URL
-    var duration: TimeInterval?
-    var thumbnail: String?
-    var dateAdded: Date
+public struct MediaAsset: Identifiable, Hashable, Codable {
+    public let id: UUID
+    public var name: String
+    public var type: MediaType
+    public var url: URL
+    public var duration: TimeInterval?
+    public var thumbnail: String?
+    public var dateAdded: Date
     
-    enum MediaType: String, Codable {
+    public enum MediaType: String, Codable {
         case video
         case audio
         case image
         case cameraRecording
     }
     
-    init(id: UUID = UUID(), name: String, type: MediaType, url: URL, 
+    public init(id: UUID = UUID(), name: String, type: MediaType, url: URL, 
          duration: TimeInterval? = nil, thumbnail: String? = nil, dateAdded: Date = Date()) {
         self.id = id
         self.name = name
@@ -58,28 +58,28 @@ struct MediaAsset: Identifiable, Hashable, Codable {
         self.dateAdded = dateAdded
     }
     
-    static func == (lhs: MediaAsset, rhs: MediaAsset) -> Bool {
+    public static func == (lhs: MediaAsset, rhs: MediaAsset) -> Bool {
         lhs.id == rhs.id
     }
     
-    func hash(into hasher: inout Hasher) {
+    public func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
 }
 
-struct Project: Identifiable, Hashable, Codable {
-    let id: UUID
-    var name: String
-    var thumbnail: String
-    var lastModified: Date
-    var mediaAssets: [MediaAsset] = []
+public struct Project: Identifiable, Hashable, Codable {
+    public let id: UUID
+    public var name: String
+    public var thumbnail: String
+    public var lastModified: Date
+    public var mediaAssets: [MediaAsset] = []
     
     // Viewport settings
-    var zoomLevel: CGFloat = 1.0
-    var panOffsetX: CGFloat = 0.0
-    var panOffsetY: CGFloat = 0.0
+    public var zoomLevel: CGFloat = 1.0
+    public var panOffsetX: CGFloat = 0.0
+    public var panOffsetY: CGFloat = 0.0
     
-    init(id: UUID = UUID(), name: String, thumbnail: String, lastModified: Date, 
+    public init(id: UUID = UUID(), name: String, thumbnail: String, lastModified: Date, 
          mediaAssets: [MediaAsset] = [],
          zoomLevel: CGFloat = 1.0, panOffsetX: CGFloat = 0.0, panOffsetY: CGFloat = 0.0) {
         self.id = id
@@ -92,15 +92,15 @@ struct Project: Identifiable, Hashable, Codable {
         self.panOffsetY = panOffsetY
     }
     
-    static func == (lhs: Project, rhs: Project) -> Bool {
+    public static func == (lhs: Project, rhs: Project) -> Bool {
         lhs.id == rhs.id
     }
     
-    func hash(into hasher: inout Hasher) {
+    public func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
     
-    mutating func addMediaAsset(_ asset: MediaAsset) {
+    public mutating func addMediaAsset(_ asset: MediaAsset) {
         mediaAssets.append(asset)
         lastModified = Date()
     }

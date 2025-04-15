@@ -1,16 +1,19 @@
 import SwiftUI
 
+// Import the PreferencesController
+import Foundation
+
 struct CanvasTopBar: View {
     let projectName: String
     let onClose: () -> Void
     let onNewFile: () -> Void
     let onCameraRecord: () -> Void
+    let onMediaLibrary: () -> Void
     
     // Add bindings and callbacks for the functionality
     @Binding var showAnimationPreview: Bool
     let onExport: (ExportFormat) -> Void
     let onAccountSettings: () -> Void
-    let onPreferences: () -> Void
     let onHelpAndSupport: () -> Void
     let onCheckForUpdates: () -> Void
     let onSignOut: () -> Void
@@ -70,7 +73,6 @@ struct CanvasTopBar: View {
             }
             
             // View menu
-            // View menu
             Menu {
                 Button("Zoom In", action: onZoomIn)
                     .keyboardShortcut("+", modifiers: .command)
@@ -86,6 +88,29 @@ struct CanvasTopBar: View {
                     .foregroundColor(.black)
             }
             
+            // Help menu
+            Menu {
+                Button("Keyboard Shortcuts") {
+                    AppStateManager.shared.showDocumentation(.keyboardShortcuts)
+                }
+                .keyboardShortcut("/", modifiers: .command)
+                
+                Button("VoiceOver Compatibility") {
+                    AppStateManager.shared.showDocumentation(.voiceOverCompatibility)
+                }
+                
+                Button("VoiceOver Testing Checklist") {
+                    AppStateManager.shared.showDocumentation(.voiceOverTestingChecklist)
+                }
+                
+                Divider()
+                
+                Button("Help Center", action: onHelpAndSupport)
+            } label: {
+                Text("Help")
+                    .foregroundColor(.black)
+            }
+            
             Divider()
                 .frame(height: 20)
             
@@ -97,6 +122,30 @@ struct CanvasTopBar: View {
             
             // Right side items
             HStack(spacing: 16) {
+                // Documentation buttons
+                HStack(spacing: 4) {
+                    DocumentationButton(
+                        documentationType: .keyboardShortcuts,
+                        compact: true
+                    )
+                    
+                    DocumentationButton(
+                        documentationType: .voiceOverCompatibility,
+                        compact: true
+                    )
+                }
+                
+                // Media Library Button
+                Button(action: onMediaLibrary) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "photo.on.rectangle")
+                        Text("Media")
+                    }
+                    .foregroundColor(.black)
+                }
+                .buttonStyle(.plain)
+                .help("Open Media Library")
+                
                 Button(action: onCameraRecord) {
                     Image(systemName: "camera.fill")
                         .foregroundColor(.black)
@@ -182,6 +231,15 @@ struct CanvasTopBar: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
+                    
+                    Divider()
+                    
+                    Button {
+                        onExport(.batchExport)
+                    } label: {
+                        Label("Batch Export Multiple Formats", systemImage: "square.stack.3d.down.right")
+                    }
+                    .help("Export multiple formats simultaneously with background processing")
                 } label: {
                     Image(systemName: "square.and.arrow.up")
                         .foregroundColor(.black)
@@ -194,7 +252,7 @@ struct CanvasTopBar: View {
                     }
                     
                     Button("Preferences") {
-                        onPreferences()
+                        self.showPreferences()
                     }
                     
                     Divider()

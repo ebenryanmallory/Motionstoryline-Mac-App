@@ -23,7 +23,8 @@ let package = Package(
                 "Motion_Storyline.entitlements"
             ],
             resources: [
-                .process("Assets.xcassets"),
+                // Use a specific copying rule for asset catalogs to preserve their structure
+                .copy("Assets.xcassets"),
                 .process("Preview Content"),
                 .process("README.md")
             ]

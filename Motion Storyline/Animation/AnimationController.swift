@@ -6,6 +6,10 @@ public enum EasingFunction: Hashable {
     case easeIn
     case easeOut
     case easeInOut
+    case bounce
+    case elastic
+    case spring
+    case sine
     case customCubicBezier(x1: Double, y1: Double, x2: Double, y2: Double)
     
     /// Explicitly implement hash(into:) to handle the customCubicBezier case
@@ -19,8 +23,16 @@ public enum EasingFunction: Hashable {
             hasher.combine(2)
         case .easeInOut:
             hasher.combine(3)
-        case let .customCubicBezier(x1, y1, x2, y2):
+        case .bounce:
             hasher.combine(4)
+        case .elastic:
+            hasher.combine(5)
+        case .spring:
+            hasher.combine(6)
+        case .sine:
+            hasher.combine(7)
+        case let .customCubicBezier(x1, y1, x2, y2):
+            hasher.combine(8)
             hasher.combine(x1)
             hasher.combine(y1)
             hasher.combine(x2)
@@ -34,7 +46,11 @@ public enum EasingFunction: Hashable {
         case (.linear, .linear), 
              (.easeIn, .easeIn),
              (.easeOut, .easeOut),
-             (.easeInOut, .easeInOut):
+             (.easeInOut, .easeInOut),
+             (.bounce, .bounce),
+             (.elastic, .elastic),
+             (.spring, .spring),
+             (.sine, .sine):
             return true
         case let (.customCubicBezier(lx1, ly1, lx2, ly2), 
                   .customCubicBezier(rx1, ry1, rx2, ry2)):
@@ -63,6 +79,35 @@ public enum EasingFunction: Hashable {
                 let t1 = t - 1
                 return 0.5 * t1 * t1 * t1 + 1
             }
+        case .bounce:
+            // Simple bounce implementation
+            if t < 1 / 2.75 {
+                return 7.5625 * t * t
+            } else if t < 2 / 2.75 {
+                let t1 = t - 1.5 / 2.75
+                return 7.5625 * t1 * t1 + 0.75
+            } else if t < 2.5 / 2.75 {
+                let t1 = t - 2.25 / 2.75
+                return 7.5625 * t1 * t1 + 0.9375
+            } else {
+                let t1 = t - 2.625 / 2.75
+                return 7.5625 * t1 * t1 + 0.984375
+            }
+        case .elastic:
+            // Simple elastic implementation
+            if t == 0 || t == 1 { return t }
+            let p = 0.3
+            let s = p / 4
+            let t1 = t - 1
+            return -pow(2, 10 * t1) * sin((t1 - s) * (2 * .pi) / p)
+        case .spring:
+            // Simple spring implementation
+            let s = 1.70158
+            let t1 = t - 1
+            return t1 * t1 * ((s + 1) * t1 + s) + 1
+        case .sine:
+            // Simple sine implementation
+            return sin(t * .pi / 2)
         case .customCubicBezier(let x1, let y1, let x2, let y2):
             // A simple approximation of cubic bezier for this implementation
             // For production, consider a more accurate bezier curve implementation
@@ -150,12 +195,67 @@ extension CGPoint: Interpolatable {
     }
 }
 
+// Add support for animating paths (arrays of CGPoints)
+extension Array: Interpolatable where Element == CGPoint {
+    public func interpolate(to: [CGPoint], progress: Double) -> [CGPoint] {
+        // Handle cases where arrays have different lengths
+        if self.isEmpty {
+            return progress < 1.0 ? [] : to
+        }
+        
+        if to.isEmpty {
+            return progress > 0.0 ? [] : self
+        }
+        
+        // Find the maximum number of points to interpolate
+        let maxCount = Swift.max(self.count, to.count)
+        var result: [CGPoint] = []
+        
+        for i in 0..<maxCount {
+            if i < self.count && i < to.count {
+                // Both arrays have a point at this index, interpolate between them
+                let fromPoint = self[i]
+                let toPoint = to[i]
+                let interpolatedPoint = fromPoint.interpolate(to: toPoint, progress: progress)
+                result.append(interpolatedPoint)
+            } else if i < self.count {
+                // Only source array has this point
+                // For a smoother transition, we can fade it out by moving it toward the last point in target
+                if let lastTargetPoint = to.last {
+                    let sourcePoint = self[i]
+                    let interpolatedPoint = sourcePoint.interpolate(to: lastTargetPoint, progress: progress)
+                    if progress < 0.5 {
+                        result.append(interpolatedPoint)
+                    }
+                }
+            } else if i < to.count {
+                // Only target array has this point
+                // For a smoother transition, we can fade it in by moving it from the last point in source
+                if let lastSourcePoint = self.last {
+                    let targetPoint = to[i]
+                    let interpolatedPoint = lastSourcePoint.interpolate(to: targetPoint, progress: progress)
+                    if progress > 0.5 {
+                        result.append(interpolatedPoint)
+                    }
+                }
+            }
+        }
+        
+        return result
+    }
+}
+
 extension Color: Interpolatable {
     public func interpolate(to: Color, progress: Double) -> Color {
         // This is a simplified implementation
         // For production, consider using a proper color space conversion
+        #if canImport(AppKit)
         let fromNSColor = NSColor(self)
         let toNSColor = NSColor(to)
+        #else
+        // Fallback implementation if not on macOS
+        return self.opacity(1 - progress) + to.opacity(progress)
+        #endif
         
         guard let fromRGB = fromNSColor.usingColorSpace(.sRGB),
               let toRGB = toNSColor.usingColorSpace(.sRGB) else {
@@ -179,6 +279,15 @@ public class KeyframeTrack<T: Interpolatable> {
     /// The keyframes in this track, sorted by time
     private var keyframes: [Keyframe<T>] = []
     
+    /// Cache for frequently accessed keyframe indices
+    private var cachedKeyframeIndices: [Double: Int] = [:]
+    
+    /// Last evaluated time for optimization
+    private var lastEvaluatedTime: Double?
+    
+    /// Last evaluated value for optimization
+    private var lastEvaluatedValue: T?
+    
     /// Create a new keyframe track
     /// - Parameter id: Unique identifier for this track
     public init(id: String) {
@@ -198,6 +307,9 @@ public class KeyframeTrack<T: Interpolatable> {
         // Add and sort
         keyframes.append(keyframe)
         keyframes.sort(by: { $0.time < $1.time })
+        
+        // Clear caches on modification
+        invalidateCache()
         return true
     }
     
@@ -208,7 +320,80 @@ public class KeyframeTrack<T: Interpolatable> {
     public func removeKeyframe(at time: Double) -> Bool {
         let initialCount = keyframes.count
         keyframes.removeAll(where: { abs($0.time - time) < 0.001 }) // Small epsilon for floating point comparison
-        return keyframes.count < initialCount
+        
+        // Clear caches if a keyframe was removed
+        if keyframes.count < initialCount {
+            invalidateCache()
+            return true
+        }
+        return false
+    }
+    
+    /// Clear all caches when track is modified
+    private func invalidateCache() {
+        cachedKeyframeIndices.removeAll()
+        lastEvaluatedTime = nil
+        lastEvaluatedValue = nil
+    }
+    
+    /// Find the keyframe index pair that surrounds the given time
+    /// - Parameter time: The time to find surrounding keyframes for
+    /// - Returns: The indices of the keyframes before and after the time
+    private func findKeyframeIndices(for time: Double) -> (before: Int, after: Int)? {
+        // Return cached result if available
+        if let cachedIndex = cachedKeyframeIndices[time] {
+            if cachedIndex < keyframes.count - 1 {
+                return (cachedIndex, cachedIndex + 1)
+            }
+            return (cachedIndex, cachedIndex)
+        }
+        
+        // Handle edge cases first
+        if keyframes.isEmpty {
+            return nil
+        }
+        
+        // Before first keyframe
+        if time <= keyframes.first!.time {
+            cachedKeyframeIndices[time] = 0
+            return (0, 0)
+        }
+        
+        // After last keyframe
+        if time >= keyframes.last!.time {
+            let lastIndex = keyframes.count - 1
+            cachedKeyframeIndices[time] = lastIndex
+            return (lastIndex, lastIndex)
+        }
+        
+        // Binary search for more efficient lookup
+        var low = 0
+        var high = keyframes.count - 1
+        
+        while low <= high {
+            let mid = (low + high) / 2
+            let midTime = keyframes[mid].time
+            
+            if abs(midTime - time) < 0.001 {
+                // Exact match (within epsilon)
+                cachedKeyframeIndices[time] = mid
+                return (mid, mid)
+            } else if midTime < time {
+                if mid < keyframes.count - 1 && keyframes[mid + 1].time > time {
+                    // Found the surrounding keyframes
+                    cachedKeyframeIndices[time] = mid
+                    return (mid, mid + 1)
+                }
+                low = mid + 1
+            } else {
+                high = mid - 1
+            }
+        }
+        
+        // If we get here, low should be the index after time
+        let beforeIndex = max(0, low - 1)
+        cachedKeyframeIndices[time] = beforeIndex
+        return (beforeIndex, low)
     }
     
     /// Get the value at a specific time
@@ -220,36 +405,46 @@ public class KeyframeTrack<T: Interpolatable> {
             return nil
         }
         
-        // If before first keyframe, return first keyframe value
-        if time <= keyframes.first!.time {
-            return keyframes.first!.value
+        // Check for temporal coherence - if time is the same as the last evaluated time, return the cached value
+        if let lastTime = lastEvaluatedTime, let lastValue = lastEvaluatedValue, abs(lastTime - time) < 0.001 {
+            return lastValue
         }
         
-        // If after last keyframe, return last keyframe value
-        if time >= keyframes.last!.time {
-            return keyframes.last!.value
+        // Find the keyframe indices
+        guard let indices = findKeyframeIndices(for: time) else {
+            return nil
         }
         
-        // Find the keyframes we're between
-        for i in 0..<keyframes.count - 1 {
-            let fromKeyframe = keyframes[i]
-            let toKeyframe = keyframes[i + 1]
-            
-            if time >= fromKeyframe.time && time <= toKeyframe.time {
-                // Calculate the normalized progress between these keyframes
-                let range = toKeyframe.time - fromKeyframe.time
-                let progress = (time - fromKeyframe.time) / range
-                
-                // Apply easing function
-                let easedProgress = fromKeyframe.easingFunction.apply(to: progress)
-                
-                // Interpolate the value
-                return fromKeyframe.value.interpolate(to: toKeyframe.value, progress: easedProgress)
-            }
+        let beforeIndex = indices.before
+        let afterIndex = indices.after
+        
+        // If we're exactly on a keyframe (or before first/after last)
+        if beforeIndex == afterIndex {
+            let value = keyframes[beforeIndex].value
+            lastEvaluatedTime = time
+            lastEvaluatedValue = value
+            return value
         }
         
-        // Should never reach here
-        return keyframes.last!.value
+        // Get the keyframes we're between
+        let fromKeyframe = keyframes[beforeIndex]
+        let toKeyframe = keyframes[afterIndex]
+        
+        // Calculate the normalized progress between these keyframes
+        let range = toKeyframe.time - fromKeyframe.time
+        let progress = (time - fromKeyframe.time) / range
+        
+        // Apply easing function
+        let easedProgress = fromKeyframe.easingFunction.apply(to: progress)
+        
+        // Interpolate the value
+        let interpolatedValue = fromKeyframe.value.interpolate(to: toKeyframe.value, progress: easedProgress)
+        
+        // Cache the result
+        lastEvaluatedTime = time
+        lastEvaluatedValue = interpolatedValue
+        
+        return interpolatedValue
     }
     
     /// Get all keyframes in this track
@@ -368,6 +563,25 @@ public class AnimationController: ObservableObject {
         updateAnimatedProperties()
     }
     
+    /// Seek to a specific time position
+    /// - Parameter time: The time position in seconds
+    public func seekToTime(_ time: Double) {
+        // Ensure time is within bounds
+        let boundedTime = max(0, min(duration, time))
+        
+        // Update current time
+        currentTime = boundedTime
+        
+        // Update all animated properties at this time
+        updateAnimatedProperties()
+    }
+    
+    /// Seek to a specific time position (alias for seekToTime)
+    /// - Parameter time: The time position in seconds
+    public func seek(to time: Double) {
+        seekToTime(time)
+    }
+    
     deinit {
         timer?.invalidate()
     }
@@ -417,6 +631,8 @@ public class AnimationController: ObservableObject {
                 result.append((id: id, keyframes: pointTrack.allKeyframes))
             } else if let colorTrack = track as? KeyframeTrack<Color> {
                 result.append((id: id, keyframes: colorTrack.allKeyframes))
+            } else if let pathTrack = track as? KeyframeTrack<[CGPoint]> {
+                result.append((id: id, keyframes: pathTrack.allKeyframes))
             }
         }
         
@@ -433,13 +649,15 @@ public class AnimationController: ObservableObject {
         var times: Set<Double> = []
         
         for trackId in getAllTracks() {
-            if let track = getTrack(id: trackId) as KeyframeTrack<CGPoint>? {
+            if let track = getTrack(id: trackId) as? KeyframeTrack<CGPoint> {
                 times.formUnion(track.allKeyframes.map { $0.time })
-            } else if let track = getTrack(id: trackId) as KeyframeTrack<CGFloat>? {
+            } else if let track = getTrack(id: trackId) as? KeyframeTrack<CGFloat> {
                 times.formUnion(track.allKeyframes.map { $0.time })
-            } else if let track = getTrack(id: trackId) as KeyframeTrack<Double>? {
+            } else if let track = getTrack(id: trackId) as? KeyframeTrack<Double> {
                 times.formUnion(track.allKeyframes.map { $0.time })
-            } else if let track = getTrack(id: trackId) as KeyframeTrack<Color>? {
+            } else if let track = getTrack(id: trackId) as? KeyframeTrack<Color> {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            } else if let track = getTrack(id: trackId) as? KeyframeTrack<[CGPoint]> {
                 times.formUnion(track.allKeyframes.map { $0.time })
             }
         }
@@ -556,7 +774,8 @@ struct AnimationControllerPreview: View {
                         .font(.title2)
                 }
                 .buttonStyle(.plain)
-                .help(animationController.isPlaying ? "Pause Animation" : "Play Animation")
+                .keyboardShortcut("p", modifiers: [])
+                .help(animationController.isPlaying ? "Pause Animation (P)" : "Play Animation (P)")
                 
                 // Current time indicator
                 Text(String(format: "%.2fs / %.2fs", animationController.currentTime, animationController.duration))
@@ -577,6 +796,10 @@ struct AnimationControllerPreview: View {
                     Text("Ease In").tag(EasingFunction.easeIn)
                     Text("Ease Out").tag(EasingFunction.easeOut)
                     Text("Ease In Out").tag(EasingFunction.easeInOut)
+                    Text("Bounce").tag(EasingFunction.bounce)
+                    Text("Elastic").tag(EasingFunction.elastic)
+                    Text("Spring").tag(EasingFunction.spring)
+                    Text("Sine").tag(EasingFunction.sine)
                     Text("Custom Bezier").tag(EasingFunction.customCubicBezier(x1: 0.42, y1: 0, x2: 0.58, y2: 1.0))
                 }
                 .pickerStyle(.segmented)

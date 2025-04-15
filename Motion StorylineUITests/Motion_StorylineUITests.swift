@@ -47,19 +47,19 @@ final class Motion_StorylineUITests: XCTestCase {
         let timeline = app.groups["timeline-view"]
         XCTAssertTrue(timeline.waitForExistence(timeout: 5), "Timeline view did not appear")
         
-        // Test spacebar for play/pause
+        // Test P key for play/pause
         // First, ensure the timeline has focus
         timeline.click()
         
-        // Press spacebar to play
-        app.typeKey(.space, modifierFlags: [])
+        // Press P key to play
+        app.typeKey("p", modifierFlags: [])
         
         // Verify playback has started (the play button should change to pause)
         let pauseButton = app.buttons["pause-button"]
         XCTAssertTrue(pauseButton.waitForExistence(timeout: 2), "Animation did not start playing")
         
-        // Press spacebar again to pause
-        app.typeKey(.space, modifierFlags: [])
+        // Press P key again to pause
+        app.typeKey("p", modifierFlags: [])
         
         // Verify playback has stopped
         let playButton = app.buttons["play-button"]
@@ -95,7 +95,7 @@ final class Motion_StorylineUITests: XCTestCase {
         
         // Test stopping playback with escape key
         // First start playback again
-        app.typeKey(.space, modifierFlags: [])
+        app.typeKey("p", modifierFlags: [])
         
         // Then press escape
         app.typeKey(.escape, modifierFlags: [])

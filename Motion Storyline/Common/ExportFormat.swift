@@ -14,6 +14,9 @@ public enum ExportFormat: Sendable, Hashable {
     /// Project file export option for later editing
     case projectFile
     
+    /// Batch export option for multiple formats simultaneously
+    case batchExport
+    
     // Implement Hashable conformance manually since we have associated values
     public func hash(into hasher: inout Hasher) {
         switch self {
@@ -26,6 +29,8 @@ public enum ExportFormat: Sendable, Hashable {
             hasher.combine(format)
         case .projectFile:
             hasher.combine(3)
+        case .batchExport:
+            hasher.combine(4)
         }
     }
     
@@ -38,6 +43,8 @@ public enum ExportFormat: Sendable, Hashable {
         case (.imageSequence(let lhsFormat), .imageSequence(let rhsFormat)):
             return lhsFormat == rhsFormat
         case (.projectFile, .projectFile):
+            return true
+        case (.batchExport, .batchExport):
             return true
         default:
             return false

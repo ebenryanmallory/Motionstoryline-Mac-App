@@ -27,6 +27,11 @@ struct Motion_StorylineApp: App {
                         .onAppear {
                             // We can set up any necessary state here if needed
                         }
+                        .onChange(of: appState.selectedProject) { oldValue, newValue in
+                            if let updatedProject = newValue {
+                                updateProject(updatedProject)
+                            }
+                        }
                 } else {
                     HomeView(
                         recentProjects: $recentProjects,
@@ -64,6 +69,23 @@ struct Motion_StorylineApp: App {
                     // Set a reasonable minimum size for the window
                     window.minSize = NSSize(width: 800, height: 600)
                 }
+                
+                // Initialize appearance based on saved preference
+                appState.updateAppAppearance()
+            }
+            .overlay {
+                // Documentation overlay
+                if let docType = appState.activeDocumentationType, appState.isDocumentationVisible {
+                    let content = DocumentationService.shared.getDocumentation(type: docType)
+                    InfoOverlayView(
+                        isVisible: Binding<Bool>(
+                            get: { appState.isDocumentationVisible }, 
+                            set: { if !$0 { appState.hideDocumentation() } }
+                        ),
+                        title: docType.title,
+                        content: content
+                    )
+                }
             }
         }
         .windowToolbarStyle(.unified)
@@ -93,10 +115,20 @@ struct Motion_StorylineApp: App {
                     }
                 }
                 
+                Divider()
+                
                 Button("Keyboard Shortcuts") {
-                    // Show shortcuts
+                    appState.showDocumentation(.keyboardShortcuts)
                 }
                 .keyboardShortcut("/", modifiers: [.command])
+                
+                Button("VoiceOver Compatibility") {
+                    appState.showDocumentation(.voiceOverCompatibility)
+                }
+                
+                Button("VoiceOver Testing Checklist") {
+                    appState.showDocumentation(.voiceOverTestingChecklist)
+                }
             }
         }
     }

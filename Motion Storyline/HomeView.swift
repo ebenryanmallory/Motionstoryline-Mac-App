@@ -1,6 +1,9 @@
 import SwiftUI
 import AppKit
 
+// Import the PreferencesController
+import Foundation
+
 struct HomeView: View {
     @Binding var recentProjects: [Project]
     @Binding var userProjects: [Project]
@@ -12,7 +15,6 @@ struct HomeView: View {
     
     @State private var selectedItem: String? = "Home"
     @State private var searchText: String = ""
-    @State private var isDarkMode: Bool = false
     @State private var selectedTab: Int = 0
     @State private var isShowingUserMenu = false
     
@@ -26,10 +28,10 @@ struct HomeView: View {
             SidebarView(
                 selectedItem: $selectedItem,
                 searchText: $searchText,
-                isDarkMode: $isDarkMode,
                 isCreatingNewProject: $isCreatingNewProject
             )
             .frame(minWidth: 220)
+            .environmentObject(appState)
         } detail: {
             VStack(spacing: 0) {
                 // Top header (Design Studio-style)
@@ -39,9 +41,13 @@ struct HomeView: View {
                         Circle()
                             .fill(Color.blue)
                             .frame(width: 24, height: 24)
+                            .accessibilityHidden(true)
                         Text("DesignStudio")
                             .fontWeight(.semibold)
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("DesignStudio")
+                    .accessibilityAddTraits(.isHeader)
                     
                     Spacer()
                     
@@ -49,12 +55,27 @@ struct HomeView: View {
                     HStack {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.secondary)
+                            .accessibilityHidden(true)
                         TextField("Search files...", text: $searchText)
                             .frame(width: 200)
+                            .accessibilityLabel("Search files")
                     }
                     .padding(6)
                     .background(Color(NSColor.controlBackgroundColor))
                     .cornerRadius(6)
+                    
+                    // Documentation buttons
+                    HStack(spacing: 2) {
+                        DocumentationButton(
+                            documentationType: .keyboardShortcuts,
+                            compact: true
+                        )
+                        
+                        DocumentationButton(
+                            documentationType: .voiceOverCompatibility,
+                            compact: true
+                        )
+                    }
                     
                     // User menu
                     Button(action: { isShowingUserMenu.toggle() }) {
@@ -67,16 +88,25 @@ struct HomeView: View {
                         .foregroundColor(.primary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("User Menu")
+                    .accessibilityHint("Access profile and settings")
                     .popover(isPresented: $isShowingUserMenu) {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("User Account")
                                 .font(.headline)
                                 .padding(.bottom, 4)
+                                .accessibilityAddTraits(.isHeader)
                             
                             Button("Profile", action: {})
-                            Button("Settings", action: {})
+                                .accessibilityHint("View your profile")
+                            Button("Settings", action: {
+                                isShowingUserMenu = false
+                                self.showPreferences()
+                            })
+                            .accessibilityHint("Open application settings")
                             Divider()
                             Button("Sign Out", action: {})
+                                .accessibilityHint("Sign out of your account")
                         }
                         .padding()
                         .frame(width: 200)
@@ -105,6 +135,10 @@ struct HomeView: View {
                                     .frame(height: 2)
                             }
                         )
+                        .accessibilityElement(children: .combine)
+                        .accessibilityLabel(tab)
+                        .accessibilityAddTraits(selectedTab == index ? [.isSelected, .isButton] : .isButton)
+                        .accessibilityHint("Show \(tab.lowercased()) projects")
                     }
                     Spacer()
                     
@@ -113,6 +147,7 @@ struct HomeView: View {
                         .foregroundColor(.secondary)
                         .font(.caption)
                         .padding(.horizontal)
+                        .accessibilityLabel("Status: \(statusMessage)")
                     
                     // New project button
                     Button(action: { isCreatingNewProject = true }) {
@@ -122,6 +157,8 @@ struct HomeView: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .padding(.trailing, 16)
+                    .accessibilityLabel("Create New Project")
+                    .accessibilityHint("Opens dialog to create a new project")
                     .onHover { isHovered in
                         if isHovered {
                             NSCursor.pointingHand.push()
@@ -246,11 +283,13 @@ struct ProjectCard: View {
                         .fill(Color.gray.opacity(0.2))
                         .aspectRatio(16/9, contentMode: .fit)
                         .cornerRadius(8)
+                        .accessibilityHidden(true)
                 } else {
                     Image.placeholder(for: project.thumbnail)
                         .frame(height: 140)
                         .cornerRadius(8)
                         .clipped()
+                        .accessibilityLabel("Project thumbnail")
                 }
                 
                 // Hover overlay
@@ -264,6 +303,7 @@ struct ProjectCard: View {
                                 .clipShape(Circle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Favorite project")
                         
                         Button(action: {}) {
                             Image(systemName: "ellipsis")
@@ -273,6 +313,7 @@ struct ProjectCard: View {
                                 .clipShape(Circle())
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("More options")
                     }
                     .padding(8)
                 }
@@ -293,6 +334,8 @@ struct ProjectCard: View {
                         .font(.caption)
                 }
                 .foregroundColor(.secondary)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Last modified \(formattedDate(project.lastModified))")
             }
             .padding(12)
             .background(Color.white)
@@ -304,6 +347,9 @@ struct ProjectCard: View {
                 isHovered = hovering
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(project.name) project")
+        .accessibilityHint("Double-tap to open project")
     }
     
     private func formattedDate(_ date: Date) -> String {
@@ -327,11 +373,13 @@ struct TemplateCard: View {
                     .fill(Color.blue.opacity(0.1))
                     .aspectRatio(16/9, contentMode: .fit)
                     .cornerRadius(8)
+                    .accessibilityHidden(true)
                 
                 VStack(spacing: 8) {
                     Image(systemName: "doc.badge.plus")
                         .font(.largeTitle)
                         .foregroundColor(.blue)
+                        .accessibilityHidden(true)
                     
                     Text("Start with \(type)")
                         .font(.caption)
@@ -359,6 +407,9 @@ struct TemplateCard: View {
                 isHovered = hovering
             }
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(name) \(type) template")
+        .accessibilityHint("Double-tap to create a new project using this template")
     }
 }
 
@@ -464,6 +515,17 @@ struct ProjectTypeCard: View {
                 .font(.caption)
                 .foregroundColor(isSelected ? .blue : .primary)
         }
+        .padding()
+        .background(isSelected ? Color.blue.opacity(0.1) : Color.white)
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isSelected ? Color.blue : Color.gray.opacity(0.3), lineWidth: 2)
+        )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(name) project type")
+        .accessibilityValue(isSelected ? "selected" : "not selected")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

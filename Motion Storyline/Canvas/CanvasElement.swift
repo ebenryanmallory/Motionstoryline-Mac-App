@@ -12,6 +12,7 @@ struct CanvasElement: Identifiable, Equatable {
     var textAlignment: TextAlignment = .leading
     var displayName: String
     var isAspectRatioLocked: Bool = true // Default to locked aspect ratio
+    var path: [CGPoint] = [] // Store path points for path animation
     
     // Computed property to get the center of the element as the rotation anchor point
     var rotationAnchorPoint: CGPoint {
@@ -31,6 +32,7 @@ struct CanvasElement: Identifiable, Equatable {
         case text = "Text"
         case image = "Image"
         case video = "Video"
+        case path = "Path"
     }
     
     // Factory methods for creating different types of elements
@@ -65,6 +67,17 @@ struct CanvasElement: Identifiable, Equatable {
             text: content,
             textAlignment: .leading,
             displayName: "Text"
+        )
+    }
+    
+    static func path(at position: CGPoint, points: [CGPoint] = []) -> CanvasElement {
+        CanvasElement(
+            type: .path,
+            position: position,
+            size: CGSize(width: 200, height: 200),
+            color: .purple,
+            displayName: "Path",
+            path: points
         )
     }
 } 

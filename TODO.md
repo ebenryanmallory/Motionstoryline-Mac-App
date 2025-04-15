@@ -1,92 +1,92 @@
 # Motion Storyline - TODO List
 
-## Critical Issues
+## User Experience
+- [x] Add keyboard shortcuts for timeline
+  - [x] Shortcuts for keyframe manipulation
+  - [x] Shortcuts for playback control
+- [x] Implement haptic feedback for interactions
+  - [x] When snapping to keyframes
+  - [x] When reaching timeline endpoints
+  - [x] When completing exports
+  - [x] When toggling playback
+  - [x] When adding markers and creating keyframes
 
-- [ ] Fix video rendering inconsistencies with canvas
-  - [ ] Resolve element color discrepancies between canvas and exported video
-  - [ ] Fix text rendering issue - text not appearing in exported videos
-  - [ ] Verify whether animations are properly captured in video export
-  - [ ] Implement comprehensive rendering tests to ensure canvas-export parity
-
-## High Priority
-
-- [ ] Optimize timeline performance with large number of keyframes
-  - [ ] Implement virtualized rendering for timeline tracks
-  - [ ] Optimize keyframe calculations for complex animations
-  - [ ] Improve scrubbing performance on long timelines
-- [ ] Update test files to match current API structure
-  - **Issue**: AnimationControllerTests fails with "KeyframeTrack specialized with too few type parameters"
-  - **Solution**: Update tests to use all three required type parameters for KeyframeTrack
-- [x] Verify testing infrastructure works properly
-  - Confirmed Xcode test runner correctly identifies and reports compilation issues
-  - Test runner successfully provides detailed error messages for diagnosis
-
-## Medium Priority
-
-- [ ] Add resources handling for Assets.xcassets in Package.swift
-- [ ] Create a CI workflow for automated builds and tests
-- [ ] Expand animation capabilities
-  - [ ] Add support for path animation
-  - [ ] Implement animation presets (fade, slide, bounce, etc.)
-  - [ ] Add support for audio synchronization
-- [ ] Improve export functionality
-  - [ ] Add batch export capability for multiple formats
-  - [ ] Implement background processing for large exports
-
-## Testing Plan
-
-- [ ] Canvas-to-export rendering tests
-  - [ ] Test color accuracy across various element types
-  - [ ] Test text rendering in different fonts and sizes
-  - [ ] Test animation playback in exported videos
-  - [ ] Test complex compositions with multiple elements
-- [ ] Performance tests
-  - [ ] Test canvas rendering with various element counts
-  - [ ] Test animation playback with complex animations
-  - [ ] Test export times for different formats and complexities
-
-## Accessibility and UX Improvements
-
-- [ ] Test VoiceOver compatibility
-- [ ] Test color contrast and readability
-- [ ] Test UI scaling and responsiveness
-- [ ] Implement keyboard shortcuts for animation timeline
-  - [ ] Shortcut for adding keyframes
-  - [ ] Shortcut for moving between keyframes
-  - [ ] Shortcut for playback control
-- [ ] Add haptic feedback for important interactions
-  - [ ] When snapping to keyframes
-  - [ ] When reaching the end of timeline
-  - [ ] When completing export
+## Accessibility
+- [ ] Test VoiceOver compatibility (In Progress)
+  - [x] Create VoiceOver testing documentation
+  - [x] Add accessibility support to HomeView and ProjectCard
+  - [x] Create VoiceOverCompatibilityTests framework
+  - [ ] Complete VoiceOver testing for DesignCanvas
+  - [ ] Complete VoiceOver testing for MediaBrowser
+  - [ ] Complete VoiceOver testing for ExportOptions
+- [ ] Verify color contrast and readability
+- [ ] Check UI scaling and responsiveness
 
 ## Future Enhancements
 
-- [ ] Implement advanced animation features
+### Animation Features
+- [ ] Add advanced animation capabilities
   - [ ] Multi-track animation for complex sequences
   - [ ] Curve editor for fine-tuned easing control
-  - [ ] Motion blur effects for realistic animation
+  - [ ] Motion blur effects
   - [ ] Animation templates and presets
-- [ ] Expand export capabilities
-  - [ ] Web-optimized export formats (WebM, AVIF)
-  - [ ] Lottie/JSON animation format support
 
-## Documentation
+### Export Capabilities
+- [ ] Add web-optimized export formats (WebM, AVIF)
+- [ ] Support Lottie/JSON animation format
+  - [ ] Implement Lottie file parsing and rendering
+  - [ ] Support importing Lottie animations into project
+  - [ ] Enable export of animations to Lottie format
+  - [ ] Validate compatibility with web and macOS Lottie players
 
-- [ ] Document test coverage and requirements
-- [ ] Create animation system documentation
-  - [ ] Keyframe system architecture
-  - [ ] Available animation properties
-  - [ ] Easing function implementation
-- [ ] Document video export options and best practices
-  - [ ] ProRes export workflow
-  - [ ] Image sequence export tutorial
+### Integration Features
+- [ ] Create plugin system for third-party extensions
+- [ ] Develop cloud storage integration
+  - [ ] Support iCloud synchronization
+  - [ ] Add Dropbox/Google Drive export options
+- [ ] Implement version control for projects 
 
-## Known Issues to Address
+## Audio Features
 
-1. AnimationControllerTests needs to be updated to match current KeyframeTrack API
-2. Video rendering does not match canvas view
-3. Text elements not appearing in exported videos
-4. Element colors rendering incorrectly in exports
-5. Uncertain animation capture in video exports
-6. Assets.xcassets not properly handled in Package.swift
-7. UI tests not compatible with SPM 
+### Audio Controls
+- [x] Enhance timeline playback controls
+  - [x] Add play/pause button in audio waveform view
+  - [x] Implement unified timeline scrubbing for audio and visual elements
+  - [x] Create seamless audio-visual synchronization
+  - [x] Add visual marker for current playback position
+
+### Audio Processing
+- [ ] Optimize audio-visual synchronization
+  - [ ] Ensure precise alignment between audio and visual elements
+  - [ ] Implement optimized seeking that maintains sync during scrubbing
+  - [ ] Add buffer pre-loading for smoother playback
+  - [ ] Create efficient audio player state management
+- [ ] Implement automatic beat detection
+  - [ ] Create audio analysis algorithms for beat detection
+  - [ ] Add UI for adjusting beat detection sensitivity
+  - [ ] Enable automatic keyframe generation from detected beats
+  - [ ] Visualize detected beats in the waveform
+
+### Audio Editing
+- [ ] Loop specific audio segments for animation refinement
+- [ ] Develop audio-animation synchronization
+  - [ ] Create manual marker placement system
+  - [ ] Generate keyframes from audio markers
+  - [ ] Implement real-time synchronized playback
+- [ ] Implement advanced audio features
+  - [ ] Develop multi-track audio mixing
+  - [ ] Integrate audio effects
+
+## Testing
+
+### Rendering Tests
+- [x] Test canvas-to-export rendering
+  - [x] Verify color accuracy across element types
+  - [x] Check text rendering in different fonts and sizes
+  - [x] Validate animation playback in exports
+  - [x] Test complex compositions with multiple elements
+
+### Performance Tests
+- [x] Evaluate canvas rendering with various element counts
+- [x] Measure animation playback with complex animations
+- [x] Test export times for different formats and complexities 

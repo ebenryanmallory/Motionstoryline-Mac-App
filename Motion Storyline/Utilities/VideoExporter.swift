@@ -213,7 +213,19 @@ public class VideoExporter {
         case .video:
             await configureVideoExport(exportSession, configuration: configuration)
         case .gif:
-            completion(.failure(.unsupportedFormat))
+            self.exportSession = nil
+            Task {
+                do {
+                    let outputURL = try await exportGIF(configuration: configuration)
+                    DispatchQueue.main.async {
+                        self.completionHandler?(.success(outputURL))
+                    }
+                } catch {
+                    DispatchQueue.main.async {
+                        self.completionHandler?(.failure(.exportFailed(error)))
+                    }
+                }
+            }
             return
         case .imageSequence(let imageFormat):
             self.exportSession = nil
@@ -234,6 +246,9 @@ public class VideoExporter {
             }
             return
         case .projectFile:
+            completion(.failure(.unsupportedFormat))
+            return
+        case .batchExport:
             completion(.failure(.unsupportedFormat))
             return
         }
@@ -445,6 +460,171 @@ public class VideoExporter {
                 progressHandler(exportSession.progress)
             }
         }
+    }
+    
+    /// Export the asset as an animated GIF
+    /// - Parameters:
+    ///   - configuration: The export configuration
+    /// - Returns: The URL to the exported GIF file
+    private func exportGIF(
+        configuration: ExportConfiguration
+    ) async throws -> URL {
+        // Ensure output directory exists
+        try FileManager.default.createDirectory(
+            at: configuration.outputURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        
+        // Extract frames from the asset
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.requestedTimeToleranceAfter = .zero
+        generator.requestedTimeToleranceBefore = .zero
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: configuration.width, height: configuration.height)
+        
+        // Calculate number of frames based on duration and frame rate
+        let duration = try await asset.load(.duration).seconds
+        let frameCount = Int(duration * Double(configuration.frameRate))
+        
+        guard frameCount > 0 else {
+            throw ExportError.invalidExportSettings
+        }
+        
+        // Create an NSImage array to hold all frames
+        var frames: [NSImage] = []
+        frames.reserveCapacity(frameCount)
+        
+        var processedFrames = 0
+        
+        // Extract frames
+        for frameNumber in 0..<frameCount {
+            // Check if the export was cancelled
+            if self.exportSession == nil {
+                throw ExportError.cancelled
+            }
+            
+            // Calculate the time for this frame
+            let time = CMTime(seconds: Double(frameNumber) / Double(configuration.frameRate), preferredTimescale: 600)
+            
+            // Generate the image for this time
+            let cgImage = try await generator.image(at: time).image
+            
+            // Convert CGImage to NSImage
+            let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+            
+            // Add to frames array
+            frames.append(nsImage)
+            
+            // Update progress
+            processedFrames += 1
+            let progress = Float(processedFrames) / Float(frameCount * 2) // First half is extraction
+            
+            DispatchQueue.main.async { [weak self] in
+                self?.progressHandler?(progress)
+            }
+        }
+        
+        // Create GIF data
+        guard let gifData = createAnimatedGIFFromImages(
+            frames,
+            frameDelay: 1.0 / Double(configuration.frameRate),
+            loopCount: 0
+        ) else {
+            throw ExportError.exportFailed(NSError(
+                domain: "VideoExporter",
+                code: 1001,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to create GIF data"]
+            ))
+        }
+        
+        // Write to file
+        do {
+            try gifData.write(to: configuration.outputURL)
+            return configuration.outputURL
+        } catch {
+            throw ExportError.exportFailed(error)
+        }
+    }
+    
+    /// Creates animated GIF data from an array of NSImage frames
+    /// - Parameters:
+    ///   - images: Array of NSImage frames
+    ///   - frameDelay: Delay between frames in seconds
+    ///   - loopCount: Number of times to loop the GIF (0 for infinite)
+    /// - Returns: Data containing the animated GIF
+    private func createAnimatedGIFFromImages(
+        _ images: [NSImage],
+        frameDelay: Double,
+        loopCount: Int = 0
+    ) -> Data? {
+        guard !images.isEmpty else { return nil }
+        
+        // Create a data buffer to hold the GIF data
+        guard let destinationData = CFDataCreateMutable(kCFAllocatorDefault, 0) else { return nil }
+        
+        // Create a CGImageDestination for GIF format
+        guard let destination = CGImageDestinationCreateWithData(
+            destinationData,
+            UTType.gif.identifier as CFString,
+            images.count,
+            nil
+        ) else { return nil }
+        
+        // Set GIF properties
+        let frameProperties: [String: Any] = [
+            kCGImagePropertyGIFDelayTime as String: frameDelay
+        ]
+        
+        let gifProperties: [String: Any] = [
+            kCGImagePropertyGIFLoopCount as String: loopCount
+        ]
+        
+        CGImageDestinationSetProperties(destination, gifProperties as CFDictionary)
+        
+        // Add all frames to the destination
+        for (index, image) in images.enumerated() {
+            guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { continue }
+            
+            CGImageDestinationAddImage(destination, cgImage, frameProperties as CFDictionary)
+            
+            // Update progress for second half (GIF creation)
+            let progress = 0.5 + Float(index + 1) / Float(images.count * 2)
+            DispatchQueue.main.async { [weak self] in
+                self?.progressHandler?(progress)
+            }
+        }
+        
+        // Finalize the GIF
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        
+        return destinationData as Data
+    }
+    
+    /// Export the video as an animated GIF
+    /// - Parameters:
+    ///   - outputURL: URL where the GIF will be saved
+    ///   - width: Output width for the GIF
+    ///   - height: Output height for the GIF
+    ///   - frameRate: Frame rate to use for the GIF (frames per second)
+    ///   - progress: Optional progress handler
+    ///   - completion: Completion handler with result
+    public func exportAsGIF(
+        outputURL: URL,
+        width: Int,
+        height: Int,
+        frameRate: Float = 15.0,
+        progress: ((Float) -> Void)? = nil,
+        completion: @escaping (Result<URL, ExportError>) -> Void
+    ) async {
+        let configuration = ExportConfiguration(
+            format: .gif,
+            width: width,
+            height: height,
+            frameRate: frameRate,
+            outputURL: outputURL
+        )
+        
+        await export(with: configuration, progressHandler: progress, completion: completion)
     }
 }
 
