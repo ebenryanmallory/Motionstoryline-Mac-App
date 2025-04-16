@@ -88,7 +88,7 @@ struct DesignCanvas: View {
     @StateObject private var animationController = AnimationController()
     @State private var isPlaying = false
     @State private var selectedProperty: String?
-    @State private var timelineHeight: CGFloat = 400 // Default timeline height
+    @State private var timelineHeight: CGFloat = 120 // Changed from 400 to 120 (approx 2x play/pause bar height)
     @State private var showAnimationPreview: Bool = true // Control if animation preview is shown
     
     // Export state
@@ -117,6 +117,9 @@ struct DesignCanvas: View {
     // Media management
     @State private var showMediaBrowser = false
     @State private var showCameraView = false
+    
+    // Export modal state
+    @State private var showingExportModal = false
     
     // Before the handleExportRequest method, add these properties:
     @State private var showBatchExportSettings = false
@@ -155,6 +158,9 @@ struct DesignCanvas: View {
         ("scale", 1.0, 1.0)
     ]
     
+    // Add this property to store the current AVAsset for export
+    @State private var currentExportAsset: AVAsset?
+    
     // MARK: - Main View
     
     // MARK: - Zoom Control Functions
@@ -188,72 +194,6 @@ struct DesignCanvas: View {
     }
 
     var body: some View {
-        ZStack {
-            mainContentView
-                .toolbar {
-                    // ... existing toolbar items ...
-                }
-                .onAppear {
-                    // ... existing onAppear code ...
-                }
-                .onChange(of: selectedElement) { oldValue, newValue in
-                    // ... existing onChange code ...
-                }
-                .onAppear {
-                    // ... existing onAppear code ...
-                }
-                .onDisappear {
-                    // ... existing onDisappear code ...
-                }
-            
-            // Export sheet
-            if showExportSettings {
-                // ... existing export sheet code ...
-            }
-        }
-        .sheet(isPresented: $showMediaBrowser) {
-            if let currentProject = appState.selectedProject {
-                // Use a binding for the project to update it when media is imported
-                MediaBrowserView(project: Binding<Project>(
-                    get: { currentProject },
-                    set: { updatedProject in
-                        // Update the project in the app state when it changes in the media browser
-                        appState.updateProject(updatedProject)
-                    }
-                ))
-                .frame(minWidth: 800, minHeight: 600)
-                .interactiveDismissDisabled(false)
-            }
-        }
-        .sheet(isPresented: $showCameraView) {
-            CameraRecordingView(isPresented: $showCameraView)
-                .frame(minWidth: 800, minHeight: 600)
-        }
-        .sheet(isPresented: $showBatchExportSettings) {
-            // Reset the flag when sheet is dismissed
-            showBatchExportSettings = false
-        } content: {
-            BatchExportSettingsView(
-                projectName: appState.selectedProject?.name ?? "Motion_Storyline_Project",
-                onCreateComposition: { width, height, duration, frameRate in
-                    // Create the composition for export
-                    return try await createCompositionFromCanvas(
-                        width: width,
-                        height: height,
-                        duration: duration,
-                        frameRate: frameRate
-                    )
-                },
-                onDismiss: {
-                    showBatchExportSettings = false
-                }
-            )
-        }
-    }
-    
-    // MARK: - View Components
-    
-    private var mainContentView: some View {
         VStack(spacing: 0) {
             // Top navigation bar
             CanvasTopBar(
@@ -289,7 +229,10 @@ struct DesignCanvas: View {
                 },
                 onZoomIn: zoomIn,
                 onZoomOut: zoomOut,
-                onZoomReset: resetZoom
+                onZoomReset: resetZoom,
+                // Pass the canvas dimensions for export
+                canvasWidth: Int(canvasWidth),
+                canvasHeight: Int(canvasHeight)
             )
             
             // Add a Divider to clearly separate the top bar from the toolbar
@@ -335,6 +278,174 @@ struct DesignCanvas: View {
                     .frame(height: timelineHeight)
             }
         }
+        .accessibilityIdentifier("editor-view")
+        .onAppear {
+            // Setup key monitor for space bar panning
+            keyMonitorController.setupMonitor(
+                onSpaceDown: {
+                    // When space bar is pressed, change cursor and enable pan mode
+                    isSpaceBarPressed = true
+                    NSCursor.openHand.set()
+                },
+                onSpaceUp: {
+                    // When space bar is released, restore cursor and disable pan mode
+                    isSpaceBarPressed = false
+                    // Reset to default cursor based on current tool
+                    if selectedTool == .select {
+                        NSCursor.arrow.set()
+                    } else if selectedTool == .rectangle || selectedTool == .ellipse {
+                        NSCursor.crosshair.set()
+                    } else if selectedTool == .path {
+                        NSCursor.crosshair.set()
+                    }
+                }
+            )
+            
+            // Setup canvas keyboard shortcuts
+            keyMonitorController.setupCanvasKeyboardShortcuts(
+                zoomIn: zoomIn,
+                zoomOut: zoomOut,
+                resetZoom: resetZoom
+            )
+            
+            // Setup initial animations (if present)
+            setupInitialAnimations()
+        }
+        .onChange(of: selectedElement) { oldValue, newValue in
+            // ... existing onChange code ...
+            
+            // Update animation properties for the selected element
+            updateAnimationPropertiesForSelectedElement(newValue)
+        }
+        .onDisappear {
+            // Teardown key monitor when view disappears
+            keyMonitorController.teardownMonitor()
+        }
+        // Add the ExportModal sheet here
+        .sheet(isPresented: $showingExportModal) {
+            if let asset = currentExportAsset {
+                ExportModal(
+                    asset: asset,
+                    canvasWidth: Int(canvasWidth),
+                    canvasHeight: Int(canvasHeight),
+                    onDismiss: {
+                        showingExportModal = false
+                    }
+                )
+            }
+        }
+        
+        // Export sheet
+        if showExportSettings {
+            // ... existing export sheet code ...
+        }
+        
+        // Show export progress overlay when exporting
+        if isExporting {
+            exportProgressView
+        }
+    }
+    
+    // MARK: - View Components
+    
+    private var mainContentView: some View {
+        VStack(spacing: 0) {
+            // Top navigation bar
+            CanvasTopBar(
+                projectName: appState.selectedProject?.name ?? "Motion Storyline",
+                onClose: {
+                    appState.navigateToHome()
+                },
+                onNewFile: {
+                    print("New file action triggered")
+                },
+                onCameraRecord: {
+                    showCameraView = true
+                },
+                onMediaLibrary: {
+                    showMediaBrowser = true
+                },
+                showAnimationPreview: $showAnimationPreview,
+                onExport: { format in
+                    self.exportFormat = format
+                    handleExportRequest(format: format)
+                },
+                onAccountSettings: {
+                    print("Account settings action triggered")
+                },
+                onHelpAndSupport: {
+                    print("Help and support action triggered")
+                },
+                onCheckForUpdates: {
+                    print("Check for updates action triggered")
+                },
+                onSignOut: {
+                    print("Sign out action triggered")
+                },
+                onZoomIn: zoomIn,
+                onZoomOut: zoomOut,
+                onZoomReset: resetZoom,
+                // Pass the canvas dimensions for export
+                canvasWidth: Int(canvasWidth),
+                canvasHeight: Int(canvasHeight)
+            )
+            
+            // Add a Divider to clearly separate the top bar from the toolbar
+            Divider()
+            
+            // Design toolbar full width below top bar - moved inside its own VStack to ensure it stays visible
+            VStack(spacing: 0) {
+                DesignToolbar(selectedTool: $selectedTool)
+                    .padding(.vertical, 8) // Increased padding for better spacing
+                
+                // Canvas dimensions indicator
+                Text("Canvas: \(Int(canvasWidth))×\(Int(canvasHeight)) (HD 16:9)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.bottom, 6)
+                
+                Divider() // Add visual separator between toolbar and canvas
+            }
+            // Enforce that toolbar section doesn't expand or get pushed by canvas
+            .frame(maxHeight: 90) // Increased fixed height for toolbar section
+            .padding(.top, 4) // Add a little padding at the top to separate from TopBar
+            
+            // Main content area with canvas and inspector
+            HStack(spacing: 0) {
+                // Main canvas area - wrapped in a ScrollView to prevent overflow
+                ScrollView([.horizontal, .vertical]) {
+                    canvasContentView
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                
+                // Right sidebar with inspector
+                if isInspectorVisible {
+                    Divider()
+                    inspectorView
+                }
+            }
+            .layoutPriority(1) // Give this section priority to expand
+            
+            // Timeline area at the bottom (if needed)
+            if showAnimationPreview {
+                timelineResizeHandle
+                timelineView
+                    .frame(height: timelineHeight)
+            }
+        }
+        // Add the ExportModal sheet here
+        .sheet(isPresented: $showingExportModal) {
+            if let asset = currentExportAsset {
+                ExportModal(
+                    asset: asset,
+                    canvasWidth: Int(canvasWidth),
+                    canvasHeight: Int(canvasHeight),
+                    onDismiss: {
+                        showingExportModal = false
+                    }
+                )
+            }
+        }
     }
     
     // MARK: - View Components
@@ -343,12 +454,23 @@ struct DesignCanvas: View {
     private var viewportDragGesture: some Gesture {
         DragGesture()
             .onChanged { value in
-                // Only pan when using the spacebar pan tool or middle mouse button
-                if selectedTool == .select {
+                // Pan when using select tool or when space bar is pressed (temporary pan tool)
+                if selectedTool == .select || isSpaceBarPressed {
+                    // Change cursor to closed hand during drag
+                    if isSpaceBarPressed {
+                        NSCursor.closedHand.set()
+                    }
+                    
                     viewportOffset = CGSize(
                         width: viewportOffset.width + value.translation.width,
                         height: viewportOffset.height + value.translation.height
                     )
+                }
+            }
+            .onEnded { _ in
+                // Reset cursor to open hand when drag ends but space is still pressed
+                if isSpaceBarPressed {
+                    NSCursor.openHand.set()
                 }
             }
     }
@@ -437,15 +559,21 @@ struct DesignCanvas: View {
             .onHover { isHovering in
                 if !isHovering {
                     currentMousePosition = nil
-                } else if selectedTool == .select {
-                    // Change cursor to arrow when in selection mode
-                    NSCursor.arrow.set()
-                } else if selectedTool == .rectangle || selectedTool == .ellipse {
-                    // Change cursor to crosshair when in shape drawing mode
-                    NSCursor.crosshair.set()
-                } else if selectedTool == .path {
-                    // Change cursor to pen when in path drawing mode
-                    NSCursor.crosshair.set()
+                } else {
+                    // Update currentMousePosition but don't change cursor when not hovering
+                    if isSpaceBarPressed {
+                        // When space bar is pressed, show the hand cursor
+                        NSCursor.openHand.set()
+                    } else if selectedTool == .select {
+                        // Change cursor to arrow when in selection mode
+                        NSCursor.arrow.set()
+                    } else if selectedTool == .rectangle || selectedTool == .ellipse {
+                        // Change cursor to crosshair when in shape drawing mode
+                        NSCursor.crosshair.set()
+                    } else if selectedTool == .path {
+                        // Change cursor to pen when in path drawing mode
+                        NSCursor.crosshair.set()
+                    }
                 }
             }
             .gesture(canvasDrawingGesture)
@@ -1221,21 +1349,80 @@ struct DesignCanvas: View {
     
     /// Handle export request based on the selected format
     private func handleExportRequest(format: ExportFormat) {
+        // Create the AVAsset for export if needed
+        Task {
+            do {
+                // Show export progress while creating the composition
+                DispatchQueue.main.async {
+                    self.exportProgress = 0.01 // Show some initial progress
+                    self.isExporting = true
+                }
+                
+                // Create a composition with current canvas state
+                let asset = try await createCompositionFromCanvas(
+                    width: Int(canvasWidth),
+                    height: Int(canvasHeight),
+                    duration: animationController.duration,
+                    frameRate: 30.0
+                )
+                
+                // Update the asset for use in the export modal
+                DispatchQueue.main.async {
+                    self.isExporting = false
+                    self.currentExportAsset = asset
+                    
+                    // Now handle the export request
+                    self.continueExportRequest(format: format)
+                }
+            } catch {
+                print("Failed to create composition: \(error.localizedDescription)")
+                // Show error alert
+                DispatchQueue.main.async {
+                    self.isExporting = false
+                    let alert = NSAlert()
+                    alert.messageText = "Export Failed"
+                    alert.informativeText = "Could not create video composition from canvas: \(error.localizedDescription)"
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
+                }
+            }
+        }
+    }
+    
+    /// Continue export after asset is prepared
+    private func continueExportRequest(format: ExportFormat) {
+        // Safety check - make sure we have a valid asset
+        guard currentExportAsset != nil else {
+            let alert = NSAlert()
+            alert.messageText = "Export Failed"
+            alert.informativeText = "Could not prepare content for export. Please try again with a different selection."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+        
+        // Ensure we're not showing the export progress indicator
+        self.isExporting = false
+        
         switch format {
         case .video:
-            // Show export settings sheet to let user confirm settings
-            showExportSettings = true
+            // Show the custom export modal which can handle all formats
+            showingExportModal = true
         case .gif:
-            print("GIF export not implemented yet")
+            // Show export modal for GIF
+            showingExportModal = true
         case .imageSequence:
-            print("Image sequence export not implemented yet")
+            // Show export modal for image sequence
+            showingExportModal = true
         case .projectFile:
             Task {
                 await exportProject()
             }
         case .batchExport:
-            // Show batch export settings view
-            showBatchExportSettings = true
+            // Either show the export modal or batch export settings
+            showingExportModal = true
         }
     }
     
@@ -1416,7 +1603,7 @@ struct DesignCanvas: View {
                 .edgesIgnoringSafeArea(.all)
             
             VStack(spacing: 20) {
-                Text("Exporting Video...")
+                Text("Preparing Export...")
                     .font(.headline)
                     .foregroundColor(.white)
                 
@@ -1424,14 +1611,28 @@ struct DesignCanvas: View {
                     .progressViewStyle(LinearProgressViewStyle())
                     .frame(width: 300)
                 
-                Text("\(Int(exportProgress * 100))%")
-                    .foregroundColor(.white)
-                    .font(.subheadline)
-                    .monospacedDigit()
+                if exportProgress > 0 {
+                    Text("\(Int(exportProgress * 100))%")
+                        .foregroundColor(.white)
+                        .font(.subheadline)
+                        .monospacedDigit()
+                } else {
+                    ProgressView() // Show indeterminate spinner if no progress yet
+                        .scaleEffect(0.8)
+                        .padding(.top, 8)
+                }
                 
                 Button("Cancel") {
-                    // TODO: Implement export cancellation
+                    // Cancel export
                     isExporting = false
+                    
+                    // Show cancellation message
+                    let alert = NSAlert()
+                    alert.messageText = "Export Cancelled"
+                    alert.informativeText = "The export operation was cancelled."
+                    alert.alertStyle = .informational
+                    alert.addButton(withTitle: "OK")
+                    alert.runModal()
                 }
                 .buttonStyle(.plain)
                 .padding(.horizontal, 20)
@@ -1790,8 +1991,32 @@ struct DesignCanvas: View {
         duration: Double,
         frameRate: Float
     ) async throws -> AVAsset {
+        // Check if we have elements to export
+        if canvasElements.isEmpty {
+            // Add a placeholder element if the canvas is empty
+            // This ensures we can still create a valid video file
+            var placeholderText = CanvasElement.text(
+                at: CGPoint(x: Double(width)/2, y: Double(height)/2)
+            )
+            placeholderText.text = "Motion Storyline Export"
+            placeholderText.size = CGSize(width: 500, height: 100)
+            placeholderText.color = .black
+            placeholderText.textAlignment = .center
+            
+            // Temporarily add the placeholder to canvas elements
+            DispatchQueue.main.sync {
+                canvasElements.append(placeholderText)
+            }
+        }
+        
         // Create a video with animated frames
         let frameCount = Int(duration * Double(frameRate))
+        
+        // Ensure we have a valid duration
+        if frameCount <= 0 || duration <= 0 {
+            throw NSError(domain: "MotionStoryline", code: 102, userInfo: [NSLocalizedDescriptionKey: "Invalid export duration. Duration must be greater than 0."])
+        }
+        
         let tempDir = FileManager.default.temporaryDirectory
         let temporaryVideoURL = tempDir.appendingPathComponent("temp_canvas_\(UUID().uuidString).mov")
         
@@ -1803,7 +2028,7 @@ struct DesignCanvas: View {
         // Helper function to properly convert SwiftUI Color to CGColor
         func convertToCGColor(_ color: Color) -> CGColor {
             // Convert through NSColor to ensure consistent color space
-            let nsColor = NSColor(color) ?? NSColor.white
+            let nsColor = NSColor(color)
             // Use sRGB color space for consistent rendering across canvas and export
             let colorInRGB = nsColor.usingColorSpace(.sRGB) ?? nsColor
             return colorInRGB.cgColor
@@ -2025,7 +2250,7 @@ struct DesignCanvas: View {
                                     // Ensure consistent color conversion
                                     .foregroundColor: {
                                         // First create NSColor from SwiftUI Color
-                                        let nsColor = NSColor(element.color) ?? NSColor.white
+                                        let nsColor = NSColor(element.color)
                                         // Then try to use a consistent color space
                                         return nsColor.usingColorSpace(.sRGB) ?? nsColor
                                     }(),
@@ -2255,6 +2480,102 @@ struct DesignCanvas: View {
         
         return pixelBuffer
     }
+    
+    // MARK: - Animation Property Management
+    
+    /// Updates the animation properties when an element is selected
+    private func updateAnimationPropertiesForSelectedElement(_ element: CanvasElement?) {
+        guard let element = element else { return }
+        
+        // Create a unique ID prefix for this element's properties
+        let idPrefix = element.id.uuidString
+        
+        // Position track
+        let positionTrackId = "\(idPrefix)_position"
+        if animationController.getTrack(id: positionTrackId) as? KeyframeTrack<CGPoint> == nil {
+            let track = animationController.addTrack(id: positionTrackId) { (newPosition: CGPoint) in
+                // Update the element's position when the animation plays
+                if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                    self.canvasElements[index].position = newPosition
+                }
+            }
+            // Add initial keyframe at time 0
+            track.add(keyframe: Keyframe(time: 0.0, value: element.position))
+        }
+        
+        // Size track (using width as the animatable property for simplicity)
+        let sizeTrackId = "\(idPrefix)_size"
+        if animationController.getTrack(id: sizeTrackId) as? KeyframeTrack<CGFloat> == nil {
+            let track = animationController.addTrack(id: sizeTrackId) { (newSize: CGFloat) in
+                // Update the element's size when the animation plays
+                if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                    // If aspect ratio is locked, maintain it
+                    if self.canvasElements[index].isAspectRatioLocked {
+                        let ratio = self.canvasElements[index].size.height / self.canvasElements[index].size.width
+                        self.canvasElements[index].size = CGSize(width: newSize, height: newSize * ratio)
+                    } else {
+                        self.canvasElements[index].size.width = newSize
+                    }
+                }
+            }
+            // Add initial keyframe at time 0
+            track.add(keyframe: Keyframe(time: 0.0, value: element.size.width))
+        }
+        
+        // Rotation track
+        let rotationTrackId = "\(idPrefix)_rotation"
+        if animationController.getTrack(id: rotationTrackId) as? KeyframeTrack<Double> == nil {
+            let track = animationController.addTrack(id: rotationTrackId) { (newRotation: Double) in
+                // Update the element's rotation when the animation plays
+                if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                    self.canvasElements[index].rotation = newRotation
+                }
+            }
+            // Add initial keyframe at time 0
+            track.add(keyframe: Keyframe(time: 0.0, value: element.rotation))
+        }
+        
+        // Color track
+        let colorTrackId = "\(idPrefix)_color"
+        if animationController.getTrack(id: colorTrackId) as? KeyframeTrack<Color> == nil {
+            let track = animationController.addTrack(id: colorTrackId) { (newColor: Color) in
+                // Update the element's color when the animation plays
+                if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                    self.canvasElements[index].color = newColor
+                }
+            }
+            // Add initial keyframe at time 0
+            track.add(keyframe: Keyframe(time: 0.0, value: element.color))
+        }
+        
+        // Opacity track
+        let opacityTrackId = "\(idPrefix)_opacity"
+        if animationController.getTrack(id: opacityTrackId) as? KeyframeTrack<Double> == nil {
+            let track = animationController.addTrack(id: opacityTrackId) { (newOpacity: Double) in
+                // Update the element's opacity when the animation plays
+                if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                    self.canvasElements[index].opacity = newOpacity
+                }
+            }
+            // Add initial keyframe at time 0
+            track.add(keyframe: Keyframe(time: 0.0, value: element.opacity))
+        }
+        
+        // Path track - only for path elements
+        if element.type == .path {
+            let pathTrackId = "\(idPrefix)_path"
+            if animationController.getTrack(id: pathTrackId) as? KeyframeTrack<[CGPoint]> == nil {
+                let track = animationController.addTrack(id: pathTrackId) { (newPath: [CGPoint]) in
+                    // Update the element's path when the animation plays
+                    if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                        self.canvasElements[index].path = newPath
+                    }
+                }
+                // Add initial keyframe at time 0
+                track.add(keyframe: Keyframe(time: 0.0, value: element.path))
+            }
+        }
+    }
 }
 
 // MARK: - Preview (Separated to avoid circular reference)
@@ -2421,5 +2742,58 @@ extension KeyEventMonitorController {
         }
         
         return Array(times).sorted()
+    }
+}
+
+// MARK: - Canvas Keyboard Shortcuts Extension
+extension KeyEventMonitorController {
+    /// Setup keyboard shortcuts for common canvas operations
+    func setupCanvasKeyboardShortcuts(
+        zoomIn: @escaping () -> Void,
+        zoomOut: @escaping () -> Void,
+        resetZoom: @escaping () -> Void
+    ) {
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
+            // Only process events if we have focus (not in a text field, etc.)
+            guard !NSApp.isActive || !(NSApp.keyWindow?.firstResponder is NSTextView) else {
+                return event
+            }
+            
+            // Check for Command key (or Command+Shift for some shortcuts)
+            let isCommandPressed = event.modifierFlags.contains(.command)
+            
+            if isCommandPressed {
+                switch event.keyCode {
+                // Plus key (Command+Plus: Zoom In)
+                case 24: // Equal/Plus key
+                    zoomIn()
+                    return nil // Consume the event
+                    
+                // Minus key (Command+Minus: Zoom Out)  
+                case 27: // Minus key
+                    zoomOut()
+                    return nil // Consume the event
+                    
+                // 0 key (Command+0: Reset Zoom)
+                case 29: // 0 key
+                    resetZoom()
+                    return nil // Consume the event
+                    
+                default:
+                    break
+                }
+            }
+            
+            return event
+        }
+    }
+}
+
+// Add this extension at the end of the file
+extension DesignCanvas {
+    // Adds accessibility identifier for UI testing
+    func withUITestIdentifier() -> some View {
+        self
+            .accessibilityIdentifier("editor-view")
     }
 }

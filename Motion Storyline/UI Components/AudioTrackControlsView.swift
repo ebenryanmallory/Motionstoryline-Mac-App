@@ -200,10 +200,10 @@ public struct AudioTrackControlsView: View {
                 }
             }
         }
-        .onChange(of: currentTime) { newValue in
+        .onChange(of: currentTime) { oldValue, newValue in
             manager.seek(to: newValue)
         }
-        .onChange(of: isPlaying) { newValue in
+        .onChange(of: isPlaying) { oldValue, newValue in
             if newValue != manager.isPlaying {
                 manager.isPlaying = newValue
                 if newValue {
@@ -213,7 +213,7 @@ public struct AudioTrackControlsView: View {
                 }
             }
         }
-        .onChange(of: manager.isPlaying) { newValue in
+        .onChange(of: manager.isPlaying) { oldValue, newValue in
             isPlaying = newValue
         }
     }

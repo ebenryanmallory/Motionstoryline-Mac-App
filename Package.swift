@@ -26,7 +26,9 @@ let package = Package(
                 // Use a specific copying rule for asset catalogs to preserve their structure
                 .copy("Assets.xcassets"),
                 .process("Preview Content"),
-                .process("README.md")
+                // Include documentation files
+                .process("ARCHITECTURE.md"),
+                .process("Services/README.md")
             ]
         ),
         .testTarget(

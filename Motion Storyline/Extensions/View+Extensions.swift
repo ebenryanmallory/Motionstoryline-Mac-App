@@ -4,29 +4,8 @@ import AppKit
 // Extension to add preferences support to any view
 extension View {
     func showPreferences() {
-        // Create a new window for preferences
-        let preferencesView = PreferencesView()
-            .environmentObject(AppStateManager.shared)
-        
-        let hostingController = NSHostingController(rootView: preferencesView)
-        
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 450),
-            styleMask: [.titled, .closable, .miniaturizable],
-            backing: .buffered,
-            defer: false
-        )
-        
-        window.center()
-        window.setFrameAutosaveName("PreferencesWindow")
-        window.contentView = hostingController.view
-        window.title = "Preferences"
-        window.titlebarAppearsTransparent = false
-        window.titleVisibility = .visible
-        
-        // Show the window
-        window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        // Use the centralized preferences controller
+        PreferencesController.showPreferences()
     }
 }
 

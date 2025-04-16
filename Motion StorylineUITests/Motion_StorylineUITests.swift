@@ -105,6 +105,26 @@ final class Motion_StorylineUITests: XCTestCase {
     }
 
     @MainActor
+    func testDesignCanvasAccessibility() throws {
+        // Launch the application
+        let app = XCUIApplication()
+        app.launch()
+        
+        // Create a new project or open an existing one
+        let newProjectButton = app.buttons["New Project"]
+        if newProjectButton.exists {
+            newProjectButton.click()
+        }
+        
+        // Verify the design canvas exists with the correct accessibility identifier
+        let designCanvas = app.otherElements["designCanvas"]
+        XCTAssertTrue(designCanvas.waitForExistence(timeout: 5), "Design canvas with accessibility identifier was not found")
+        
+        // Additional verification that it's the right element by checking it's part of the main window
+        XCTAssertTrue(designCanvas.isHittable, "Design canvas is not hittable")
+    }
+
+    @MainActor
     func testLaunchPerformance() throws {
         if #available(macOS 10.15, iOS 13.0, tvOS 13.0, watchOS 7.0, *) {
             // This measures how long it takes to launch your application.

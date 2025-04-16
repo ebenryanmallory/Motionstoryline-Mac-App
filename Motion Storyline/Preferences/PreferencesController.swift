@@ -1,8 +1,9 @@
 import SwiftUI
 import AppKit
 
-class PreferencesController {
+class PreferencesController: NSObject, NSWindowDelegate {
     private static var preferencesWindow: NSWindow?
+    private static var instance: PreferencesController?
     
     static func showPreferences() {
         // Check if we already have a window open
@@ -10,6 +11,11 @@ class PreferencesController {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
+        }
+        
+        // Create controller instance if needed
+        if instance == nil {
+            instance = PreferencesController()
         }
         
         // Create a new window
@@ -32,10 +38,20 @@ class PreferencesController {
         window.titlebarAppearsTransparent = false
         window.titleVisibility = .visible
         window.isReleasedWhenClosed = false
+        window.delegate = instance
         
         preferencesWindow = window
         
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+    
+    // MARK: - NSWindowDelegate
+    
+    func windowWillClose(_ notification: Notification) {
+        // Just hide the window instead of letting it close
+        if let window = notification.object as? NSWindow, window == PreferencesController.preferencesWindow {
+            window.orderOut(nil)
+        }
     }
 } 

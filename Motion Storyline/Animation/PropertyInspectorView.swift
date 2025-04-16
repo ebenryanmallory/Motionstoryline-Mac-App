@@ -46,7 +46,7 @@ struct PropertyInspectorView: View {
                         Text("Ease In Out").tag(EasingFunction.easeInOut)
                     }
                     .pickerStyle(.segmented)
-                    .onChange(of: selectedEasing) { newValue in
+                    .onChange(of: selectedEasing) { oldValue, newValue in
                         if let time = selectedKeyframeTime {
                             updateEasingFunction(for: property, at: time, to: newValue)
                         }
@@ -64,7 +64,7 @@ struct PropertyInspectorView: View {
         .onAppear {
             loadEasingFunction(for: property)
         }
-        .onChange(of: selectedKeyframeTime) { _ in
+        .onChange(of: selectedKeyframeTime) { oldValue, _ in
             loadEasingFunction(for: property)
         }
     }

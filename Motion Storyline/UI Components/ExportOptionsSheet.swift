@@ -45,7 +45,7 @@ public struct ExportOptionsSheet: View {
             Divider()
             
             // Content
-            Group {
+            VStack {
                 switch currentStep {
                 case .selectPlatform:
                     PlatformSelectionView { configuration in
@@ -56,7 +56,7 @@ public struct ExportOptionsSheet: View {
                 case .exporting:
                     if let config = exportConfig {
                         ExportProgressView(
-                            configuration: config,
+                            configuration: convertToCoordinatorConfig(config),
                             asset: asset,
                             onCompletion: { result in
                                 switch result {
@@ -188,6 +188,21 @@ public struct ExportOptionsSheet: View {
             // Pass configuration to callback
             onExport(configuration)
         }
+    }
+    
+    /// Convert VideoExporter.ExportConfiguration to ExportCoordinator.ExportConfiguration
+    private func convertToCoordinatorConfig(_ config: VideoExporter.ExportConfiguration) -> ExportCoordinator.ExportConfiguration {
+        return ExportCoordinator.ExportConfiguration(
+            format: config.format,
+            width: config.width,
+            height: config.height,
+            frameRate: config.frameRate,
+            outputURL: config.outputURL,
+            proResProfile: config.proResProfile,
+            includeAudio: config.includeAudio,
+            baseFilename: config.baseFilename ?? "frame",
+            imageQuality: config.imageQuality
+        )
     }
     
     /// Steps in the export process

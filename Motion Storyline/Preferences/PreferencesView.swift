@@ -27,25 +27,33 @@ struct PreferencesView: View {
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            AppearancePreferencesView(viewModel: viewModel)
-                .tabItem {
-                    Label(PreferencesTab.appearance.rawValue, systemImage: PreferencesTab.appearance.icon)
-                }
-                .tag(PreferencesTab.appearance)
+            ScrollView {
+                AppearancePreferencesView(viewModel: viewModel)
+                    .padding(20)
+            }
+            .tabItem {
+                Label(PreferencesTab.appearance.rawValue, systemImage: PreferencesTab.appearance.icon)
+            }
+            .tag(PreferencesTab.appearance)
             
-            ExportPreferencesView(viewModel: viewModel)
-                .tabItem {
-                    Label(PreferencesTab.export.rawValue, systemImage: PreferencesTab.export.icon)
-                }
-                .tag(PreferencesTab.export)
+            ScrollView {
+                ExportPreferencesView(viewModel: viewModel)
+                    .padding(20)
+            }
+            .tabItem {
+                Label(PreferencesTab.export.rawValue, systemImage: PreferencesTab.export.icon)
+            }
+            .tag(PreferencesTab.export)
             
-            GeneralPreferencesView(viewModel: viewModel)
-                .tabItem {
-                    Label(PreferencesTab.general.rawValue, systemImage: PreferencesTab.general.icon)
-                }
-                .tag(PreferencesTab.general)
+            ScrollView {
+                GeneralPreferencesView(viewModel: viewModel)
+                    .padding(20)
+            }
+            .tabItem {
+                Label(PreferencesTab.general.rawValue, systemImage: PreferencesTab.general.icon)
+            }
+            .tag(PreferencesTab.general)
         }
-        .padding(20)
         .frame(width: 600, height: 450)
         .onAppear {
             configurePreferencesWindow()
@@ -82,7 +90,7 @@ struct AppearancePreferencesView: View {
                     }
                     .pickerStyle(.inline)
                     .padding(.vertical, 5)
-                    .onChange(of: viewModel.appearance) { newValue in
+                    .onChange(of: viewModel.appearance) { oldValue, newValue in
                         appState.setAppearance(newValue)
                     }
                     

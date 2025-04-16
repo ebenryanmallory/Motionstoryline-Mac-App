@@ -527,13 +527,13 @@ struct TimelineView: View {
             // Set up synchronization with the animation controller's playback state
             isPlaying = animationController.isPlaying
         }
-        .onChange(of: animationController.isPlaying) { newIsPlaying in
+        .onChange(of: animationController.isPlaying) { oldValue, newIsPlaying in
             // Keep our local isPlaying in sync with the controller
             if isPlaying != newIsPlaying {
                 isPlaying = newIsPlaying
             }
         }
-        .onChange(of: isPlaying) { newValue in
+        .onChange(of: isPlaying) { oldValue, newValue in
             if newValue {
                 // Start animation playback
                 animationController.play()
@@ -545,7 +545,7 @@ struct TimelineView: View {
                 animationController.pause()
             }
         }
-        .onChange(of: animationController.currentTime) { newTime in
+        .onChange(of: animationController.currentTime) { oldValue, newTime in
             // Ensure the animation time is synchronized with audio time
             if !isPlaying && abs(newTime - animationController.currentTime) > 0.01 {
                 animationController.seekToTime(newTime)

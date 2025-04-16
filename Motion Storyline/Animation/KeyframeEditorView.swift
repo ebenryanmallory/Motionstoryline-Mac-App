@@ -16,7 +16,7 @@ struct KeyframeEditorView: View {
     @StateObject private var keyEventController = KeyEventMonitorController()
     
     // Dynamically generate properties based on the selected element
-    private var properties: [AnimatableProperty] {
+    internal var properties: [AnimatableProperty] {
         guard let element = selectedElement else { return [] }
         
         // Create a unique ID prefix for this element's properties
@@ -43,36 +43,43 @@ struct KeyframeEditorView: View {
                 
                 Divider()
                 
-                List {
-                    ForEach(properties) { property in
-                        HStack {
-                            Image(systemName: property.icon)
-                                .frame(width: 24)
-                            
-                            Text(property.name)
-                            
-                            Spacer()
-                            
-                            // Show active keyframe count
-                            if let count = getKeyframeCount(for: property.id) {
-                                Text("\(count)")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color(NSColor.controlBackgroundColor))
-                                    .cornerRadius(8)
+                if let element = selectedElement {
+                    List {
+                        ForEach(properties) { property in
+                            HStack {
+                                Image(systemName: property.icon)
+                                    .frame(width: 24)
+                                
+                                Text(property.name)
+                                
+                                Spacer()
+                                
+                                // Show active keyframe count
+                                if let count = getKeyframeCount(for: property.id) {
+                                    Text("\(count)")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color(NSColor.controlBackgroundColor))
+                                        .cornerRadius(8)
+                                }
+                            }
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
+                            .background(selectedProperty?.id == property.id ? Color(NSColor.selectedContentBackgroundColor) : Color.clear)
+                            .onTapGesture {
+                                selectedProperty = property
                             }
                         }
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
-                        .background(selectedProperty?.id == property.id ? Color(NSColor.selectedContentBackgroundColor) : Color.clear)
-                        .onTapGesture {
-                            selectedProperty = property
-                        }
                     }
+                    .listStyle(.sidebar)
+                } else {
+                    Spacer()
+                    Text("No element selected")
+                        .foregroundColor(.secondary)
+                    Spacer()
                 }
-                .listStyle(.sidebar)
             }
             .frame(minWidth: 200)
             
@@ -80,9 +87,14 @@ struct KeyframeEditorView: View {
             VStack(spacing: 0) {
                 // Toolbar
                 HStack {
-                    Text(selectedElement?.displayName ?? "No Element Selected")
-                        .font(.headline)
-                        .foregroundColor(.secondary)
+                    if let element = selectedElement {
+                        Text(element.displayName)
+                            .font(.headline)
+                    } else {
+                        Text("No Element Selected")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                    }
                     
                     Spacer()
                     
@@ -189,6 +201,7 @@ struct KeyframeEditorView: View {
             }
             .background(Color(NSColor.textBackgroundColor))
         }
+        .id(selectedElement?.id.uuidString ?? "no-element") // Force view refresh when selected element changes
         .onChange(of: selectedElement) { [selectedElement] newValue in
             // When the selected element changes
             if newValue?.id != selectedElement?.id {
@@ -199,6 +212,19 @@ struct KeyframeEditorView: View {
                 // Setup keyframe tracks for the new element
                 if let element = newValue {
                     setupTracksForSelectedElement(element)
+                    
+                    // Force refresh all properties with current element values
+                    animationController.updateAnimatedProperties()
+                }
+            } else if let newElement = newValue, let oldElement = selectedElement {
+                // Even if it's the same element, update tracks if properties changed
+                if newElement.position != oldElement.position ||
+                   newElement.size != oldElement.size ||
+                   newElement.rotation != oldElement.rotation ||
+                   newElement.color != oldElement.color ||
+                   newElement.opacity != oldElement.opacity ||
+                   newElement.path != oldElement.path {
+                    setupTracksForSelectedElement(newElement)
                 }
             }
         }
@@ -210,6 +236,10 @@ struct KeyframeEditorView: View {
             // Setup tracks for the initially selected element, if any
             if let element = selectedElement {
                 setupTracksForSelectedElement(element)
+                
+                // Force the animation controller to update with initial values
+                animationController.seekToTime(0)
+                animationController.updateAnimatedProperties()
             }
             
             // Setup keyboard shortcuts for timeline navigation
@@ -220,7 +250,7 @@ struct KeyframeEditorView: View {
             keyEventController.teardownMonitor()
         }
         .sheet(isPresented: $isAddingKeyframe) {
-            if let property = selectedProperty {
+            if let property = selectedProperty, let element = selectedElement {
                 AddKeyframeSheet(
                     animationController: animationController,
                     property: property,
@@ -243,20 +273,19 @@ struct KeyframeEditorView: View {
             selectedKeyframeTime: $selectedKeyframeTime,
             onAddKeyframe: { time in
                 // Add keyframe at the current time
-                newKeyframeTime = time
-                isAddingKeyframe = true
+                self.newKeyframeTime = time
+                self.isAddingKeyframe = true
             },
             onDeleteKeyframe: { time in
+                guard let property = self.selectedProperty else { return }
                 // Delete the selected keyframe
-                if let property = selectedProperty {
-                    animationController.removeKeyframe(trackId: property.id, time: time)
-                }
+                self.animationController.removeKeyframe(trackId: property.id, time: time)
             }
         )
     }
     
     /// Setup keyframe tracks for the selected element
-    private func setupTracksForSelectedElement(_ element: CanvasElement) {
+    internal func setupTracksForSelectedElement(_ element: CanvasElement) {
         let idPrefix = element.id.uuidString
         
         // Position track
@@ -264,13 +293,17 @@ struct KeyframeEditorView: View {
         if animationController.getTrack(id: positionTrackId) as? KeyframeTrack<CGPoint> == nil {
             let track = animationController.addTrack(id: positionTrackId) { (newPosition: CGPoint) in
                 // Update the element's position when the animation plays
-                if var updatedElement = selectedElement, updatedElement.id == element.id {
-                    updatedElement.position = newPosition
-                    selectedElement = updatedElement
-                }
+                guard var updatedElement = self.selectedElement, updatedElement.id == element.id else { return }
+                updatedElement.position = newPosition
+                self.selectedElement = updatedElement
             }
             // Add initial keyframe at time 0
             track.add(keyframe: Keyframe(time: 0.0, value: element.position))
+        } else if let track = animationController.getTrack(id: positionTrackId) as? KeyframeTrack<CGPoint> {
+            // Ensure the initial keyframe exists and is correct
+            if !track.allKeyframes.contains(where: { $0.time == 0.0 }) {
+                track.add(keyframe: Keyframe(time: 0.0, value: element.position))
+            }
         }
         
         // Size track (using width as the animatable property for simplicity)
@@ -278,19 +311,23 @@ struct KeyframeEditorView: View {
         if animationController.getTrack(id: sizeTrackId) as? KeyframeTrack<CGFloat> == nil {
             let track = animationController.addTrack(id: sizeTrackId) { (newSize: CGFloat) in
                 // Update the element's size when the animation plays
-                if var updatedElement = selectedElement, updatedElement.id == element.id {
-                    // If aspect ratio is locked, maintain it
-                    if updatedElement.isAspectRatioLocked {
-                        let ratio = updatedElement.size.height / updatedElement.size.width
-                        updatedElement.size = CGSize(width: newSize, height: newSize * ratio)
-                    } else {
-                        updatedElement.size.width = newSize
-                    }
-                    selectedElement = updatedElement
+                guard var updatedElement = self.selectedElement, updatedElement.id == element.id else { return }
+                // If aspect ratio is locked, maintain it
+                if updatedElement.isAspectRatioLocked {
+                    let ratio = updatedElement.size.height / updatedElement.size.width
+                    updatedElement.size = CGSize(width: newSize, height: newSize * ratio)
+                } else {
+                    updatedElement.size.width = newSize
                 }
+                self.selectedElement = updatedElement
             }
             // Add initial keyframe at time 0
             track.add(keyframe: Keyframe(time: 0.0, value: element.size.width))
+        } else if let track = animationController.getTrack(id: sizeTrackId) as? KeyframeTrack<CGFloat> {
+            // Ensure the initial keyframe exists and is correct
+            if !track.allKeyframes.contains(where: { $0.time == 0.0 }) {
+                track.add(keyframe: Keyframe(time: 0.0, value: element.size.width))
+            }
         }
         
         // Rotation track
@@ -298,13 +335,17 @@ struct KeyframeEditorView: View {
         if animationController.getTrack(id: rotationTrackId) as? KeyframeTrack<Double> == nil {
             let track = animationController.addTrack(id: rotationTrackId) { (newRotation: Double) in
                 // Update the element's rotation when the animation plays
-                if var updatedElement = selectedElement, updatedElement.id == element.id {
-                    updatedElement.rotation = newRotation
-                    selectedElement = updatedElement
-                }
+                guard var updatedElement = self.selectedElement, updatedElement.id == element.id else { return }
+                updatedElement.rotation = newRotation
+                self.selectedElement = updatedElement
             }
             // Add initial keyframe at time 0
             track.add(keyframe: Keyframe(time: 0.0, value: element.rotation))
+        } else if let track = animationController.getTrack(id: rotationTrackId) as? KeyframeTrack<Double> {
+            // Ensure the initial keyframe exists and is correct
+            if !track.allKeyframes.contains(where: { $0.time == 0.0 }) {
+                track.add(keyframe: Keyframe(time: 0.0, value: element.rotation))
+            }
         }
         
         // Color track
@@ -312,13 +353,17 @@ struct KeyframeEditorView: View {
         if animationController.getTrack(id: colorTrackId) as? KeyframeTrack<Color> == nil {
             let track = animationController.addTrack(id: colorTrackId) { (newColor: Color) in
                 // Update the element's color when the animation plays
-                if var updatedElement = selectedElement, updatedElement.id == element.id {
-                    updatedElement.color = newColor
-                    selectedElement = updatedElement
-                }
+                guard var updatedElement = self.selectedElement, updatedElement.id == element.id else { return }
+                updatedElement.color = newColor
+                self.selectedElement = updatedElement
             }
             // Add initial keyframe at time 0
             track.add(keyframe: Keyframe(time: 0.0, value: element.color))
+        } else if let track = animationController.getTrack(id: colorTrackId) as? KeyframeTrack<Color> {
+            // Ensure the initial keyframe exists and is correct
+            if !track.allKeyframes.contains(where: { $0.time == 0.0 }) {
+                track.add(keyframe: Keyframe(time: 0.0, value: element.color))
+            }
         }
         
         // Opacity track
@@ -326,13 +371,17 @@ struct KeyframeEditorView: View {
         if animationController.getTrack(id: opacityTrackId) as? KeyframeTrack<Double> == nil {
             let track = animationController.addTrack(id: opacityTrackId) { (newOpacity: Double) in
                 // Update the element's opacity when the animation plays
-                if var updatedElement = selectedElement, updatedElement.id == element.id {
-                    updatedElement.opacity = newOpacity
-                    selectedElement = updatedElement
-                }
+                guard var updatedElement = self.selectedElement, updatedElement.id == element.id else { return }
+                updatedElement.opacity = newOpacity
+                self.selectedElement = updatedElement
             }
             // Add initial keyframe at time 0
             track.add(keyframe: Keyframe(time: 0.0, value: element.opacity))
+        } else if let track = animationController.getTrack(id: opacityTrackId) as? KeyframeTrack<Double> {
+            // Ensure the initial keyframe exists and is correct
+            if !track.allKeyframes.contains(where: { $0.time == 0.0 }) {
+                track.add(keyframe: Keyframe(time: 0.0, value: element.opacity))
+            }
         }
         
         // Path track - only for path elements
@@ -341,13 +390,17 @@ struct KeyframeEditorView: View {
             if animationController.getTrack(id: pathTrackId) as? KeyframeTrack<[CGPoint]> == nil {
                 let track = animationController.addTrack(id: pathTrackId) { (newPath: [CGPoint]) in
                     // Update the element's path when the animation plays
-                    if var updatedElement = selectedElement, updatedElement.id == element.id {
-                        updatedElement.path = newPath
-                        selectedElement = updatedElement
-                    }
+                    guard var updatedElement = self.selectedElement, updatedElement.id == element.id else { return }
+                    updatedElement.path = newPath
+                    self.selectedElement = updatedElement
                 }
                 // Add initial keyframe at time 0
                 track.add(keyframe: Keyframe(time: 0.0, value: element.path))
+            } else if let track = animationController.getTrack(id: pathTrackId) as? KeyframeTrack<[CGPoint]> {
+                // Ensure the initial keyframe exists and is correct
+                if !track.allKeyframes.contains(where: { $0.time == 0.0 }) {
+                    track.add(keyframe: Keyframe(time: 0.0, value: element.path))
+                }
             }
         }
     }

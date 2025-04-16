@@ -1,20 +1,26 @@
 import SwiftUI
 import AVFoundation
+import os.log
 
 /// A view that manages the video export process and displays progress
 public struct ExportProgressView: View {
+    // Logger for debugging
+    private static let logger = OSLog(subsystem: "com.app.Motion-Storyline", category: "ExportProgressView")
+    
     @StateObject private var exportManager = ExportManager()
     @State private var isExportCompleted = false
-    @State private var exportResult: Result<URL, VideoExporter.ExportError>?
+    @State private var exportResult: Result<URL, Error>?
+    @Environment(\.dismiss) private var dismiss
     
-    let configuration: VideoExporter.ExportConfiguration
+    // Use the new coordinator's configuration type
+    let configuration: ExportCoordinator.ExportConfiguration
     let asset: AVAsset
-    let onCompletion: ((Result<URL, VideoExporter.ExportError>) -> Void)?
+    let onCompletion: ((Result<URL, Error>) -> Void)?
     
     public init(
-        configuration: VideoExporter.ExportConfiguration,
+        configuration: ExportCoordinator.ExportConfiguration,
         asset: AVAsset,
-        onCompletion: ((Result<URL, VideoExporter.ExportError>) -> Void)? = nil
+        onCompletion: ((Result<URL, Error>) -> Void)? = nil
     ) {
         self.configuration = configuration
         self.asset = asset
@@ -34,9 +40,14 @@ public struct ExportProgressView: View {
                         Text("Exporting...")
                             .foregroundColor(.secondary)
                         Spacer()
-                        Text("\(Int(exportManager.progress * 100))%")
-                            .monospacedDigit()
-                            .foregroundColor(.secondary)
+                        if exportManager.progress > 0 {
+                            Text("\(Int(exportManager.progress * 100))%")
+                                .monospacedDigit()
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("Starting...")
+                                .foregroundColor(.secondary)
+                        }
                     }
                     .font(.caption)
                 }
@@ -45,10 +56,14 @@ public struct ExportProgressView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Resolution: \(configuration.width) × \(configuration.height)")
-                        if let profile = configuration.proResProfile {
+                        if case .video = configuration.format, let profile = configuration.proResProfile {
                             Text("Format: ProRes \(profile.description)")
-                        } else {
+                        } else if case .video = configuration.format {
                             Text("Format: H.264 MP4")
+                        } else if case .imageSequence(let format) = configuration.format {
+                            Text("Format: \(format.rawValue.uppercased()) Image Sequence")
+                        } else if case .gif = configuration.format {
+                            Text("Format: Animated GIF")
                         }
                     }
                     .font(.caption)
@@ -59,7 +74,14 @@ public struct ExportProgressView: View {
                 
                 // Cancel button
                 Button("Cancel") {
+                    os_log("User cancelled export", log: ExportProgressView.logger, type: .info)
                     exportManager.cancelExport()
+                    // Ensure we dismiss after cancelling
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        self.isExportCompleted = true
+                        self.exportResult = .failure(NSError(domain: "ExportProgressView", code: 1, 
+                                                            userInfo: [NSLocalizedDescriptionKey: "Export was cancelled"]))
+                    }
                 }
                 .buttonStyle(.borderless)
                 .foregroundColor(.red)
@@ -81,12 +103,17 @@ public struct ExportProgressView: View {
                         
                         HStack {
                             Button("Show in Finder") {
+                                os_log("Opening exported file in Finder: %{public}@", log: ExportProgressView.logger, type: .info, url.path)
                                 NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
                             }
                             .buttonStyle(.borderless)
                             
                             Button("Done") {
-                                NSApp.stopModal()
+                                os_log("User dismissed export completion view", log: ExportProgressView.logger, type: .info)
+                                dismiss()
+                                if let onCompletion = onCompletion {
+                                    onCompletion(result)
+                                }
                             }
                             .buttonStyle(.borderedProminent)
                         }
@@ -107,10 +134,27 @@ public struct ExportProgressView: View {
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                         
-                        Button("Close") {
-                            NSApp.stopModal()
+                        HStack {
+                            Button("Try Again") {
+                                os_log("User requested to retry export", log: ExportProgressView.logger, type: .info)
+                                // Reset state to retry export
+                                isExportCompleted = false
+                                exportResult = nil
+                                exportManager.progress = 0.0
+                                // Start the export again
+                                startExport()
+                            }
+                            .buttonStyle(.borderless)
+                            
+                            Button("Close") {
+                                os_log("User dismissed export failure view", log: ExportProgressView.logger, type: .info)
+                                dismiss()
+                                if let onCompletion = onCompletion {
+                                    onCompletion(result)
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
-                        .buttonStyle(.borderedProminent)
                         .padding(.top)
                     }
                 }
@@ -119,21 +163,56 @@ public struct ExportProgressView: View {
         .padding()
         .frame(width: 360)
         .onAppear {
+            os_log("ExportProgressView appeared with configuration: %{public}@, to %{public}@", log: ExportProgressView.logger, type: .info, String(describing: configuration.format), configuration.outputURL.path)
             startExport()
         }
     }
     
     private func startExport() {
+        os_log("Starting export process", log: ExportProgressView.logger, type: .info)
+        
         Task {
-            let result = await exportManager.export(
-                with: configuration,
-                asset: asset
-            )
-            
-            DispatchQueue.main.async {
-                self.exportResult = result
-                self.isExportCompleted = true
-                self.onCompletion?(result)
+            do {
+                // Verify the asset is ready for export
+                if let tracks = try? await asset.loadTracks(withMediaType: .video), tracks.isEmpty {
+                    os_log("No video tracks found in asset", log: ExportProgressView.logger, type: .error)
+                    throw NSError(domain: "ExportProgressView", code: 2, 
+                                  userInfo: [NSLocalizedDescriptionKey: "No video tracks found in asset"])
+                }
+                
+                os_log("Beginning export operation", log: ExportProgressView.logger, type: .info)
+                
+                // Create coordinator and export
+                let coordinator = ExportCoordinator(asset: asset)
+                let url = try await coordinator.export(
+                    with: configuration,
+                    progressHandler: { [weak exportManager] progress in
+                        DispatchQueue.main.async {
+                            exportManager?.progress = progress
+                        }
+                    }
+                )
+                
+                os_log("Export operation completed successfully", log: ExportProgressView.logger, type: .info)
+                
+                // Only update UI if not already completed (avoid race conditions)
+                DispatchQueue.main.async {
+                    if !self.isExportCompleted {
+                        self.exportResult = .success(url)
+                        self.isExportCompleted = true
+                    }
+                }
+            } catch {
+                os_log("Export process threw error: %{public}@", log: ExportProgressView.logger, type: .error, error.localizedDescription)
+                
+                // Only update UI if not already completed (avoid race conditions)
+                DispatchQueue.main.async {
+                    if !self.isExportCompleted {
+                        self.exportResult = .failure(error)
+                        self.isExportCompleted = true
+                        self.onCompletion?(.failure(error))
+                    }
+                }
             }
         }
     }
@@ -141,37 +220,22 @@ public struct ExportProgressView: View {
 
 /// A view model to manage export state and progress
 @MainActor
-public class ExportManager: ObservableObject, @unchecked Sendable {
+public class ExportManager: ObservableObject {
+    // Logger for debugging
+    private static let logger = OSLog(subsystem: "com.app.Motion-Storyline", category: "ExportManager")
+    
     @Published public var progress: Float = 0.0
-    private var exporter: VideoExporter?
+    private var cancellationFlag = false
     
     public init() {}
     
-    public func export(
-        with configuration: VideoExporter.ExportConfiguration,
-        asset: AVAsset
-    ) async -> Result<URL, VideoExporter.ExportError> {
-        // Create the exporter
-        let exporter = VideoExporter(asset: asset)
-        self.exporter = exporter
-        
-        // Create a result continuation to bridge async callbacks
-        return await withCheckedContinuation { continuation in
-            Task {
-                await exporter.export(with: configuration, progressHandler: { [weak self] newProgress in
-                    // Update progress on the main thread
-                    Task { @MainActor in
-                        self?.progress = newProgress
-                    }
-                }, completion: { result in
-                    continuation.resume(returning: result)
-                })
-            }
-        }
+    public func cancelExport() {
+        os_log("Export cancelled by user", log: ExportManager.logger, type: .info)
+        cancellationFlag = true
     }
     
-    public func cancelExport() {
-        exporter?.cancelExport()
+    public var isCancelled: Bool {
+        return cancellationFlag
     }
 }
 
@@ -179,7 +243,8 @@ public class ExportManager: ObservableObject, @unchecked Sendable {
 struct ExportProgressView_Previews: PreviewProvider {
     static var previews: some View {
         // Create a sample configuration for preview
-        let config = VideoExporter.ExportConfiguration(
+        let config = ExportCoordinator.ExportConfiguration(
+            format: .video,
             width: 1920,
             height: 1080,
             frameRate: 30.0,
@@ -206,10 +271,10 @@ struct ExportProgressView_Previews: PreviewProvider {
 
 // Helper view to show completed state in preview
 private struct CompletedExportPreview: View {
-    let config: VideoExporter.ExportConfiguration
+    let config: ExportCoordinator.ExportConfiguration
     let asset: AVAsset
     @State private var isCompleted = false
-    @State private var result: Result<URL, VideoExporter.ExportError>? = nil
+    @State private var result: Result<URL, Error>? = nil
     
     var body: some View {
         ExportProgressView(
@@ -221,11 +286,9 @@ private struct CompletedExportPreview: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 // Simulate success state
                 isCompleted = true
-                result = .success(URL(fileURLWithPath: "/tmp/my_export.mp4"))
+                result = .success(config.outputURL)
             }
         }
-        .environment(\._exportPreviewIsCompleted, isCompleted)
-        .environment(\._exportPreviewResult, result)
     }
 }
 
@@ -235,7 +298,7 @@ private struct ExportPreviewIsCompletedKey: EnvironmentKey {
 }
 
 private struct ExportPreviewResultKey: EnvironmentKey {
-    static let defaultValue: Result<URL, VideoExporter.ExportError>? = nil
+    static let defaultValue: Result<URL, Error>? = nil
 }
 
 private extension EnvironmentValues {
@@ -244,7 +307,7 @@ private extension EnvironmentValues {
         set { self[ExportPreviewIsCompletedKey.self] = newValue }
     }
     
-    var _exportPreviewResult: Result<URL, VideoExporter.ExportError>? {
+    var _exportPreviewResult: Result<URL, Error>? {
         get { self[ExportPreviewResultKey.self] }
         set { self[ExportPreviewResultKey.self] = newValue }
     }

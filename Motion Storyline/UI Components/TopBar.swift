@@ -2,6 +2,7 @@ import SwiftUI
 
 // Import the PreferencesController
 import Foundation
+import AVFoundation
 
 struct CanvasTopBar: View {
     let projectName: String
@@ -24,6 +25,11 @@ struct CanvasTopBar: View {
     let onZoomReset: () -> Void
     
     @State private var isShowingMenu = false
+    // Add a state for showing the export modal
+    @State private var showingExportModal = false
+    // Add canvas dimensions for the export modal
+    let canvasWidth: Int
+    let canvasHeight: Int
     
     var body: some View {
         HStack(spacing: 16) {
@@ -53,11 +59,17 @@ struct CanvasTopBar: View {
                 Button("Save", action: {})
                 Button("Save As...", action: {})
                 Divider()
-                Button("Export...", action: {})
+                Button("Export...", action: { 
+                    // Show export modal instead of direct export
+                    showingExportModal = true
+                })
             } label: {
                 Text("File")
                     .foregroundColor(.black)
+                    .frame(width: 60, alignment: .center)
             }
+            .menuStyle(BorderlessButtonMenuStyle())
+            .fixedSize()
             
             // Edit menu
             Menu {
@@ -70,7 +82,10 @@ struct CanvasTopBar: View {
             } label: {
                 Text("Edit")
                     .foregroundColor(.black)
+                    .frame(width: 60, alignment: .center)
             }
+            .menuStyle(BorderlessButtonMenuStyle())
+            .fixedSize()
             
             // View menu
             Menu {
@@ -86,7 +101,10 @@ struct CanvasTopBar: View {
             } label: {
                 Text("View")
                     .foregroundColor(.black)
+                    .frame(width: 60, alignment: .center)
             }
+            .menuStyle(BorderlessButtonMenuStyle())
+            .fixedSize()
             
             // Help menu
             Menu {
@@ -109,7 +127,10 @@ struct CanvasTopBar: View {
             } label: {
                 Text("Help")
                     .foregroundColor(.black)
+                    .frame(width: 60, alignment: .center)
             }
+            .menuStyle(BorderlessButtonMenuStyle())
+            .fixedSize()
             
             Divider()
                 .frame(height: 20)
@@ -151,8 +172,16 @@ struct CanvasTopBar: View {
                         .foregroundColor(.black)
                 }
                 
+                // Updated Export menu
                 Menu {
-                    Menu("Export as Video") {
+                    Button("Export...") {
+                        // Tell parent to show the export modal with all options
+                        onExport(.batchExport)
+                    }
+                    
+                    Divider()
+                    
+                    Menu("Quick Export as Video") {
                         Button("Standard MP4") {
                             onExport(.video)
                         }
@@ -164,7 +193,6 @@ struct CanvasTopBar: View {
                             .foregroundColor(.secondary)
                         
                         Button("ProRes 422 Proxy") {
-                            // We'll handle the ProRes option in DesignCanvas
                             onExport(.video)
                         }
                         
@@ -189,7 +217,7 @@ struct CanvasTopBar: View {
                         }
                     }
                     
-                    Button("Export as GIF") {
+                    Button("Quick Export as GIF") {
                         onExport(.gif)
                     }
                     
@@ -212,38 +240,12 @@ struct CanvasTopBar: View {
                             Label("Motion Storyline Project (.msproj)", systemImage: "doc.badge.arrow.down")
                         }
                         .help("Export as a Motion Storyline native project file that can be reopened later")
-                        
-                        Divider()
-                        
-                        Text("Project file contains:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Label("All canvas elements", systemImage: "square.on.square")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Label("Animation keyframes", systemImage: "timeline.selection")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Label("Project settings", systemImage: "gearshape")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
                     }
-                    
-                    Divider()
-                    
-                    Button {
-                        onExport(.batchExport)
-                    } label: {
-                        Label("Batch Export Multiple Formats", systemImage: "square.stack.3d.down.right")
-                    }
-                    .help("Export multiple formats simultaneously with background processing")
                 } label: {
                     Image(systemName: "square.and.arrow.up")
                         .foregroundColor(.black)
                 }
+                .menuStyle(BorderlessButtonMenuStyle())
                 .help("Export Project")
                 
                 Menu {
@@ -274,6 +276,7 @@ struct CanvasTopBar: View {
                     Image(systemName: "person.circle")
                         .foregroundColor(.black)
                 }
+                .menuStyle(BorderlessButtonMenuStyle())
                 .help("User Menu")
             }
         }

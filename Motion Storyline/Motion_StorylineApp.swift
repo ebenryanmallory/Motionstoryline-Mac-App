@@ -22,6 +22,7 @@ struct Motion_StorylineApp: App {
             NavigationStack {
                 if appState.selectedProject != nil {
                     DesignCanvas()
+                        .withUITestIdentifier()
                         .navigationBarBackButtonHidden(true)
                         .environmentObject(appState)
                         .onAppear {

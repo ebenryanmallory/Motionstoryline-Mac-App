@@ -197,23 +197,4 @@ Represents a design project with:
 
 - The app uses `@State` and `@Binding` for view state management
 - `AppStorage` is used for persisting recent projects
-- The UI is designed to be responsive with minimum size constraints
-- SwiftUI's `Canvas` is used for grid rendering
-- Custom components are created for specialized UI elements
-- AVFoundation is used for video export functionality
-
-## Future Development Considerations
-
-- Add undo/redo functionality
-- Implement component libraries
-- Add collaboration features
-- Enhance export capabilities
-- Add more design tools and effects
-- Implement custom themes and styles
-
-## System Requirements
-
-- macOS 15.2 or later
-- 4GB RAM minimum (8GB recommended)
-- 1GB available disk space
-- 1280x800 minimum screen resolution 
+- The UI is designed to be responsive with minimum size constraints 

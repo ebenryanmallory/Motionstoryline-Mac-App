@@ -17,6 +17,7 @@ struct HomeView: View {
     @State private var searchText: String = ""
     @State private var selectedTab: Int = 0
     @State private var isShowingUserMenu = false
+    @State private var selectedTemplateType: String = ""
     
     // Design Studio-like colors
     private let designBg = Color(NSColor(red: 0.98, green: 0.98, blue: 0.98, alpha: 1.0))
@@ -232,25 +233,33 @@ struct HomeView: View {
                                 .padding(.horizontal, 24)
                             
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 280), spacing: 20)], spacing: 20) {
-                                TemplateCard(name: "Mobile App", type: "Design")
+                                TemplateCard(name: "Mobile App", type: "Design", id: "mobile-app-template")
                                     .onTapGesture {
+                                        selectedTemplateType = "Design"
                                         isCreatingNewProject = true
                                     }
+                                    .accessibilityIdentifier("mobile-app-template")
                                 
-                                TemplateCard(name: "Website", type: "Prototype")
+                                TemplateCard(name: "Website", type: "Prototype", id: "website-template")
                                     .onTapGesture {
+                                        selectedTemplateType = "Prototype"
                                         isCreatingNewProject = true
                                     }
+                                    .accessibilityIdentifier("website-template")
                                 
-                                TemplateCard(name: "Component Library", type: "Component Library")
+                                TemplateCard(name: "Component Library", type: "Component Library", id: "component-library-template")
                                     .onTapGesture {
+                                        selectedTemplateType = "Component Library"
                                         isCreatingNewProject = true
                                     }
+                                    .accessibilityIdentifier("component-library-template")
                                 
-                                TemplateCard(name: "Style Guide", type: "Style Guide")
+                                TemplateCard(name: "Style Guide", type: "Style Guide", id: "style-guide-template")
                                     .onTapGesture {
+                                        selectedTemplateType = "Style Guide"
                                         isCreatingNewProject = true
                                     }
+                                    .accessibilityIdentifier("style-guide-template")
                             }
                             .padding(.horizontal, 24)
                         }
@@ -263,8 +272,16 @@ struct HomeView: View {
             }
         }
         .sheet(isPresented: $isCreatingNewProject) {
-            NewProjectSheet(isPresented: $isCreatingNewProject) { name, type in
+            NewProjectSheet(
+                isPresented: $isCreatingNewProject,
+                initialProjectType: selectedTemplateType
+            ) { name, type in
+                // Save the template type for the editor to use for identifiers
+                let templateType = selectedTemplateType
                 onCreateNewProject(name, type)
+                
+                // Reset the selected template type
+                selectedTemplateType = ""
             }
         }
     }
@@ -363,7 +380,14 @@ struct ProjectCard: View {
 struct TemplateCard: View {
     let name: String
     let type: String
+    let id: String
     @State private var isHovered = false
+    
+    init(name: String, type: String, id: String = "") {
+        self.name = name
+        self.type = type
+        self.id = id.isEmpty ? "\(name.lowercased())-\(type.lowercased())-template" : id
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -410,17 +434,30 @@ struct TemplateCard: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(name) \(type) template")
         .accessibilityHint("Double-tap to create a new project using this template")
+        .id(id)
+        .accessibilityIdentifier(id)
     }
 }
 
 struct NewProjectSheet: View {
     @Binding var isPresented: Bool
     let onCreateProject: (String, String) -> Void
+    let initialProjectType: String
     
     @State private var projectName = ""
     @State private var selectedProjectType = 0
     
     let projectTypes = ["Design", "Prototype", "Component Library", "Style Guide"]
+    
+    init(isPresented: Binding<Bool>, initialProjectType: String = "", onCreateProject: @escaping (String, String) -> Void) {
+        self._isPresented = isPresented
+        self.onCreateProject = onCreateProject
+        self.initialProjectType = initialProjectType
+        
+        // Set the initial selected project type based on the template
+        let typeIndex = projectTypes.firstIndex(of: initialProjectType) ?? 0
+        self._selectedProjectType = State(initialValue: typeIndex)
+    }
     
     var body: some View {
         VStack(spacing: 24) {
@@ -437,6 +474,7 @@ struct NewProjectSheet: View {
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Close")
             }
             
             // Project type selection
@@ -453,6 +491,10 @@ struct NewProjectSheet: View {
                         .onTapGesture {
                             selectedProjectType = index
                         }
+                        .id("project-type-\(projectTypes[index].lowercased().replacingOccurrences(of: " ", with: "-"))")
+                        .accessibilityIdentifier(selectedProjectType == index ? 
+                            "selected-project-type-\(projectTypes[index].lowercased().replacingOccurrences(of: " ", with: "-"))" : 
+                            "project-type-\(projectTypes[index].lowercased().replacingOccurrences(of: " ", with: "-"))")
                     }
                 }
             }
@@ -464,6 +506,7 @@ struct NewProjectSheet: View {
                 
                 TextField("Untitled Project", text: $projectName)
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("project-name-field")
             }
             
             Spacer()
@@ -476,6 +519,7 @@ struct NewProjectSheet: View {
                     isPresented = false
                 }
                 .keyboardShortcut(.escape)
+                .accessibilityIdentifier("Cancel")
                 
                 Button("Create") {
                     if projectName.isEmpty {
@@ -487,10 +531,12 @@ struct NewProjectSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.return)
+                .accessibilityIdentifier("Create")
             }
         }
         .padding(24)
         .frame(width: 600, height: 400)
+        .accessibilityIdentifier("new-project-sheet")
     }
 }
 
@@ -526,6 +572,7 @@ struct ProjectTypeCard: View {
         .accessibilityLabel("\(name) project type")
         .accessibilityValue(isSelected ? "selected" : "not selected")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier(isSelected ? "selected-project-type-\(name.lowercased().replacingOccurrences(of: " ", with: "-"))" : "project-type-\(name.lowercased().replacingOccurrences(of: " ", with: "-"))")
     }
 }
 

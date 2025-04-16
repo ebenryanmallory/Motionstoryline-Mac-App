@@ -604,14 +604,21 @@ public class AnimationController: ObservableObject {
         return track
     }
     
-    /// Get a keyframe track by id
-    /// - Parameter id: The track id
-    /// - Returns: The keyframe track, or nil if not found
+    /// Get a track by ID
+    /// - Parameter id: The track ID to look for
+    /// - Returns: The track if found, nil otherwise
     public func getTrack<T: Interpolatable>(id: String) -> KeyframeTrack<T>? {
         return keyframeTracks[id] as? KeyframeTrack<T>
     }
-
-    /// Remove a keyframe track
+    
+    /// Check if a track with the given ID exists
+    /// - Parameter id: The track ID to check
+    /// - Returns: True if the track exists, false otherwise
+    public func hasTrack(id: String) -> Bool {
+        return keyframeTracks[id] != nil
+    }
+    
+    /// Remove a track by ID
     /// - Parameter id: The track id
     public func removeTrack(id: String) {
         keyframeTracks.removeValue(forKey: id)
