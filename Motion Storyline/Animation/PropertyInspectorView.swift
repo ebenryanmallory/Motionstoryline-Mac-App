@@ -28,6 +28,8 @@ struct PropertyInspectorView: View {
                     sizeEditor(property: property, time: keyframeTime)
                 case .rotation:
                     rotationEditor(property: property, time: keyframeTime)
+                case .opacity:
+                    opacityEditor(property: property, time: keyframeTime)
                 case .color:
                     colorEditor(property: property, time: keyframeTime)
                 default:
@@ -64,9 +66,10 @@ struct PropertyInspectorView: View {
         .onAppear {
             loadEasingFunction(for: property)
         }
-        .onChange(of: selectedKeyframeTime) { oldValue, _ in
+        .onChange(of: selectedKeyframeTime) { oldValue, newValue in
             loadEasingFunction(for: property)
         }
+        .id("\(property.id)_\(selectedKeyframeTime?.description ?? "none")")  // Force refresh when property or keyframe changes
     }
     
     // MARK: - Property Specific Editors
@@ -170,6 +173,38 @@ struct PropertyInspectorView: View {
         }
     }
     
+    // Editor for opacity property
+    private func opacityEditor(property: AnimatableProperty, time: Double) -> some View {
+        VStack(alignment: .leading) {
+            Text("Opacity")
+                .font(.headline)
+            
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<Double>?,
+               let value = track.getValue(at: time) {
+                HStack {
+                    Text("Value")
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Opacity", value: Binding(
+                        get: { value * 100 }, // Convert to percentage
+                        set: { updateOpacityValue(for: property, at: time, to: $0 / 100.0) } // Convert back to 0-1
+                    ), formatter: NumberFormatter())
+                    .frame(width: 80)
+                    .textFieldStyle(.roundedBorder)
+                    
+                    Text("%")
+                        .foregroundColor(.secondary)
+                    
+                    Slider(value: Binding(
+                        get: { value },
+                        set: { updateOpacityValue(for: property, at: time, to: $0) }
+                    ), in: 0...1)
+                    .frame(width: 150)
+                }
+            }
+        }
+    }
+    
     // Editor for color property
     private func colorEditor(property: AnimatableProperty, time: Double) -> some View {
         VStack(alignment: .leading) {
@@ -242,6 +277,25 @@ struct PropertyInspectorView: View {
         }
     }
     
+    /// Update the opacity value for a keyframe
+    private func updateOpacityValue(for property: AnimatableProperty, at time: Double, to newValue: Double) {
+        guard let track = animationController.getTrack(id: property.id) as KeyframeTrack<Double>? else { return }
+        
+        // Get the existing keyframe to preserve its easing function
+        if let existingKeyframe = track.allKeyframes.first(where: { abs($0.time - time) < 0.001 }) {
+            // Remove the old keyframe
+            track.removeKeyframe(at: time)
+            
+            // Add a new keyframe with the updated value - constrain between 0 and 1
+            let constrainedValue = max(0, min(1, newValue))
+            let newKeyframe = Keyframe(time: time, value: constrainedValue, easingFunction: existingKeyframe.easingFunction)
+            track.add(keyframe: newKeyframe)
+            
+            // Force the AnimationController to update
+            animationController.updateAnimatedProperties()
+        }
+    }
+    
     /// Update the color value for a keyframe
     private func updateColorValue(for property: AnimatableProperty, at time: Double, to newValue: Color) {
         guard let track = animationController.getTrack(id: property.id) as KeyframeTrack<Color>? else { return }
@@ -293,6 +347,16 @@ struct PropertyInspectorView: View {
                 let newKeyframe = Keyframe(time: time, value: keyframe.value, easingFunction: newEasing)
                 track.add(keyframe: newKeyframe)
             }
+        case .opacity:
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<Double>?,
+               let keyframe = track.allKeyframes.first(where: { abs($0.time - time) < 0.001 }) {
+                // Remove the old keyframe
+                track.removeKeyframe(at: time)
+                
+                // Add a new keyframe with the updated easing function
+                let newKeyframe = Keyframe(time: time, value: keyframe.value, easingFunction: newEasing)
+                track.add(keyframe: newKeyframe)
+            }
         case .color:
             if let track = animationController.getTrack(id: property.id) as KeyframeTrack<Color>?,
                let keyframe = track.allKeyframes.first(where: { abs($0.time - time) < 0.001 }) {
@@ -324,6 +388,11 @@ struct PropertyInspectorView: View {
                 selectedEasing = keyframe.easingFunction
             }
         case .rotation:
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<Double>?,
+               let keyframe = track.allKeyframes.first(where: { abs($0.time - keyframeTime) < 0.001 }) {
+                selectedEasing = keyframe.easingFunction
+            }
+        case .opacity:
             if let track = animationController.getTrack(id: property.id) as KeyframeTrack<Double>?,
                let keyframe = track.allKeyframes.first(where: { abs($0.time - keyframeTime) < 0.001 }) {
                 selectedEasing = keyframe.easingFunction

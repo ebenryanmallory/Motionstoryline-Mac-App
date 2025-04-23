@@ -182,6 +182,14 @@ struct KeyframeTimelineView: View {
             if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<Color> {
                 return track.allKeyframes.map { $0.time }
             }
+        case .opacity:
+            if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<Double> {
+                return track.allKeyframes.map { $0.time }
+            }
+        case .path:
+            if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<[CGPoint]> {
+                return track.allKeyframes.map { $0.time }
+            }
         default:
             break
         }
@@ -288,6 +296,7 @@ struct KeyframeTimelineView: View {
                     )
             }
             .frame(width: geometry.size.width, height: geometry.size.height)
+            .id("\(propertyId)_\(keyframeTimes.count)") // Force redraw when keyframes change
         }
     }
     
@@ -375,23 +384,41 @@ struct TimelineView: View {
     @State private var audioMarkerManager: AudioMarkerManager?
     @State private var isPlaying: Bool = false
     
+    // State for handling timeline height
+    @State private var timelineHeight: CGFloat = 120
+    
     // Computed property for keyframe times to pass to TimelineRuler
     private var keyframeTimes: [Double] {
         var times: Set<Double> = []
         
-        let tracks = animationController.getAllTracks()
-        for trackId in tracks {
-            if let track = animationController.getTrack(id: trackId) as KeyframeTrack<CGPoint>? {
-                times.formUnion(track.allKeyframes.map { $0.time })
-            } else if let track = animationController.getTrack(id: trackId) as KeyframeTrack<CGFloat>? {
-                times.formUnion(track.allKeyframes.map { $0.time })
-            } else if let track = animationController.getTrack(id: trackId) as KeyframeTrack<Double>? {
-                times.formUnion(track.allKeyframes.map { $0.time })
-            } else if let track = animationController.getTrack(id: trackId) as KeyframeTrack<Color>? {
-                times.formUnion(track.allKeyframes.map { $0.time })
-            } else if let track = animationController.getTrack(id: trackId) as KeyframeTrack<[CGPoint]>? {
+        // Focus on just getting keyframes for the current property
+        switch propertyType {
+        case .position:
+            if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<CGPoint> {
                 times.formUnion(track.allKeyframes.map { $0.time })
             }
+        case .size:
+            if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<CGFloat> {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            }
+        case .rotation:
+            if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<Double> {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            }
+        case .opacity:
+            if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<Double> {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            }
+        case .color:
+            if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<Color> {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            }
+        case .path:
+            if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<[CGPoint]> {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            }
+        default:
+            break
         }
         
         return Array(times).sorted()
@@ -402,8 +429,53 @@ struct TimelineView: View {
         audioMarkerManager?.markers.map { $0.time } ?? []
     }
     
+    // Resize handle component for the timeline
+    private var resizeHandle: some View {
+        ZStack {
+            // Background line/divider
+            Divider()
+            
+            // Visual handle indicator
+            HStack(spacing: 2) {
+                ForEach(0..<3) { _ in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color(NSColor.separatorColor))
+                        .frame(width: 20, height: 3)
+                }
+            }
+            
+            // Invisible hit area for the gesture
+            Color.clear
+                .contentShape(Rectangle())
+                .frame(height: 12) // Larger hit area
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            // Calculate new height based on drag
+                            let proposedHeight = timelineHeight - value.translation.height
+                            
+                            // Enforce constraints (min: 70, max: 400)
+                            timelineHeight = min(400, max(70, proposedHeight))
+                        }
+                )
+                .onHover { isHovering in
+                    // Change cursor to vertical resize cursor when hovering
+                    if isHovering {
+                        NSCursor.resizeUpDown.set()
+                    } else {
+                        NSCursor.arrow.set()
+                    }
+                }
+        }
+        .frame(height: 12)
+        .padding(.vertical, 1)
+    }
+    
     var body: some View {
         VStack(spacing: 4) {
+            // Add resize handle at the top of the timeline
+            resizeHandle
+            
             // Timeline ruler
             TimelineRuler(
                 duration: animationController.duration,
@@ -428,7 +500,7 @@ struct TimelineView: View {
                 offset: $timelineOffset,
                 onAddKeyframe: onAddKeyframe
             )
-            .frame(height: 80)
+            .frame(height: timelineHeight - 70) // Adjust dynamically based on available space
             
             // Decide which audio visualization to show based on available data
             if !mediaAssets.filter({ $0.type == .audio }).isEmpty && showMultiTrackAudio {
@@ -551,6 +623,8 @@ struct TimelineView: View {
                 animationController.seekToTime(newTime)
             }
         }
+        // Force the view to update when the property ID changes or when keyframes are added/removed
+        .id("\(propertyId)_\(keyframeTimes.count)")
     }
 }
 

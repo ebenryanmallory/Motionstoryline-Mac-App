@@ -43,7 +43,7 @@ struct KeyframeEditorView: View {
                 
                 Divider()
                 
-                if let element = selectedElement {
+                if selectedElement != nil {
                     List {
                         ForEach(properties) { property in
                             HStack {
@@ -155,14 +155,13 @@ struct KeyframeEditorView: View {
                 if let property = selectedProperty {
                     VStack(spacing: 0) {
                         // Timeline view (using the new component)
-                        TimelineView(
+                        AnimationTimelineView(
                             animationController: animationController,
                             propertyId: property.id,
                             propertyType: property.type,
                             selectedKeyframeTime: $selectedKeyframeTime,
                             newKeyframeTime: $newKeyframeTime,
                             isAddingKeyframe: $isAddingKeyframe,
-                            timelineScale: timelineScale,
                             timelineOffset: $timelineOffset,
                             onAddKeyframe: { time in
                                 newKeyframeTime = time
@@ -202,33 +201,39 @@ struct KeyframeEditorView: View {
             .background(Color(NSColor.textBackgroundColor))
         }
         .id(selectedElement?.id.uuidString ?? "no-element") // Force view refresh when selected element changes
-        .onChange(of: selectedElement) { [selectedElement] newValue in
+        .onChange(of: selectedElement) { oldValue, newValue in
             // When the selected element changes
-            if newValue?.id != selectedElement?.id {
-                // Reset selected property when element changes
-                selectedProperty = nil
-                selectedKeyframeTime = nil
-                
-                // Setup keyframe tracks for the new element
-                if let element = newValue {
-                    setupTracksForSelectedElement(element)
+            if let newElement = newValue {
+                // If it's a completely new element (different ID)
+                if oldValue == nil || newElement.id != oldValue?.id {
+                    // Reset selected property when element changes
+                    selectedProperty = nil
+                    selectedKeyframeTime = nil
+                    
+                    // Setup keyframe tracks for the new element
+                    setupTracksForSelectedElement(newElement)
                     
                     // Force refresh all properties with current element values
                     animationController.updateAnimatedProperties()
-                }
-            } else if let newElement = newValue, let oldElement = selectedElement {
+                } 
                 // Even if it's the same element, update tracks if properties changed
-                if newElement.position != oldElement.position ||
-                   newElement.size != oldElement.size ||
-                   newElement.rotation != oldElement.rotation ||
-                   newElement.color != oldElement.color ||
-                   newElement.opacity != oldElement.opacity ||
-                   newElement.path != oldElement.path {
-                    setupTracksForSelectedElement(newElement)
+                else if let oldElement = oldValue {
+                    if newElement.position != oldElement.position ||
+                       newElement.size != oldElement.size ||
+                       newElement.rotation != oldElement.rotation ||
+                       newElement.color != oldElement.color ||
+                       newElement.opacity != oldElement.opacity ||
+                       newElement.path != oldElement.path {
+                        setupTracksForSelectedElement(newElement)
+                    }
                 }
+            } else {
+                // Element was deselected
+                selectedProperty = nil
+                selectedKeyframeTime = nil
             }
         }
-        .onChange(of: selectedProperty) { newValue in
+        .onChange(of: selectedProperty) { oldValue, newValue in
             // Reset keyframe selection when property changes
             selectedKeyframeTime = nil
         }
@@ -250,7 +255,7 @@ struct KeyframeEditorView: View {
             keyEventController.teardownMonitor()
         }
         .sheet(isPresented: $isAddingKeyframe) {
-            if let property = selectedProperty, let element = selectedElement {
+            if let property = selectedProperty, let _ = selectedElement {
                 AddKeyframeSheet(
                     animationController: animationController,
                     property: property,
