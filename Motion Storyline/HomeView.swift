@@ -13,16 +13,129 @@ struct HomeView: View {
     let onCreateNewProject: (String, String) -> Void
     @EnvironmentObject private var appState: AppStateManager
     
+    // Add deleteProject function
+    var onDeleteProject: ((Project) -> Void)?
+    // Add renameProject function
+    var onRenameProject: ((Project, String) -> Void)?
+    // Add toggleProjectStar function
+    var onToggleProjectStar: ((Project) -> Void)?
+    
     @State private var selectedItem: String? = "Home"
     @State private var searchText: String = ""
     @State private var selectedTab: Int = 0
     @State private var isShowingUserMenu = false
     @State private var selectedTemplateType: String = ""
     
-    // Design Studio-like colors
-    private let designBg = Color(NSColor(red: 0.98, green: 0.98, blue: 0.98, alpha: 1.0))
-    private let designHeaderBg = Color.white
-    private let designBorder = Color(NSColor(red: 0.9, green: 0.9, blue: 0.9, alpha: 1.0))
+    // Dynamic colors for light/dark mode adaptability
+    private var designBg: Color {
+        Color(NSColor.windowBackgroundColor)
+    }
+    private var designHeaderBg: Color {
+        Color(NSColor.controlBackgroundColor)
+    }
+    private var designBorder: Color {
+        Color.primary.opacity(0.1)
+    }
+    private var cardBackground: Color {
+        Color(NSColor.controlBackgroundColor)
+    }
+    
+    // Filtered projects based on search text
+    private var filteredRecentProjects: [Project] {
+        let filtered: [Project]
+        if searchText.isEmpty {
+            filtered = recentProjects
+        } else {
+            filtered = recentProjects.filter { project in
+                project.name.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+        
+        // Sort by star status (starred first) and then by last modified date
+        return filtered.sorted { (a, b) -> Bool in
+            if a.isStarred != b.isStarred {
+                return a.isStarred && !b.isStarred
+            }
+            return a.lastModified > b.lastModified
+        }
+    }
+    
+    private var filteredUserProjects: [Project] {
+        let filtered: [Project]
+        if searchText.isEmpty {
+            filtered = userProjects
+        } else {
+            filtered = userProjects.filter { project in
+                project.name.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+        
+        // Sort by star status (starred first) and then by name
+        return filtered.sorted { (a, b) -> Bool in
+            if a.isStarred != b.isStarred {
+                return a.isStarred && !b.isStarred
+            }
+            return a.name.localizedCompare(b.name) == .orderedAscending
+        }
+    }
+    
+    // Function to delete project
+    private func deleteProject(_ project: Project) {
+        // Remove from user projects
+        userProjects.removeAll { $0.id == project.id }
+        
+        // Remove from recent projects if present
+        recentProjects.removeAll { $0.id == project.id }
+        
+        // If this was the selected project, navigate back to home
+        if appState.selectedProject?.id == project.id {
+            appState.navigateToHome()
+        }
+        
+        // Update status message
+        updateStatusMessage()
+        
+        // Notify parent component for persistence
+        if let onDelete = onDeleteProject {
+            onDelete(project)
+        }
+    }
+    
+    // Function to toggle project star status
+    private func toggleProjectStar(_ project: Project) {
+        // Create a new project with the toggled star status
+        var updatedProject = project
+        updatedProject.isStarred.toggle()
+        
+        // Update in user projects
+        if let index = userProjects.firstIndex(where: { $0.id == project.id }) {
+            userProjects[index] = updatedProject
+        }
+        
+        // Update in recent projects if present
+        if let index = recentProjects.firstIndex(where: { $0.id == project.id }) {
+            recentProjects[index] = updatedProject
+        }
+        
+        // If this is the selected project, update it
+        if appState.selectedProject?.id == project.id {
+            appState.selectedProject = updatedProject
+        }
+        
+        // Notify parent component for persistence
+        if let onToggleStar = onToggleProjectStar {
+            onToggleStar(updatedProject)
+        }
+    }
+    
+    // Update status message based on project count
+    private func updateStatusMessage() {
+        if userProjects.isEmpty {
+            statusMessage = "No projects available"
+        } else {
+            statusMessage = "\(userProjects.count) project\(userProjects.count == 1 ? "" : "s") available"
+        }
+    }
     
     var body: some View {
         NavigationSplitView {
@@ -60,6 +173,27 @@ struct HomeView: View {
                         TextField("Search files...", text: $searchText)
                             .frame(width: 200)
                             .accessibilityLabel("Search files")
+                            .onChange(of: searchText) { oldValue, newValue in
+                                // Update status message based on search results
+                                if !newValue.isEmpty {
+                                    let allCount = filteredUserProjects.count
+                                    statusMessage = "Found \(allCount) project\(allCount == 1 ? "" : "s") matching '\(newValue)'"
+                                } else {
+                                    updateStatusMessage()
+                                }
+                            }
+                        
+                        if !searchText.isEmpty {
+                            Button(action: { 
+                                searchText = ""
+                                updateStatusMessage()
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Clear search")
+                        }
                     }
                     .padding(6)
                     .background(Color(NSColor.controlBackgroundColor))
@@ -125,14 +259,14 @@ struct HomeView: View {
                             Text(tab)
                                 .padding(.vertical, 12)
                                 .padding(.horizontal, 16)
-                                .foregroundColor(selectedTab == index ? .black : .gray)
+                                .foregroundColor(selectedTab == index ? .primary : .secondary)
                         }
                         .buttonStyle(.plain)
                         .background(
                             VStack {
                                 Spacer()
                                 Rectangle()
-                                    .fill(selectedTab == index ? Color.blue : Color.clear)
+                                    .fill(selectedTab == index ? Color.accentColor : Color.clear)
                                     .frame(height: 2)
                             }
                         )
@@ -182,16 +316,40 @@ struct HomeView: View {
                                 .padding(.top, 24)
                                 .padding(.horizontal, 24)
                             
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 280), spacing: 20)], spacing: 20) {
-                                ForEach(recentProjects) { project in
-                                    ProjectCard(project: project)
-                                        .onTapGesture {
-                                            appState.navigateToProject(project)
-                                            onProjectSelected(project)
-                                        }
+                            if filteredRecentProjects.isEmpty && !searchText.isEmpty {
+                                VStack(spacing: 16) {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.largeTitle)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Text("No results found")
+                                        .font(.headline)
+                                    
+                                    Text("Try a different search term")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
                                 }
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 40)
+                                .accessibilityElement(children: .combine)
+                                .accessibilityLabel("No search results found for \(searchText)")
+                            } else {
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 280), spacing: 20)], spacing: 20) {
+                                    ForEach(filteredRecentProjects) { project in
+                                        ProjectCard(
+                                            project: project, 
+                                            onDeleteProject: deleteProject, 
+                                            onRenameProject: onRenameProject,
+                                            onToggleStar: toggleProjectStar
+                                        )
+                                            .onTapGesture {
+                                                appState.navigateToProject(project)
+                                                onProjectSelected(project)
+                                            }
+                                    }
+                                }
+                                .padding(.horizontal, 24)
                             }
-                            .padding(.horizontal, 24)
                         }
                         .padding(.bottom, 24)
                     }
@@ -207,16 +365,40 @@ struct HomeView: View {
                                 .padding(.top, 24)
                                 .padding(.horizontal, 24)
                             
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 280), spacing: 20)], spacing: 20) {
-                                ForEach(userProjects) { project in
-                                    ProjectCard(project: project)
-                                        .onTapGesture {
-                                            appState.navigateToProject(project)
-                                            onProjectSelected(project)
-                                        }
+                            if filteredUserProjects.isEmpty && !searchText.isEmpty {
+                                VStack(spacing: 16) {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.largeTitle)
+                                        .foregroundColor(.secondary)
+                                    
+                                    Text("No results found")
+                                        .font(.headline)
+                                    
+                                    Text("Try a different search term")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
                                 }
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 40)
+                                .accessibilityElement(children: .combine)
+                                .accessibilityLabel("No search results found for \(searchText)")
+                            } else {
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 280), spacing: 20)], spacing: 20) {
+                                    ForEach(filteredUserProjects) { project in
+                                        ProjectCard(
+                                            project: project, 
+                                            onDeleteProject: deleteProject, 
+                                            onRenameProject: onRenameProject,
+                                            onToggleStar: toggleProjectStar
+                                        )
+                                            .onTapGesture {
+                                                appState.navigateToProject(project)
+                                                onProjectSelected(project)
+                                            }
+                                    }
+                                }
+                                .padding(.horizontal, 24)
                             }
-                            .padding(.horizontal, 24)
                         }
                         .padding(.bottom, 24)
                     }
@@ -277,19 +459,85 @@ struct HomeView: View {
                 initialProjectType: selectedTemplateType
             ) { name, type in
                 // Save the template type for the editor to use for identifiers
-                let templateType = selectedTemplateType
+                _ = selectedTemplateType
                 onCreateNewProject(name, type)
                 
                 // Reset the selected template type
                 selectedTemplateType = ""
             }
         }
+        .onAppear {
+            // Listen for notification to switch to Templates tab
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("SwitchToTemplatesTab"),
+                object: nil,
+                queue: .main
+            ) { _ in
+                selectedTab = 2  // Index for Templates tab
+            }
+            
+            // Listen for notification to switch to Recent tab
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("SwitchToRecentTab"),
+                object: nil,
+                queue: .main
+            ) { _ in
+                selectedTab = 0  // Index for Recent tab
+            }
+            
+            // Listen for notification to switch to All Projects tab
+            NotificationCenter.default.addObserver(
+                forName: NSNotification.Name("SwitchToAllProjectsTab"),
+                object: nil,
+                queue: .main
+            ) { _ in
+                selectedTab = 1  // Index for All Projects tab
+            }
+        }
+        // Add keyboard shortcuts
+        .keyboardShortcut("f", modifiers: [.command])
+        .onExitCommand {
+            // Clear search when ESC is pressed
+            if !searchText.isEmpty {
+                searchText = ""
+                updateStatusMessage()
+            }
+        }
+    }
+    
+    // Helper function to start search
+    func focusOnSearch() {
+        // Post notification to focus search field
+        NotificationCenter.default.post(
+            name: NSNotification.Name("FocusSearchField"),
+            object: nil
+        )
+    }
+    
+    // Helper function to show preferences 
+    func showPreferences() {
+        // Use View extension to show preferences
+        self.openPreferences()
     }
 }
 
 struct ProjectCard: View {
     let project: Project
+    let onDeleteProject: (Project) -> Void
     @State private var isHovered = false
+    @State private var showingDeleteConfirmation = false
+    @State private var showingRenameDialog = false
+    @State private var newProjectName = ""
+    
+    // For optional rename callback
+    var onRenameProject: ((Project, String) -> Void)?
+    // For optional star toggle callback
+    var onToggleStar: ((Project) -> Void)?
+    
+    // Dynamic colors for light/dark mode adaptability
+    private var cardBackground: Color {
+        Color(NSColor.controlBackgroundColor)
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -309,28 +557,75 @@ struct ProjectCard: View {
                         .accessibilityLabel("Project thumbnail")
                 }
                 
+                // Show star indicator even when not hovering for starred projects
+                if project.isStarred && !isHovered {
+                    Image(systemName: "star.fill")
+                        .foregroundColor(.yellow)
+                        .padding(6)
+                        .background(Color(NSColor.windowBackgroundColor).opacity(0.8))
+                        .clipShape(Circle())
+                        .padding(8)
+                }
+                
                 // Hover overlay
                 if isHovered {
                     HStack {
-                        Button(action: {}) {
-                            Image(systemName: "star")
-                                .foregroundColor(.black)
+                        Button(action: {
+                            // Toggle the star status
+                            if let onToggleStar = onToggleStar {
+                                onToggleStar(project)
+                                NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
+                            }
+                        }) {
+                            Image(systemName: project.isStarred ? "star.fill" : "star")
+                                .foregroundColor(project.isStarred ? .yellow : .primary)
                                 .padding(6)
-                                .background(Color.white.opacity(0.8))
+                                .background(Color(NSColor.windowBackgroundColor).opacity(0.8))
                                 .clipShape(Circle())
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Favorite project")
+                        .accessibilityLabel(project.isStarred ? "Unstar project" : "Star project")
+                        .accessibilityHint(project.isStarred ? "Remove from starred projects" : "Add to starred projects")
                         
-                        Button(action: {}) {
+                        Menu {
+                            Button(action: {
+                                // Show rename dialog
+                                newProjectName = project.name
+                                showingRenameDialog = true
+                            }) {
+                                Label("Rename Project", systemImage: "pencil")
+                            }
+                            .accessibilityIdentifier("rename-project")
+                            .help("Rename this project")
+                            
+                            Button(action: {
+                                // Show delete confirmation
+                                showingDeleteConfirmation = true
+                            }) {
+                                Label("Delete Project", systemImage: "trash")
+                            }
+                            .foregroundColor(.red)
+                            .accessibilityIdentifier("delete-project")
+                            .help("Delete this project")
+                        } label: {
                             Image(systemName: "ellipsis")
-                                .foregroundColor(.black)
+                                .foregroundColor(.primary)
                                 .padding(6)
-                                .background(Color.white.opacity(0.8))
+                                .background(Color(NSColor.windowBackgroundColor).opacity(0.8))
                                 .clipShape(Circle())
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("More options")
+                        .menuStyle(BorderlessButtonMenuStyle())
+                        .onHover { isHovered in
+                            if isHovered {
+                                NSCursor.pointingHand.push()
+                            } else {
+                                NSCursor.pop()
+                            }
+                        }
+                        .accessibilityLabel("Project options")
+                        .accessibilityHint("Show options including delete")
+                        .keyboardShortcut("d", modifiers: [.command, .shift], 
+                             localization: KeyboardShortcut.Localization.automatic)
                     }
                     .padding(8)
                 }
@@ -355,10 +650,10 @@ struct ProjectCard: View {
                 .accessibilityLabel("Last modified \(formattedDate(project.lastModified))")
             }
             .padding(12)
-            .background(Color.white)
+            .background(cardBackground)
         }
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
+        .shadow(color: Color.primary.opacity(0.1), radius: 4, x: 0, y: 2)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.2)) {
                 isHovered = hovering
@@ -366,7 +661,84 @@ struct ProjectCard: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(project.name) project")
-        .accessibilityHint("Double-tap to open project")
+        .accessibilityHint("Double-tap to open project. Use option menu to access delete functionality.")
+        .contextMenu {
+            Button(action: {
+                if let onToggleStar = onToggleStar {
+                    onToggleStar(project)
+                }
+            }) {
+                Label(project.isStarred ? "Unstar Project" : "Star Project", 
+                      systemImage: project.isStarred ? "star.slash" : "star")
+            }
+            .keyboardShortcut("s", modifiers: [.command])
+            
+            Button(action: {
+                newProjectName = project.name
+                showingRenameDialog = true
+            }) {
+                Label("Rename Project", systemImage: "pencil")
+            }
+            .keyboardShortcut("r", modifiers: [.command])
+            
+            Button(action: {
+                showingDeleteConfirmation = true
+            }) {
+                Label("Delete Project", systemImage: "trash")
+            }
+            .keyboardShortcut(.delete)
+        }
+        .alert(isPresented: $showingDeleteConfirmation) {
+            Alert(
+                title: Text("Delete Project"),
+                message: Text("Are you sure you want to delete \"\(project.name)\"? This action cannot be undone."),
+                primaryButton: .destructive(Text("Delete")) {
+                    onDeleteProject(project)
+                    NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
+                },
+                secondaryButton: .cancel()
+            )
+        }
+        // Add rename dialog
+        .sheet(isPresented: $showingRenameDialog) {
+            VStack(spacing: 20) {
+                Text("Rename Project")
+                    .font(.headline)
+                
+                TextField("Project Name", text: $newProjectName)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 300)
+                    .onAppear {
+                        // Focus the text field
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                            NSApp.keyWindow?.makeFirstResponder(nil)
+                        }
+                    }
+                
+                HStack(spacing: 16) {
+                    Button("Cancel") {
+                        showingRenameDialog = false
+                    }
+                    .keyboardShortcut(.escape)
+                    
+                    Button("Rename") {
+                        if !newProjectName.isEmpty && newProjectName != project.name {
+                            if let onRename = onRenameProject {
+                                onRename(project, newProjectName)
+                                NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
+                            }
+                        }
+                        showingRenameDialog = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.return)
+                    .disabled(newProjectName.isEmpty)
+                }
+            }
+            .padding(24)
+            .frame(width: 400, height: 150)
+            .background(Color(NSColor.windowBackgroundColor))
+        }
     }
     
     private func formattedDate(_ date: Date) -> String {
@@ -382,6 +754,11 @@ struct TemplateCard: View {
     let type: String
     let id: String
     @State private var isHovered = false
+    
+    // Dynamic colors for light/dark mode adaptability
+    private var cardBackground: Color {
+        Color(NSColor.controlBackgroundColor)
+    }
     
     init(name: String, type: String, id: String = "") {
         self.name = name
@@ -421,10 +798,10 @@ struct TemplateCard: View {
                     .foregroundColor(.secondary)
             }
             .padding(12)
-            .background(Color.white)
+            .background(cardBackground)
         }
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
+        .shadow(color: Color.primary.opacity(0.1), radius: 4, x: 0, y: 2)
         .scaleEffect(isHovered ? 1.02 : 1.0)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.2)) {

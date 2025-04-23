@@ -161,6 +161,12 @@ struct DesignCanvas: View {
     // Add this property to store the current AVAsset for export
     @State private var currentExportAsset: AVAsset?
     
+    // Add the missing state variables
+    @State private var isCreatingElement: Bool = false
+    @State private var dragStartPoint: CGPoint?
+    @State private var currentDragPoint: CGPoint?
+    @State private var showOnboarding: Bool = false
+    
     // MARK: - Main View
     
     // MARK: - Zoom Control Functions
@@ -194,7 +200,15 @@ struct DesignCanvas: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack {
+            mainContentView
+        }
+    }
+    
+    // MARK: - View Components
+    
+    private var mainContentView: some View {
+        return VStack(spacing: 0) {
             // Top navigation bar
             CanvasTopBar(
                 projectName: appState.selectedProject?.name ?? "Motion Storyline",
@@ -273,9 +287,14 @@ struct DesignCanvas: View {
             
             // Timeline area at the bottom (if needed)
             if showAnimationPreview {
-                timelineResizeHandle
-                timelineView
-                    .frame(height: timelineHeight)
+                TimelineViewPanel(
+                    animationController: animationController,
+                    isPlaying: $isPlaying,
+                    timelineHeight: $timelineHeight,
+                    timelineOffset: $timelineOffset,
+                    selectedElement: $selectedElement,
+                    timelineScale: $timelineScale
+                )
             }
         }
         .accessibilityIdentifier("editor-view")
@@ -311,9 +330,15 @@ struct DesignCanvas: View {
             // Setup initial animations (if present)
             setupInitialAnimations()
         }
+        .onChange(of: selectedElementId) { oldValue, newValue in
+            // Update selectedElement based on the selected ID
+            if let elementId = newValue {
+                selectedElement = canvasElements.first(where: { $0.id == elementId })
+            } else {
+                selectedElement = nil
+            }
+        }
         .onChange(of: selectedElement) { oldValue, newValue in
-            // ... existing onChange code ...
-            
             // Update animation properties for the selected element
             updateAnimationPropertiesForSelectedElement(newValue)
         }
@@ -334,116 +359,10 @@ struct DesignCanvas: View {
                 )
             }
         }
-        
-        // Export sheet
-        if showExportSettings {
-            // ... existing export sheet code ...
-        }
-        
-        // Show export progress overlay when exporting
-        if isExporting {
-            exportProgressView
-        }
-    }
-    
-    // MARK: - View Components
-    
-    private var mainContentView: some View {
-        VStack(spacing: 0) {
-            // Top navigation bar
-            CanvasTopBar(
-                projectName: appState.selectedProject?.name ?? "Motion Storyline",
-                onClose: {
-                    appState.navigateToHome()
-                },
-                onNewFile: {
-                    print("New file action triggered")
-                },
-                onCameraRecord: {
-                    showCameraView = true
-                },
-                onMediaLibrary: {
-                    showMediaBrowser = true
-                },
-                showAnimationPreview: $showAnimationPreview,
-                onExport: { format in
-                    self.exportFormat = format
-                    handleExportRequest(format: format)
-                },
-                onAccountSettings: {
-                    print("Account settings action triggered")
-                },
-                onHelpAndSupport: {
-                    print("Help and support action triggered")
-                },
-                onCheckForUpdates: {
-                    print("Check for updates action triggered")
-                },
-                onSignOut: {
-                    print("Sign out action triggered")
-                },
-                onZoomIn: zoomIn,
-                onZoomOut: zoomOut,
-                onZoomReset: resetZoom,
-                // Pass the canvas dimensions for export
-                canvasWidth: Int(canvasWidth),
-                canvasHeight: Int(canvasHeight)
-            )
-            
-            // Add a Divider to clearly separate the top bar from the toolbar
-            Divider()
-            
-            // Design toolbar full width below top bar - moved inside its own VStack to ensure it stays visible
-            VStack(spacing: 0) {
-                DesignToolbar(selectedTool: $selectedTool)
-                    .padding(.vertical, 8) // Increased padding for better spacing
-                
-                // Canvas dimensions indicator
-                Text("Canvas: \(Int(canvasWidth))×\(Int(canvasHeight)) (HD 16:9)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .padding(.bottom, 6)
-                
-                Divider() // Add visual separator between toolbar and canvas
-            }
-            // Enforce that toolbar section doesn't expand or get pushed by canvas
-            .frame(maxHeight: 90) // Increased fixed height for toolbar section
-            .padding(.top, 4) // Add a little padding at the top to separate from TopBar
-            
-            // Main content area with canvas and inspector
-            HStack(spacing: 0) {
-                // Main canvas area - wrapped in a ScrollView to prevent overflow
-                ScrollView([.horizontal, .vertical]) {
-                    canvasContentView
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                
-                // Right sidebar with inspector
-                if isInspectorVisible {
-                    Divider()
-                    inspectorView
-                }
-            }
-            .layoutPriority(1) // Give this section priority to expand
-            
-            // Timeline area at the bottom (if needed)
-            if showAnimationPreview {
-                timelineResizeHandle
-                timelineView
-                    .frame(height: timelineHeight)
-            }
-        }
-        // Add the ExportModal sheet here
-        .sheet(isPresented: $showingExportModal) {
-            if let asset = currentExportAsset {
-                ExportModal(
-                    asset: asset,
-                    canvasWidth: Int(canvasWidth),
-                    canvasHeight: Int(canvasHeight),
-                    onDismiss: {
-                        showingExportModal = false
-                    }
-                )
+        .overlay {
+            // Show export progress overlay when exporting
+            if isExporting {
+                exportProgressView
             }
         }
     }
@@ -963,6 +882,7 @@ struct DesignCanvas: View {
             .onTapGesture {
                 if selectedTool == .select {
                     selectedElementId = element.id
+                    selectedElement = element  // Explicitly update selectedElement when an element is selected
                     
                     // If the selected element is a text element, start editing
                     if element.type == .text {
@@ -1598,54 +1518,22 @@ struct DesignCanvas: View {
     
     /// Export progress overlay view
     private var exportProgressView: some View {
-        ZStack {
-            Color.black.opacity(0.7)
-                .edgesIgnoringSafeArea(.all)
+        VStack {
+            ProgressView("Exporting...", value: exportProgress, total: 1.0)
+                .progressViewStyle(LinearProgressViewStyle())
+                .padding()
+                .frame(width: 300)
             
-            VStack(spacing: 20) {
-                Text("Preparing Export...")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                
-                ProgressView(value: exportProgress, total: 1.0)
-                    .progressViewStyle(LinearProgressViewStyle())
-                    .frame(width: 300)
-                
-                if exportProgress > 0 {
-                    Text("\(Int(exportProgress * 100))%")
-                        .foregroundColor(.white)
-                        .font(.subheadline)
-                        .monospacedDigit()
-                } else {
-                    ProgressView() // Show indeterminate spinner if no progress yet
-                        .scaleEffect(0.8)
-                        .padding(.top, 8)
-                }
-                
-                Button("Cancel") {
-                    // Cancel export
-                    isExporting = false
-                    
-                    // Show cancellation message
-                    let alert = NSAlert()
-                    alert.messageText = "Export Cancelled"
-                    alert.informativeText = "The export operation was cancelled."
-                    alert.alertStyle = .informational
-                    alert.addButton(withTitle: "OK")
-                    alert.runModal()
-                }
-                .buttonStyle(.plain)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
-                .background(Color.red)
-                .foregroundColor(.white)
-                .cornerRadius(8)
+            Button("Cancel") {
+                isExporting = false
+                // Add code to cancel the export process
             }
-            .padding(30)
-            .background(Color(NSColor.windowBackgroundColor).opacity(0.9))
-            .cornerRadius(16)
-            .shadow(radius: 20)
+            .padding()
         }
+        .frame(width: 400, height: 150)
+        .background(Color(.windowBackgroundColor))
+        .cornerRadius(10)
+        .shadow(radius: 5)
     }
     
     /// Export settings configuration view
@@ -2263,8 +2151,6 @@ struct DesignCanvas: View {
                                             style.alignment = .center
                                         case .trailing:
                                             style.alignment = .right
-                                        default:
-                                            style.alignment = .left
                                         }
                                         return style
                                     }()

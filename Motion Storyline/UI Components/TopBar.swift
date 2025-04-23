@@ -285,4 +285,13 @@ struct CanvasTopBar: View {
         .background(Color(NSColor.windowBackgroundColor))
         .border(Color.gray.opacity(0.2), width: 0.5)
     }
+    
+    // Method to show preferences window
+    func showPreferences() {
+        // Post notification that preferences should be shown
+        NotificationCenter.default.post(
+            name: NSNotification.Name("ShowPreferences"),
+            object: nil
+        )
+    }
 } 

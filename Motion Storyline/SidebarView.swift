@@ -1,4 +1,8 @@
 import SwiftUI
+import AppKit
+import Foundation
+
+// Import PreferencesController
 
 struct SidebarView: View {
     @Binding var selectedItem: String?
@@ -6,7 +10,7 @@ struct SidebarView: View {
     @Binding var isCreatingNewProject: Bool
     @EnvironmentObject var appState: AppStateManager
     
-    let sidebarItems = ["Home", "Projects", "Tasks", "Settings"]
+    let sidebarItems = ["Home", "Projects", "Templates", "Settings"]
     
     var body: some View {
         VStack(spacing: 0) {
@@ -22,17 +26,63 @@ struct SidebarView: View {
             .background(Color(NSColor.controlBackgroundColor))
             
             // Sidebar content
-            List(selection: $selectedItem) {
+            List {
                 Section(header: Text("Menu")) {
                     ForEach(sidebarItems, id: \.self) { item in
-                        Label(item, systemImage: getSystemImage(for: item))
+                        SidebarItemView(
+                            item: item,
+                            systemImage: getSystemImage(for: item),
+                            isSelected: selectedItem == item
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            selectedItem = item
+                            
+                            // Handle special cases
+                            if item == "Settings" {
+                                self.showPreferences()
+                            } else if item == "Templates" {
+                                // Post notification to switch to templates tab
+                                NotificationCenter.default.post(
+                                    name: NSNotification.Name("SwitchToTemplatesTab"),
+                                    object: nil
+                                )
+                            } else if item == "Home" {
+                                // Post notification to switch to recent tab
+                                NotificationCenter.default.post(
+                                    name: NSNotification.Name("SwitchToRecentTab"),
+                                    object: nil
+                                )
+                            } else if item == "Projects" {
+                                // Post notification to switch to all projects tab
+                                NotificationCenter.default.post(
+                                    name: NSNotification.Name("SwitchToAllProjectsTab"),
+                                    object: nil
+                                )
+                            }
+                        }
+                        .background(selectedItem == item ? Color.accentColor.opacity(0.2) : Color.clear)
+                        .cornerRadius(4)
                     }
                 }
                 
                 Section(header: Text("Tools")) {
-                    TextField("Search...", text: $searchText)
-                        .textFieldStyle(.roundedBorder)
-                        .padding(.vertical, 5)
+                    HStack {
+                        TextField("Search...", text: $searchText)
+                            .textFieldStyle(.roundedBorder)
+                        
+                        if !searchText.isEmpty {
+                            Button(action: { searchText = "" }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .transition(.opacity)
+                            .animation(.easeInOut, value: searchText.isEmpty)
+                            .accessibilityLabel("Clear search")
+                        }
+                    }
+                    .padding(.vertical, 5)
                     
                     Toggle("Dark Mode", isOn: Binding<Bool>(
                         get: { appState.isDarkMode },
@@ -44,6 +94,8 @@ struct SidebarView: View {
                         isCreatingNewProject = true
                     }) {
                         Label("New Project", systemImage: "plus.circle")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .padding(.vertical, 4)
@@ -59,13 +111,36 @@ struct SidebarView: View {
             return "house"
         case "Projects":
             return "folder"
-        case "Tasks":
-            return "checklist"
+        case "Templates":
+            return "doc.badge.plus"
         case "Settings":
             return "gear"
         default:
             return "circle"
         }
+    }
+    
+    func showPreferences() {
+        // Use View extension to show preferences
+        self.openPreferences()
+    }
+}
+
+struct SidebarItemView: View {
+    let item: String
+    let systemImage: String
+    let isSelected: Bool
+    
+    var body: some View {
+        HStack {
+            Image(systemName: systemImage)
+                .frame(width: 20)
+            Text(item)
+            Spacer()
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .foregroundColor(isSelected ? .accentColor : .primary)
     }
 }
 
