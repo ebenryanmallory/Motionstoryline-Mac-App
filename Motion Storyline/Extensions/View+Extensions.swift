@@ -3,9 +3,15 @@ import AppKit
 
 // Extension to add preferences support to any view
 extension View {
-    func showPreferences() {
-        // Use the centralized preferences controller
-        PreferencesController.showPreferences()
+    func openPreferences() {
+        // Use AppKit to show the app preferences window
+        NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil)
+        
+        // Post notification that preferences should be shown
+        NotificationCenter.default.post(
+            name: NSNotification.Name("ShowPreferences"),
+            object: nil
+        )
     }
 }
 
