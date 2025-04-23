@@ -73,6 +73,7 @@ public struct Project: Identifiable, Hashable, Codable {
     public var thumbnail: String
     public var lastModified: Date
     public var mediaAssets: [MediaAsset] = []
+    public var isStarred: Bool = false
     
     // Viewport settings
     public var zoomLevel: CGFloat = 1.0
@@ -81,12 +82,14 @@ public struct Project: Identifiable, Hashable, Codable {
     
     public init(id: UUID = UUID(), name: String, thumbnail: String, lastModified: Date, 
          mediaAssets: [MediaAsset] = [],
+         isStarred: Bool = false,
          zoomLevel: CGFloat = 1.0, panOffsetX: CGFloat = 0.0, panOffsetY: CGFloat = 0.0) {
         self.id = id
         self.name = name
         self.thumbnail = thumbnail
         self.lastModified = lastModified
         self.mediaAssets = mediaAssets
+        self.isStarred = isStarred
         self.zoomLevel = zoomLevel
         self.panOffsetX = panOffsetX
         self.panOffsetY = panOffsetY

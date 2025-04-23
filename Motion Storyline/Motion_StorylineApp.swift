@@ -45,7 +45,10 @@ struct Motion_StorylineApp: App {
                         isCreatingNewProject: $isCreatingNewProject,
                         onCreateNewProject: { name, type in
                             createNewProject(name: name, type: type)
-                        }
+                        },
+                        onDeleteProject: deleteProject,
+                        onRenameProject: renameProject,
+                        onToggleProjectStar: toggleProjectStar
                     )
                     .environmentObject(appState)
                     .onAppear {
@@ -137,7 +140,7 @@ struct Motion_StorylineApp: App {
     // Create a new project and set it as the selected project
     private func createNewProject(name: String, type: String) {
         let thumbnail = getThumbnailForType(type)
-        let newProject = Project(name: name, thumbnail: thumbnail, lastModified: Date())
+        let newProject = Project(name: name, thumbnail: thumbnail, lastModified: Date(), isStarred: false)
         createNewProject(newProject)
     }
     
@@ -251,9 +254,9 @@ struct Motion_StorylineApp: App {
     // Create sample projects for first-time users
     private func createSampleProjects() {
         userProjects = [
-            Project(name: "Mobile App Design", thumbnail: "design_thumbnail", lastModified: Date()),
-            Project(name: "Website Prototype", thumbnail: "prototype_thumbnail", lastModified: Date()),
-            Project(name: "Brand Style Guide", thumbnail: "style_thumbnail", lastModified: Date())
+            Project(name: "Mobile App Design", thumbnail: "design_thumbnail", lastModified: Date(), isStarred: false),
+            Project(name: "Website Prototype", thumbnail: "prototype_thumbnail", lastModified: Date(), isStarred: false),
+            Project(name: "Brand Style Guide", thumbnail: "style_thumbnail", lastModified: Date(), isStarred: false)
         ]
         saveAllProjects()
     }
@@ -280,6 +283,102 @@ struct Motion_StorylineApp: App {
             return "style_thumbnail"
         default:
             return "placeholder"
+        }
+    }
+    
+    // Add a function to delete projects
+    private func deleteProject(_ project: Project) {
+        // Remove from recent projects if present
+        recentProjects.removeAll { $0.id == project.id }
+        
+        // Remove from all projects
+        userProjects.removeAll { $0.id == project.id }
+        
+        // If this was the selected project, navigate back to home
+        if appState.selectedProject?.id == project.id {
+            appState.navigateToHome()
+        }
+        
+        // Save the changes to persistent storage
+        saveRecentProjects()
+        saveAllProjects()
+        
+        // Update status message
+        statusMessage = "Project \"\(project.name)\" deleted"
+        
+        // Reset the status message after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            updateStatus()
+        }
+    }
+    
+    // Add a function to rename projects
+    private func renameProject(_ project: Project, newName: String) {
+        // Create a copy of the project with the new name
+        var renamedProject = project
+        renamedProject.name = newName
+        renamedProject.lastModified = Date()
+        
+        // Update in recent projects
+        if let index = recentProjects.firstIndex(where: { $0.id == project.id }) {
+            recentProjects[index] = renamedProject
+        }
+        
+        // Update in all projects
+        if let index = userProjects.firstIndex(where: { $0.id == project.id }) {
+            userProjects[index] = renamedProject
+        }
+        
+        // Update selected project if it's the same one
+        if appState.selectedProject?.id == project.id {
+            appState.selectedProject = renamedProject
+        }
+        
+        // Save the changes to persistent storage
+        saveRecentProjects()
+        saveAllProjects()
+        
+        // Update status message
+        statusMessage = "Project renamed to \"\(newName)\""
+        
+        // Reset the status message after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            updateStatus()
+        }
+    }
+    
+    // Add a function to toggle project star status
+    private func toggleProjectStar(_ project: Project) {
+        // Create a copy of the project with the toggled star status
+        var updatedProject = project
+        updatedProject.isStarred.toggle()
+        
+        // Update in recent projects
+        if let index = recentProjects.firstIndex(where: { $0.id == project.id }) {
+            recentProjects[index] = updatedProject
+        }
+        
+        // Update in all projects
+        if let index = userProjects.firstIndex(where: { $0.id == project.id }) {
+            userProjects[index] = updatedProject
+        }
+        
+        // Update selected project if it's the same one
+        if appState.selectedProject?.id == project.id {
+            appState.selectedProject = updatedProject
+        }
+        
+        // Save the changes to persistent storage
+        saveRecentProjects()
+        saveAllProjects()
+        
+        // Update status message with the new state (not the previous state)
+        let starAction = updatedProject.isStarred ? "starred" : "unstarred"
+        statusMessage = "Project \"\(project.name)\" \(starAction)"
+        
+        // Reset the status message after a delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+            updateStatus()
         }
     }
 }
