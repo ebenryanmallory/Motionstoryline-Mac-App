@@ -15,15 +15,27 @@ public struct ExportProgressView: View {
     // Use the new coordinator's configuration type
     let configuration: ExportCoordinator.ExportConfiguration
     let asset: AVAsset
+    
+    // Add these properties to access canvas elements and animation
+    let animationController: AnimationController?
+    let canvasElements: [CanvasElement]?
+    let canvasSize: CGSize?
+    
     let onCompletion: ((Result<URL, Error>) -> Void)?
     
-    public init(
+    init(
         configuration: ExportCoordinator.ExportConfiguration,
         asset: AVAsset,
+        animationController: AnimationController? = nil,
+        canvasElements: [CanvasElement]? = nil,
+        canvasSize: CGSize? = nil,
         onCompletion: ((Result<URL, Error>) -> Void)? = nil
     ) {
         self.configuration = configuration
         self.asset = asset
+        self.animationController = animationController
+        self.canvasElements = canvasElements
+        self.canvasSize = canvasSize
         self.onCompletion = onCompletion
     }
     
@@ -182,8 +194,26 @@ public struct ExportProgressView: View {
                 
                 os_log("Beginning export operation", log: ExportProgressView.logger, type: .info)
                 
-                // Create coordinator and export
-                let coordinator = ExportCoordinator(asset: asset)
+                // Create coordinator with or without animation data
+                let coordinator: ExportCoordinator
+                
+                if let animationController = animationController,
+                   let canvasElements = canvasElements,
+                   let canvasSize = canvasSize {
+                    // Use the fully-configured coordinator with animation data
+                    os_log("Creating ExportCoordinator with actual animation data", log: ExportProgressView.logger, type: .info)
+                    coordinator = ExportCoordinator(
+                        asset: asset,
+                        animationController: animationController,
+                        canvasElements: canvasElements,
+                        canvasSize: canvasSize
+                    )
+                } else {
+                    // Fallback to the basic coordinator
+                    os_log("Creating basic ExportCoordinator without animation data", log: ExportProgressView.logger, type: .info)
+                    coordinator = ExportCoordinator(asset: asset)
+                }
+                
                 let url = try await coordinator.export(
                     with: configuration,
                     progressHandler: { [weak exportManager] progress in
@@ -248,6 +278,7 @@ struct ExportProgressView_Previews: PreviewProvider {
             width: 1920,
             height: 1080,
             frameRate: 30.0,
+            numberOfFrames: 300,
             outputURL: URL(fileURLWithPath: "/tmp/preview_export.mp4")
         )
         

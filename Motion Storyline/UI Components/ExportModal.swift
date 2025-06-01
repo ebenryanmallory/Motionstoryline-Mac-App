@@ -14,6 +14,10 @@ struct ExportModal: View {
     let canvasWidth: Int
     let canvasHeight: Int
     
+    // Closures to get the latest data
+    let getAnimationController: () -> AnimationController?
+    let getCanvasElements: () -> [CanvasElement]?
+    
     // Callback for when the modal is dismissed
     let onDismiss: () -> Void
     
@@ -23,7 +27,8 @@ struct ExportModal: View {
     @State private var selectedImageFormat: ImageFormat = .png
     @State private var exportWidth: String
     @State private var exportHeight: String
-    @State private var frameRate: String = "30"
+    @State private var frameRate: String = "60" // Default to 60 for 5s/300 frames
+    @State private var numberOfFrames: String = "300" // Default to 300 (5s at 60fps)
     @State private var includeAudio: Bool = true
     @State private var jpegQuality: Double = 0.9
     
@@ -31,19 +36,35 @@ struct ExportModal: View {
     @State private var isExporting = false
     @State private var exportConfiguration: ExportCoordinator.ExportConfiguration?
     
-    init(asset: AVAsset, canvasWidth: Int, canvasHeight: Int, onDismiss: @escaping () -> Void) {
+    // Helper: computed duration from numberOfFrames and frameRate
+    private var calculatedDuration: Double {
+        guard let frames = Int(numberOfFrames), let fps = Double(frameRate), fps > 0 else { return 0 }
+        return Double(frames) / fps
+    }
+    
+    // Combined initializer with default closures for animation data
+    init(
+        asset: AVAsset,
+        canvasWidth: Int,
+        canvasHeight: Int,
+        getAnimationController: @escaping () -> AnimationController? = { nil }, // Default to nil
+        getCanvasElements: @escaping () -> [CanvasElement]? = { nil },    // Default to nil
+        onDismiss: @escaping () -> Void
+    ) {
         self.asset = asset
         self.canvasWidth = canvasWidth
         self.canvasHeight = canvasHeight
+        self.getAnimationController = getAnimationController
+        self.getCanvasElements = getCanvasElements
         self.onDismiss = onDismiss
         
-        // Initialize dimensions with the canvas size
         _exportWidth = State(initialValue: String(canvasWidth))
         _exportHeight = State(initialValue: String(canvasHeight))
     }
     
     var body: some View {
-        VStack(spacing: 20) {
+        ScrollView {
+            VStack(spacing: 20) {
             // Header with title and close button
             HStack {
                 Text("Export Project")
@@ -140,6 +161,24 @@ struct ExportModal: View {
                         .buttonStyle(.borderless)
                     }
                 }
+                // Number of frames settings
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Number of Frames")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                    HStack {
+                        TextField("Frames", text: $numberOfFrames)
+                            .frame(width: 80)
+                        Text("frames")
+                        Spacer()
+                        Button("300") { numberOfFrames = "300" }.buttonStyle(.borderless)
+                        Button("150") { numberOfFrames = "150" }.buttonStyle(.borderless)
+                        Button("600") { numberOfFrames = "600" }.buttonStyle(.borderless)
+                    }
+                    Text("Duration: \(String(format: "%.2f", calculatedDuration)) seconds @ \(frameRate) fps")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
                 
                 // Format-specific settings
                 switch selectedFormat {
@@ -211,26 +250,36 @@ struct ExportModal: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(invalidExportSettings)
-        }
+            }
+        } // End ScrollView
         .padding()
-        .frame(width: 480, height: 400)
+        .frame(width: 480)
         .sheet(item: $exportConfiguration) { config in
+            // Call the closures to get the latest data
+            let currentAnimationController = getAnimationController()
+            let currentCanvasElements = getCanvasElements()
+            // Assuming canvasWidth/Height are still relevant for size, if not, these should also come from a closure or DesignDocument
+            let currentCanvasSize = CGSize(width: self.canvasWidth, height: self.canvasHeight)
+
             ExportProgressView(
                 configuration: config,
-                asset: asset,
+                asset: self.asset,
+                animationController: currentAnimationController, // Pass fetched controller
+                canvasElements: currentCanvasElements,       // Pass fetched elements
+                canvasSize: currentCanvasSize,               // Pass size
                 onCompletion: { result in
                     // Handle export completion
                     DispatchQueue.main.async {
                         switch result {
                         case .success(let url):
-                            os_log("Export completed successfully to: %{public}@", log: ExportModal.logger, type: .info, url.path)
+                            os_log("Export completed successfully: %{public}@", log: ExportModal.logger, type: .info, url.path)
                         case .failure(let error):
                             os_log("Export failed with error: %{public}@", log: ExportModal.logger, type: .error, error.localizedDescription)
                         }
                         // Dismiss the modal after handling the result
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                            self.exportConfiguration = nil
-                            onDismiss()
+                            self.exportConfiguration = nil // Clear the configuration to dismiss the sheet
+                            // self.onDismiss() // Consider if the main modal should also dismiss here
                         }
                     }
                 }
@@ -244,8 +293,10 @@ struct ExportModal: View {
     private var invalidExportSettings: Bool {
         guard let width = Int(exportWidth), width > 0,
               let height = Int(exportHeight), height > 0,
-              let fps = Float(frameRate), fps > 0 else {
-            os_log("Invalid export settings: width=%{public}@, height=%{public}@, fps=%{public}@", log: ExportModal.logger, type: .error, exportWidth, exportHeight, frameRate)
+              let fps = Float(frameRate), fps > 0,
+              let frames = Int(numberOfFrames), frames > 0 else {
+            os_log("Invalid export settings: width=%{public}@, height=%{public}@, fps=%{public}@, frames=%{public}@", 
+                   log: ExportModal.logger, type: .error, exportWidth, exportHeight, frameRate, numberOfFrames)
             return true
         }
         return false
@@ -258,17 +309,84 @@ struct ExportModal: View {
         // Validate settings
         guard let width = Int(exportWidth), width > 0,
               let height = Int(exportHeight), height > 0,
-              let fps = Float(frameRate), fps > 0 else {
-            os_log("Invalid export settings: width=%{public}@, height=%{public}@, fps=%{public}@", log: ExportModal.logger, type: .error, exportWidth, exportHeight, frameRate)
+              let fps = Float(frameRate), fps > 0,
+              let frames = Int(numberOfFrames), frames > 0 else {
+            os_log("Invalid export settings: width=%{public}@, height=%{public}@, fps=%{public}@, frames=%{public}@", 
+                   log: ExportModal.logger, type: .error, exportWidth, exportHeight, frameRate, numberOfFrames)
             return
         }
         
-        os_log("Starting export with format: %{public}@, resolution: %{public}dx%{public}d, fps: %{public}f", log: ExportModal.logger, type: .info, String(describing: selectedFormat), width, height, fps)
+        os_log("Starting export with format: %{public}@, resolution: %{public}dx%{public}d, fps: %{public}f, frames: %{public}d", 
+               log: ExportModal.logger, type: .info, String(describing: selectedFormat), width, height, fps, frames)
         
-        // Create a save panel to get the output location
+        // For image sequence, use NSOpenPanel in directory mode to select parent folder
+        if case .imageSequence = selectedFormat {
+            let openPanel = NSOpenPanel()
+            openPanel.canChooseFiles = false
+            openPanel.canChooseDirectories = true
+            openPanel.allowsMultipleSelection = false
+            openPanel.canCreateDirectories = true
+            openPanel.title = "Select Export Folder"
+            openPanel.prompt = "Choose"
+            
+            os_log("Showing open panel for parent directory selection", log: ExportModal.logger, type: .info)
+            if openPanel.runModal() == .OK, let parentURL = openPanel.url {
+                os_log("Selected parent directory: %{public}@", log: ExportModal.logger, type: .info, parentURL.path)
+                // Suggest a default subfolder name
+                let baseFolderName = "image_sequence"
+                var exportFolderURL = parentURL.appendingPathComponent(baseFolderName)
+                var suffix = 1
+                let fileManager = FileManager.default
+                // Ensure the export folder does not overwrite unless user agrees
+                while fileManager.fileExists(atPath: exportFolderURL.path) {
+                    let alert = NSAlert()
+                    alert.messageText = "Folder Exists"
+                    alert.informativeText = "The folder \(baseFolderName) already exists. Overwrite contents?"
+                    alert.alertStyle = .warning
+                    alert.addButton(withTitle: "Overwrite")
+                    alert.addButton(withTitle: "Choose New Name")
+                    let response = alert.runModal()
+                    if response == .alertFirstButtonReturn {
+                        // Overwrite
+                        do {
+                            try fileManager.removeItem(at: exportFolderURL)
+                            os_log("Removed existing folder for overwrite: %{public}@", log: ExportModal.logger, type: .info, exportFolderURL.path)
+                        } catch {
+                            os_log("Failed to remove existing folder: %{public}@", log: ExportModal.logger, type: .error, error.localizedDescription)
+                            return
+                        }
+                        break
+                    } else {
+                        // Choose new name
+                        suffix += 1
+                        exportFolderURL = parentURL.appendingPathComponent("\(baseFolderName)_\(suffix)")
+                    }
+                }
+                os_log("Final export folder: %{public}@", log: ExportModal.logger, type: .info, exportFolderURL.path)
+                // Create the coordinator configuration
+                let configuration = ExportCoordinator.ExportConfiguration(
+                    format: selectedFormat,
+                    width: width,
+                    height: height,
+                    frameRate: fps,
+                    numberOfFrames: Int(numberOfFrames),
+                    outputURL: exportFolderURL,
+                    proResProfile: selectedProResProfile,
+                    includeAudio: includeAudio,
+                    baseFilename: "frame",
+                    imageQuality: selectedFormat == .imageSequence(.jpeg) ? CGFloat(jpegQuality) : nil
+                )
+                // Store configuration and present the sheet
+                os_log("Configured export with format: %{public}@", log: ExportModal.logger, type: .info, String(describing: configuration.format))
+                self.exportConfiguration = configuration
+            } else {
+                os_log("No parent directory selected for image sequence export", log: ExportModal.logger, type: .error)
+            }
+            return
+        }
+        // --- Default logic for other formats ---
         let savePanel = NSSavePanel()
         savePanel.canCreateDirectories = true
-        
         // Configure save panel based on format
         switch selectedFormat {
         case .video:
@@ -278,7 +396,6 @@ struct ExportModal: View {
             savePanel.allowsOtherFileTypes = true
             savePanel.isExtensionHidden = false
             savePanel.nameFieldStringValue = "export.mp4"
-            
         case .gif:
             savePanel.title = "Export Animated GIF"
             savePanel.nameFieldLabel = "Export As:"
@@ -286,15 +403,6 @@ struct ExportModal: View {
             savePanel.allowsOtherFileTypes = true
             savePanel.isExtensionHidden = false
             savePanel.nameFieldStringValue = "animation.gif"
-            
-        case .imageSequence:
-            savePanel.title = "Export Image Sequence"
-            savePanel.nameFieldLabel = "Export To Folder:"
-            savePanel.allowsOtherFileTypes = true
-            savePanel.isExtensionHidden = false
-            savePanel.nameFieldStringValue = "image_sequence"
-            savePanel.prompt = "Export"
-            
         case .projectFile:
             savePanel.title = "Export Project File"
             savePanel.nameFieldLabel = "Export As:"
@@ -302,7 +410,6 @@ struct ExportModal: View {
             savePanel.allowsOtherFileTypes = true
             savePanel.isExtensionHidden = false
             savePanel.nameFieldStringValue = "project.msproj"
-            
         case .batchExport:
             savePanel.title = "Export Multiple Formats"
             savePanel.nameFieldLabel = "Export To Folder:"
@@ -310,36 +417,29 @@ struct ExportModal: View {
             savePanel.isExtensionHidden = false
             savePanel.nameFieldStringValue = "batch_export"
             savePanel.prompt = "Export"
+        default:
+            break
         }
-        
         os_log("Showing save panel for format: %{public}@", log: ExportModal.logger, type: .info, String(describing: selectedFormat))
-        
-        // Show save panel
         if savePanel.runModal() == .OK {
-            guard let outputURL = savePanel.url else { 
+            guard let outputURL = savePanel.url else {
                 os_log("No output URL selected", log: ExportModal.logger, type: .error)
-                return 
+                return
             }
-            
             os_log("Selected output URL: %{public}@", log: ExportModal.logger, type: .info, outputURL.path)
-            
-            // Create the coordinator configuration
             let configuration = ExportCoordinator.ExportConfiguration(
                 format: selectedFormat,
                 width: width,
                 height: height,
                 frameRate: fps,
+                numberOfFrames: Int(numberOfFrames),
                 outputURL: outputURL,
                 proResProfile: selectedProResProfile,
                 includeAudio: includeAudio,
                 baseFilename: "frame",
                 imageQuality: selectedFormat == .imageSequence(.jpeg) ? CGFloat(jpegQuality) : nil
             )
-            
-            // Store configuration and present the sheet
             os_log("Configured export with format: %{public}@", log: ExportModal.logger, type: .info, String(describing: configuration.format))
-            
-            // Set the configuration which will trigger the sheet presentation
             self.exportConfiguration = configuration
         } else {
             os_log("Export cancelled by user", log: ExportModal.logger, type: .info)

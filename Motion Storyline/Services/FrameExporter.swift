@@ -49,43 +49,40 @@ public class FrameExporter {
         public let frameNumber: Int
     }
     
-    /// Asset to extract frames from
-    private let asset: AVAsset
-    
-    /// Initialize with an AVAsset
-    public init(asset: AVAsset) {
-        self.asset = asset
+    // Deprecated: AVAsset/AVAssetImageGenerator logic removed. FrameExporter now renders from canvas state.
+    // private let asset: AVAsset
+    // public init(asset: AVAsset) { ... }
+
+    /// Initialize with canvas state providers
+    /// - Parameters:
+    ///   - getElementsAtTime: Closure to provide canvas elements at a given time (timeline position)
+    ///   - canvasSize: The size of the canvas to render
+    internal init(getElementsAtTime: @escaping (CMTime) -> [CanvasElement], canvasSize: CGSize) {
+        self.getElementsAtTime = getElementsAtTime
+        self.canvasSize = canvasSize
     }
-    
-    /// Export a single frame from the asset at the specified time
+    private let getElementsAtTime: (CMTime) -> [CanvasElement]
+    private let canvasSize: CGSize
+
+    /// Export a single frame by rendering the canvas at the specified time
     /// - Parameters:
     ///   - time: The time point to export
     ///   - configuration: Frame export configuration
-    /// - Returns: An optional CGImage if extraction was successful
+    /// - Returns: A CGImage if rendering was successful
     public func exportFrame(at time: CMTime, configuration: Configuration) async throws -> CGImage {
-        os_log("Exporting frame at time %{public}f with format %{public}@", log: FrameExporter.logger, type: .debug, 
+        os_log("Exporting frame at time %{public}f with format %{public}@ (canvas)", log: FrameExporter.logger, type: .debug,
                time.seconds, configuration.imageFormat.rawValue)
-        
-        // Create an AVAssetImageGenerator configured for the export
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.requestedTimeToleranceBefore = .zero
-        generator.requestedTimeToleranceAfter = .zero
-        generator.appliesPreferredTrackTransform = true
-        
-        // Set the maximum size
-        generator.maximumSize = CGSize(width: configuration.width, height: configuration.height)
-        
-        do {
-            // Generate the CGImage
-            let cgImage = try await generator.image(at: time).image
-            
-            // Return the generated image
-            return cgImage
-        } catch {
-            os_log("Failed to export frame at time %{public}f: %{public}@", log: FrameExporter.logger, type: .error, 
-                   time.seconds, error.localizedDescription)
-            throw error
+        // 1. Get the canvas elements at the given timeline time
+        let elements = getElementsAtTime(time)
+        // 2. Render the canvas as an image
+        guard let cgImage = CanvasRenderer.renderCanvasImage(
+            elements: elements,
+            size: canvasSize,
+            scaleFactor: 1.0
+        ) else {
+            throw NSError(domain: "FrameExporter", code: 10, userInfo: [NSLocalizedDescriptionKey: "Failed to render canvas image at time \(time.seconds)"])
         }
+        return cgImage
     }
     
     /// Save a CGImage to disk with the specified format
@@ -163,15 +160,21 @@ public class FrameExporter {
         //     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // }
         
+        // Extra diagnostics: check if directory is writable
+        let directory = url.deletingLastPathComponent()
+        let isWritable = FileManager.default.isWritableFile(atPath: directory.path)
+        os_log("[DEBUG] saveImage: Directory for image: %{public}@, isWritable: %{public}@", log: FrameExporter.logger, type: .debug, directory.path, String(isWritable))
+        if !isWritable {
+            os_log("[ERROR] saveImage: Directory is not writable: %{public}@", log: FrameExporter.logger, type: .error, directory.path)
+        }
         // Write the data to disk
         do {
             try imageData.write(to: url)
         } catch {
-            os_log("Failed to write image data to %{public}@: %{public}@", log: FrameExporter.logger, type: .error, url.path, error.localizedDescription)
+            os_log("[ERROR] Failed to write image data to %{public}@ : %{public}@", log: FrameExporter.logger, type: .error, url.path, error.localizedDescription)
             // Re-throw the error to be handled by the caller
-            throw error 
+            throw error
         }
-        
         os_log("Successfully saved image to %{public}@", log: FrameExporter.logger, type: .debug, url.path)
     }
     
@@ -195,15 +198,21 @@ public class FrameExporter {
         os_log("Starting frame sequence export to %{public}@", log: FrameExporter.logger, type: .info, outputDirectory.path)
         
         // Handle security-scoped resources for macOS sandboxed apps
+        let parentDirectory = outputDirectory.deletingLastPathComponent()
         var didStartAccessing = false
-        if outputDirectory.startAccessingSecurityScopedResource() {
+        os_log("[DEBUG] FrameExporter: Attempting to start security-scoped access on parent directory: %{public}@", log: FrameExporter.logger, type: .debug, parentDirectory.path)
+        if parentDirectory.startAccessingSecurityScopedResource() {
             didStartAccessing = true
+            os_log("[DEBUG] FrameExporter: Successfully started security-scoped access on parent directory.", log: FrameExporter.logger, type: .debug)
+        } else {
+            os_log("[DEBUG] FrameExporter: Failed to start security-scoped access on parent directory.", log: FrameExporter.logger, type: .error)
         }
         
         // Ensure proper cleanup of security-scoped resource access regardless of outcome
         defer {
             if didStartAccessing {
-                outputDirectory.stopAccessingSecurityScopedResource()
+                parentDirectory.stopAccessingSecurityScopedResource()
+                os_log("[DEBUG] FrameExporter: Stopped security-scoped access on parent directory.", log: FrameExporter.logger, type: .debug)
             }
         }
         
@@ -254,8 +263,10 @@ public class FrameExporter {
             }
         }
         
-        // Determine asset duration
-        let duration = try await asset.load(.duration)
+        // Determine timeline duration (pseudo-code: replace with actual timeline duration provider)
+        // let duration = timelineController.duration
+        // For now, assume a default duration (e.g., 5 seconds)
+        let duration = endTime ?? CMTime(seconds: 5.0, preferredTimescale: 600)
         let actualStartTime = startTime ?? CMTime.zero
         let actualEndTime = endTime ?? duration
         
@@ -269,7 +280,7 @@ public class FrameExporter {
             currentTime = CMTimeAdd(currentTime, frameInterval)
         }
         
-        os_log("Will export %{public}d frames at %{public}f fps", log: FrameExporter.logger, type: .info, 
+        os_log("Will export %{public}d frames at %{public}f fps (canvas)", log: FrameExporter.logger, type: .info,
                frameTimes.count, configuration.frameRate)
         
         // Create an array to store frame URLs

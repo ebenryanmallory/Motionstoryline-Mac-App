@@ -197,6 +197,7 @@ public struct ExportOptionsSheet: View {
             width: config.width,
             height: config.height,
             frameRate: config.frameRate,
+            numberOfFrames: config.numberOfFrames,
             outputURL: config.outputURL,
             proResProfile: config.proResProfile,
             includeAudio: config.includeAudio,
