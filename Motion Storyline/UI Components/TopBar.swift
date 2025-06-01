@@ -7,7 +7,6 @@ import AVFoundation
 struct CanvasTopBar: View {
     let projectName: String
     let onClose: () -> Void
-    let onNewFile: () -> Void
     let onCameraRecord: () -> Void
     let onMediaLibrary: () -> Void
     
@@ -19,10 +18,21 @@ struct CanvasTopBar: View {
     let onCheckForUpdates: () -> Void
     let onSignOut: () -> Void
     
+    // Add save callbacks
+    let onSave: () -> Void
+    let onSaveAs: () -> Void
+    let onOpenProject: () -> Void
+    
     // Zoom callbacks
     let onZoomIn: () -> Void
     let onZoomOut: () -> Void
     let onZoomReset: () -> Void
+    
+    // Document manager for saving/exporting
+    let documentManager: DocumentManager
+    // Live canvas state for export
+    let liveCanvasElements: () -> [CanvasElement]
+    let liveAnimationController: () -> AnimationController
     
     @State private var isShowingMenu = false
     // Add a state for showing the export modal
@@ -53,14 +63,21 @@ struct CanvasTopBar: View {
             
             // File menu
             Menu {
-                Button("New File", action: onNewFile)
-                Button("Open...", action: {})
+                Button("Open Project...", action: onOpenProject)
                 Divider()
-                Button("Save", action: {})
-                Button("Save As...", action: {})
+                Button("Save Project", action: onSave)
+                    .keyboardShortcut("s", modifiers: .command)
+                Button("Save Project As...", action: onSaveAs)
+                    .keyboardShortcut("s", modifiers: [.command, .shift])
                 Divider()
                 Button("Export...", action: { 
-                    // Show export modal instead of direct export
+                    // Synchronize DocumentManager with live UI state before exporting
+                    self.documentManager.configure(
+                        canvasElements: self.liveCanvasElements(),
+                        animationController: self.liveAnimationController(),
+                        canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                    )
+
                     showingExportModal = true
                 })
             } label: {
@@ -235,9 +252,10 @@ struct CanvasTopBar: View {
                     
                     Menu("Export Project File") {
                         Button {
-                            onExport(.projectFile)
+                            // Use the same onSaveAs callback that the File menu uses
+                            onSaveAs()
                         } label: {
-                            Label("Motion Storyline Project (.msproj)", systemImage: "doc.badge.arrow.down")
+                            Label("Motion Storyline Project (.storyline)", systemImage: "doc.badge.arrow.down")
                         }
                         .help("Export as a Motion Storyline native project file that can be reopened later")
                     }
@@ -246,6 +264,7 @@ struct CanvasTopBar: View {
                         .foregroundColor(.black)
                 }
                 .menuStyle(BorderlessButtonMenuStyle())
+                .fixedSize()
                 .help("Export Project")
                 
                 Menu {
@@ -277,6 +296,7 @@ struct CanvasTopBar: View {
                         .foregroundColor(.black)
                 }
                 .menuStyle(BorderlessButtonMenuStyle())
+                .fixedSize()
                 .help("User Menu")
             }
         }

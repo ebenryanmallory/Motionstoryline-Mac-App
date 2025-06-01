@@ -9,6 +9,7 @@ import Testing
 import Foundation
 import SwiftUI
 @testable import Motion_Storyline
+import Models
 
 struct DesignCanvasNavigationTests {
 

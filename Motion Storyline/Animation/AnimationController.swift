@@ -211,33 +211,19 @@ extension Array: Interpolatable where Element == CGPoint {
         let maxCount = Swift.max(self.count, to.count)
         var result: [CGPoint] = []
         
+        // Interpolate all points
         for i in 0..<maxCount {
             if i < self.count && i < to.count {
-                // Both arrays have a point at this index, interpolate between them
+                // Both arrays have a point at this index
                 let fromPoint = self[i]
                 let toPoint = to[i]
-                let interpolatedPoint = fromPoint.interpolate(to: toPoint, progress: progress)
-                result.append(interpolatedPoint)
+                result.append(fromPoint.interpolate(to: toPoint, progress: progress))
             } else if i < self.count {
-                // Only source array has this point
-                // For a smoother transition, we can fade it out by moving it toward the last point in target
-                if let lastTargetPoint = to.last {
-                    let sourcePoint = self[i]
-                    let interpolatedPoint = sourcePoint.interpolate(to: lastTargetPoint, progress: progress)
-                    if progress < 0.5 {
-                        result.append(interpolatedPoint)
-                    }
-                }
+                // Only "from" array has a point at this index
+                result.append(self[i])
             } else if i < to.count {
-                // Only target array has this point
-                // For a smoother transition, we can fade it in by moving it from the last point in source
-                if let lastSourcePoint = self.last {
-                    let targetPoint = to[i]
-                    let interpolatedPoint = lastSourcePoint.interpolate(to: targetPoint, progress: progress)
-                    if progress > 0.5 {
-                        result.append(interpolatedPoint)
-                    }
-                }
+                // Only "to" array has a point at this index
+                result.append(to[i])
             }
         }
         
@@ -268,6 +254,25 @@ extension Color: Interpolatable {
         let a = fromRGB.alphaComponent + (toRGB.alphaComponent - fromRGB.alphaComponent) * CGFloat(progress)
         
         return Color(NSColor(red: r, green: g, blue: b, alpha: a))
+    }
+}
+
+// Add support for CGSize
+extension CGSize: Interpolatable {
+    public func interpolate(to: CGSize, progress: Double) -> CGSize {
+        return CGSize(
+            width: width + (to.width - width) * CGFloat(progress),
+            height: height + (to.height - height) * CGFloat(progress)
+        )
+    }
+}
+
+// Add support for String
+extension String: Interpolatable {
+    public func interpolate(to: String, progress: Double) -> String {
+        // For strings, we don't have a meaningful way to interpolate between two values
+        // So we just return either the start or end value based on the progress
+        return progress < 0.5 ? self : to
     }
 }
 

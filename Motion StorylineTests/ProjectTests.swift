@@ -1,5 +1,6 @@
 import XCTest
 @testable import Motion_Storyline
+import Models
 
 final class ProjectTests: XCTestCase {
     
