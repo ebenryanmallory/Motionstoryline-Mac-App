@@ -50,7 +50,11 @@ Motion Storyline/
 ├── DesignCanvas.swift           # Main design workspace
 ├── SidebarView.swift            # Left navigation sidebar
 ├── InspectorView.swift          # Properties and inspector panel
-├── FooterView.swift             # Status bar at bottom of app
+├── State/                       # State management
+│   └── AppStateManager.swift    # Global application state
+├── UI Components/               # Reusable UI elements
+│   ├── FooterView.swift                 # Status bar at bottom of app
+│   └── [other UI components]            # Various reusable UI components
 ├── Animation/                   # Animation components
 │   ├── AnimationController.swift         # Core animation logic
 │   ├── TimelineView.swift                # Timeline UI
@@ -62,7 +66,6 @@ Motion Storyline/
 │   └── MousePositionView.swift            # Mouse tracking
 ├── Common/                      # Shared components
 │   └── ExportFormat.swift                 # Export format definitions
-├── UI Components/               # Reusable UI elements
 ├── Canvas/                      # Canvas-related components
 ├── Info.plist                   # App configuration
 ├── Assets.xcassets/             # Images and resources
@@ -77,6 +80,14 @@ The main entry point for the application. It manages:
 - Navigation between HomeView and DesignCanvas
 - Project state management
 - Recent projects persistence using AppStorage
+
+### AppStateManager.swift
+The global state manager responsible for:
+- Tracking the currently selected project
+- Managing app appearance and theme settings
+- Handling navigation between different app screens
+- Providing documentation overlay controls
+- Offering a shared instance for global access across the app
 
 ### HomeView.swift
 The landing page and project management interface:
@@ -143,7 +154,7 @@ Properties and inspector panel:
 - Form-based controls (sliders, color pickers, etc.)
 
 ### FooterView.swift
-Status bar at the bottom of the application:
+Status bar at the bottom of the application (located in UI Components folder):
 - Current status display
 - Connection indicator
 - Version information
