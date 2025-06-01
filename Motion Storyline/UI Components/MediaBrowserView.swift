@@ -13,6 +13,7 @@ public struct MediaBrowserView: View {
     @State private var isShowingDeleteAlert = false
     @State private var previewPlayer: AVPlayer?
     @State private var isPreviewPlaying = false
+    var onAddElementToCanvas: ((CanvasElement) -> Void)?
     
     enum SortOrder: String, CaseIterable, Identifiable {
         case dateAdded = "Date Added"
@@ -23,8 +24,9 @@ public struct MediaBrowserView: View {
         var id: String { self.rawValue }
     }
     
-    public init(project: Binding<Project>) {
+    public init(project: Binding<Project>, onAddElementToCanvas: ((CanvasElement) -> Void)? = nil) {
         self._project = project
+        self.onAddElementToCanvas = onAddElementToCanvas
     }
     
     public var body: some View {
@@ -163,10 +165,28 @@ public struct MediaBrowserView: View {
                         Label("Delete", systemImage: "trash")
                     }
                     
-                    if asset.type == .video || asset.type == .audio {
+                    if asset.type == .video || asset.type == .image {
                         Divider()
                         Button(action: {
-                            // Implementation for "Add to Timeline" would go here
+                            let newElement: CanvasElement
+                            let defaultPosition = CGPoint(x: 200, y: 200) // Or some other default
+                            let defaultSize = CGSize(width: 300, height: 200)
+
+                            if asset.type == .image {
+                                newElement = CanvasElement.image(at: defaultPosition, assetURL: asset.url, displayName: asset.name, size: defaultSize)
+                            } else { // .video
+                                newElement = CanvasElement.video(at: defaultPosition, assetURL: asset.url, displayName: asset.name, size: defaultSize)
+                            }
+                            onAddElementToCanvas?(newElement)
+                            dismiss() // Dismiss the browser after adding
+                        }) {
+                            Label("Add to Canvas", systemImage: "plus.square.on.square")
+                        }
+                    } else if asset.type == .audio {
+                        Divider()
+                        Button(action: {
+                            // Existing audio "Add to Timeline" logic can remain or be updated separately
+                            print("Audio asset - Add to Timeline action placeholder")
                         }) {
                             Label("Add to Timeline", systemImage: "timeline.selection")
                         }

@@ -47,6 +47,53 @@ struct CanvasElementView: View {
                 case .path:
                     PathView(points: element.path, color: element.color, opacity: element.opacity)
                         .frame(width: element.size.width, height: element.size.height)
+                case .image:
+                    if let url = element.assetURL {
+                        AsyncImage(url: url) { phase in
+                            switch phase {
+                            case .empty:
+                                ProgressView()
+                                    .frame(width: element.size.width, height: element.size.height)
+                            case .success(let image):
+                                image.resizable()
+                                    .aspectRatio(contentMode: .fill) // Or .fit, depending on desired behavior
+                                    .frame(width: element.size.width, height: element.size.height)
+                                    .clipped() // Important if using .fill to prevent overflow
+                            case .failure:
+                                Image(systemName: "photo") // Placeholder for failure
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: element.size.width, height: element.size.height)
+                                    .foregroundColor(.gray)
+                            @unknown default:
+                                EmptyView()
+                            }
+                        }
+                        .opacity(element.opacity)
+                        .contentShape(Rectangle())
+                    } else {
+                        Image(systemName: "photo.on.rectangle.angled") // Placeholder if URL is nil
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: element.size.width, height: element.size.height)
+                            .foregroundColor(.gray)
+                            .opacity(element.opacity)
+                            .contentShape(Rectangle())
+                    }
+                case .video:
+                    ZStack {
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.3))
+                        Image(systemName: "film")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: min(element.size.width, element.size.height) * 0.5)
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    .frame(width: element.size.width, height: element.size.height)
+                    .opacity(element.opacity)
+                    .clipped()
+                    .contentShape(Rectangle())
                 default:
                     EmptyView()
                 }
