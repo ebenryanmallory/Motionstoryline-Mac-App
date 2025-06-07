@@ -14,6 +14,8 @@ public struct MediaBrowserView: View {
     @State private var previewPlayer: AVPlayer?
     @State private var isPreviewPlaying = false
     var onAddElementToCanvas: ((CanvasElement) -> Void)?
+    var onAddAudioToTimeline: ((AudioLayer) -> Void)?
+    var currentTimelineTime: TimeInterval = 0.0 // Current frame time for audio start position
     
     enum SortOrder: String, CaseIterable, Identifiable {
         case dateAdded = "Date Added"
@@ -24,9 +26,11 @@ public struct MediaBrowserView: View {
         var id: String { self.rawValue }
     }
     
-    public init(project: Binding<Project>, onAddElementToCanvas: ((CanvasElement) -> Void)? = nil) {
+    public init(project: Binding<Project>, onAddElementToCanvas: ((CanvasElement) -> Void)? = nil, onAddAudioToTimeline: ((AudioLayer) -> Void)? = nil, currentTimelineTime: TimeInterval = 0.0) {
         self._project = project
         self.onAddElementToCanvas = onAddElementToCanvas
+        self.onAddAudioToTimeline = onAddAudioToTimeline
+        self.currentTimelineTime = currentTimelineTime
     }
     
     public var body: some View {
@@ -175,7 +179,13 @@ public struct MediaBrowserView: View {
                             if asset.type == .image {
                                 newElement = CanvasElement.image(at: defaultPosition, assetURL: asset.url, displayName: asset.name, size: defaultSize)
                             } else { // .video
-                                newElement = CanvasElement.video(at: defaultPosition, assetURL: asset.url, displayName: asset.name, size: defaultSize)
+                                newElement = CanvasElement.video(
+                                    at: defaultPosition, 
+                                    assetURL: asset.url, 
+                                    displayName: asset.name, 
+                                    size: defaultSize,
+                                    videoDuration: asset.duration
+                                )
                             }
                             onAddElementToCanvas?(newElement)
                             dismiss() // Dismiss the browser after adding
@@ -185,8 +195,11 @@ public struct MediaBrowserView: View {
                     } else if asset.type == .audio {
                         Divider()
                         Button(action: {
-                            // Existing audio "Add to Timeline" logic can remain or be updated separately
-                            print("Audio asset - Add to Timeline action placeholder")
+                            // Create an audio layer from the asset
+                            if let audioLayer = AudioLayer.from(mediaAsset: asset, startTime: currentTimelineTime) {
+                                onAddAudioToTimeline?(audioLayer)
+                                dismiss() // Dismiss the browser after adding
+                            }
                         }) {
                             Label("Add to Timeline", systemImage: "timeline.selection")
                         }

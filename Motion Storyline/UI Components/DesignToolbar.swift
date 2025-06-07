@@ -3,7 +3,7 @@ import AppKit
 
 // Enum defining the available design tools
 public enum DesignTool {
-    case select, text, rectangle, ellipse, path
+    case select, text, rectangle, ellipse, path, hand
 }
 
 public struct DesignToolbar: View {
@@ -104,6 +104,8 @@ public struct DesignToolbar: View {
             return "Ellipse Tool: Click and drag to create ellipses and circles"
         case .path:
             return "Path Tool: Click and drag to draw custom paths"
+        case .hand:
+            return "Hand Tool: Click and drag to pan the canvas"
         }
     }
 }

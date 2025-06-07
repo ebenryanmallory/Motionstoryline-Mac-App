@@ -9,6 +9,7 @@ struct SidebarView: View {
     @Binding var searchText: String
     @Binding var isCreatingNewProject: Bool
     @EnvironmentObject var appState: AppStateManager
+    @State private var isShowingPreferencesSheet = false
     
     let sidebarItems = ["Home", "Projects", "Templates", "Settings"]
     
@@ -40,7 +41,7 @@ struct SidebarView: View {
                             
                             // Handle special cases
                             if item == "Settings" {
-                                self.showPreferences()
+                                isShowingPreferencesSheet = true
                             } else if item == "Templates" {
                                 // Post notification to switch to templates tab
                                 NotificationCenter.default.post(
@@ -103,6 +104,9 @@ struct SidebarView: View {
             }
             .listStyle(.sidebar)
         }
+        .sheet(isPresented: $isShowingPreferencesSheet) {
+            PreferencesView()
+        }
     }
     
     private func getSystemImage(for item: String) -> String {
@@ -118,11 +122,6 @@ struct SidebarView: View {
         default:
             return "circle"
         }
-    }
-    
-    func showPreferences() {
-        // Use View extension to show preferences
-        self.openPreferences()
     }
 }
 

@@ -426,7 +426,7 @@ public struct MediaImportView: View {
     
     /// Extract audio from a video asset and save as a separate audio file
     @MainActor
-    private func extractAudio(from asset: AVAsset, to directory: URL) async throws -> URL {
+private func extractAudio(from asset: AVAsset, to directory: URL) async throws -> URL {
         let audioTracks = try await asset.loadTracks(withMediaType: .audio)
         guard !audioTracks.isEmpty else {
             throw NSError(domain: "MediaImportView", code: 2, userInfo: [NSLocalizedDescriptionKey: "No audio track found in the video"])
@@ -448,22 +448,32 @@ public struct MediaImportView: View {
         let timeRange = CMTimeRange(start: .zero, duration: duration)
         try compositionAudioTrack.insertTimeRange(timeRange, of: audioTrack, at: .zero)
         
-        // Setup export session
         guard let exportSession = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetAppleM4A) else {
-            throw NSError(domain: "MediaImportView", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to create export session"])
+            throw NSError(domain: "MediaImportView", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to create AVAssetExportSession"])
         }
         
         exportSession.outputURL = audioURL
         exportSession.outputFileType = .m4a
         exportSession.timeRange = timeRange
         
-        // Perform the export
-        await exportSession.export()
-        
-        // Check for errors
-        if let error = exportSession.error {
-            throw error
+        // Perform the export (this is an async method)
+        // Since the whole function is @MainActor, this await will resume on the main actor.
+        // Perform the export using withCheckedThrowingContinuation for safety
+        try await withCheckedThrowingContinuation { continuation in
+            exportSession.exportAsynchronously {
+                switch exportSession.status {
+                case .completed:
+                    continuation.resume(returning: ())
+                case .failed:
+                    continuation.resume(throwing: exportSession.error ?? NSError(domain: "MediaImportView", code: 5, userInfo: [NSLocalizedDescriptionKey: "Export failed with unknown error"])) 
+                case .cancelled:
+                    continuation.resume(throwing: NSError(domain: "MediaImportView", code: 6, userInfo: [NSLocalizedDescriptionKey: "Export cancelled"])) 
+                default:
+                    continuation.resume(throwing: NSError(domain: "MediaImportView", code: 7, userInfo: [NSLocalizedDescriptionKey: "Export resulted in an unexpected status: \(exportSession.status)"])) 
+                }
+            }
         }
+        // Error handling is now part of the continuation
         
         return audioURL
     }

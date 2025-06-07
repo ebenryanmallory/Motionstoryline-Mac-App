@@ -77,17 +77,17 @@ struct NumericStepper: View {
             .cornerRadius(4)
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                    .stroke(Color(white: 0.5, opacity: 1.0).opacity(0.2), lineWidth: 1)
             )
             
             // Drag indicator
             Rectangle()
-                .fill(Color.clear)
+                .fill(Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 0.0))
                 .frame(width: 12, height: 16)
                 .overlay(
                     Image(systemName: "arrow.up.and.down")
                         .font(.system(size: 8))
-                        .foregroundColor(.gray)
+                        .foregroundColor(Color(white: 0.5, opacity: 1.0))
                 )
                 .contentShape(Rectangle())
                 .gesture(
@@ -251,17 +251,17 @@ struct PercentageStepper: View {
             .cornerRadius(4)
             .overlay(
                 RoundedRectangle(cornerRadius: 4)
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                    .stroke(Color(white: 0.5, opacity: 1.0).opacity(0.2), lineWidth: 1)
             )
             
             // Drag indicator
             Rectangle()
-                .fill(Color.clear)
+                .fill(Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 0.0))
                 .frame(width: 12, height: 16)
                 .overlay(
                     Image(systemName: "arrow.up.and.down")
                         .font(.system(size: 8))
-                        .foregroundColor(.gray)
+                        .foregroundColor(Color(white: 0.5, opacity: 1.0))
                 )
                 .contentShape(Rectangle())
                 .gesture(

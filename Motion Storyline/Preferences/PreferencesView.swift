@@ -26,7 +26,8 @@ struct PreferencesView: View {
     @Environment(\.presentationMode) var presentationMode
     
     var body: some View {
-        TabView(selection: $selectedTab) {
+        VStack(spacing: 0) {
+            TabView(selection: $selectedTab) {
             ScrollView {
                 AppearancePreferencesView(viewModel: viewModel)
                     .padding(20)
@@ -53,19 +54,19 @@ struct PreferencesView: View {
                 Label(PreferencesTab.general.rawValue, systemImage: PreferencesTab.general.icon)
             }
             .tag(PreferencesTab.general)
-        }
-        .frame(width: 600, height: 450)
-        .onAppear {
-            configurePreferencesWindow()
-        }
-    }
-    
-    private func configurePreferencesWindow() {
-        if let window = NSApplication.shared.windows.first(where: { $0.title == "Preferences" }) {
-            window.titleVisibility = .visible
-            window.titlebarAppearsTransparent = false
-            window.center()
-            window.setFrameAutosaveName("PreferencesWindow")
+            }
+            .frame(width: 600, height: 450) // Keep frame on TabView or adjust for VStack
+
+            Divider()
+
+            HStack {
+                Spacer()
+                Button("Done") {
+                    presentationMode.wrappedValue.dismiss()
+                }
+                .keyboardShortcut(.defaultAction) // Allows Enter key to trigger it
+            }
+            .padding()
         }
     }
 }

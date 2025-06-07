@@ -25,6 +25,7 @@ struct HomeView: View {
     @State private var selectedTab: Int = 0
     @State private var isShowingUserMenu = false
     @State private var selectedTemplateType: String = ""
+    @State private var isShowingPreferencesSheet = false
     
     // Dynamic colors for light/dark mode adaptability
     private var designBg: Color {
@@ -232,7 +233,7 @@ struct HomeView: View {
                                 .accessibilityHint("View your profile")
                             Button("Settings", action: {
                                 isShowingUserMenu = false
-                                self.showPreferences()
+                                isShowingPreferencesSheet = true
                             })
                             .accessibilityHint("Open application settings")
                             Divider()
@@ -448,6 +449,9 @@ struct HomeView: View {
                 }
                 // .tabViewStyle(.page(indexDisplayMode: .never))
             }
+        }
+        .sheet(isPresented: $isShowingPreferencesSheet) {
+            PreferencesView()
         }
         .sheet(isPresented: $isCreatingNewProject) {
             NewProjectSheet(

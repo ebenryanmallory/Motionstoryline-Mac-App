@@ -3,8 +3,10 @@ import SwiftUI
 // Import the PreferencesController
 import Foundation
 import AVFoundation
+import Combine
 
 struct CanvasTopBar: View {
+    @State private var isShowingPreferences = false
     let projectName: String
     let onClose: () -> Void
     let onCameraRecord: () -> Void
@@ -17,6 +19,15 @@ struct CanvasTopBar: View {
     let onHelpAndSupport: () -> Void
     let onCheckForUpdates: () -> Void
     let onSignOut: () -> Void
+    
+    // Add clipboard operation callbacks
+    let onCut: () -> Void
+    let onCopy: () -> Void
+    let onPaste: () -> Void
+    
+    // Add grid and ruler visibility bindings
+    @Binding var showGrid: Bool
+    @Binding var showRulers: Bool
     
     // Add save callbacks
     let onSave: () -> Void
@@ -37,6 +48,9 @@ struct CanvasTopBar: View {
     @State private var isShowingMenu = false
     // Add a state for showing the export modal
     @State private var showingExportModal = false
+    
+    // Undo/Redo manager
+    @EnvironmentObject var undoManager: UndoRedoManager
     // Add canvas dimensions for the export modal
     let canvasWidth: Int
     let canvasHeight: Int
@@ -90,12 +104,31 @@ struct CanvasTopBar: View {
             
             // Edit menu
             Menu {
-                Button("Undo", action: {})
-                Button("Redo", action: {})
+                Button("Undo") {
+                    // Get current state for potential redo
+                    if let currentState = documentManager.getCurrentProjectStateData() {
+                        _ = undoManager.undo(currentStateForRedo: currentState)
+                    }
+                }
+                .keyboardShortcut("z", modifiers: .command)
+                .disabled(!undoManager.canUndo)
+                
+                Button("Redo") {
+                    // Get current state for potential undo
+                    if let currentState = documentManager.getCurrentProjectStateData() {
+                        _ = undoManager.redo(currentStateForUndo: currentState)
+                    }
+                }
+                .keyboardShortcut("z", modifiers: [.command, .shift])
+                .disabled(!undoManager.canRedo)
+                
                 Divider()
-                Button("Cut", action: {})
-                Button("Copy", action: {})
-                Button("Paste", action: {})
+                Button("Cut", action: onCut)
+                    .keyboardShortcut("x", modifiers: .command)
+                Button("Copy", action: onCopy)
+                    .keyboardShortcut("c", modifiers: .command)
+                Button("Paste", action: onPaste)
+                    .keyboardShortcut("v", modifiers: .command)
             } label: {
                 Text("Edit")
                     .foregroundColor(.black)
@@ -113,8 +146,10 @@ struct CanvasTopBar: View {
                 Button("Zoom to 100%", action: onZoomReset)
                     .keyboardShortcut("0", modifiers: .command)
                 Divider()
-                Button("Show Grid", action: {})
-                Button("Show Rulers", action: {})
+                Toggle("Show Grid", isOn: $showGrid)
+                    .keyboardShortcut("g", modifiers: .command)
+                Toggle("Show Rulers", isOn: $showRulers)
+                    .keyboardShortcut("r", modifiers: .command)
             } label: {
                 Text("View")
                     .foregroundColor(.black)
@@ -160,6 +195,15 @@ struct CanvasTopBar: View {
             
             // Right side items
             HStack(spacing: 16) {
+                // Animation Preview Toggle
+                Toggle(isOn: $showAnimationPreview) {
+                    HStack(spacing: 4) {
+                        Image(systemName: showAnimationPreview ? "play.fill" : "play")
+                        Text("Preview")
+                    }
+                }
+                .toggleStyle(ButtonToggleStyle())
+                .help("Toggle Animation Preview")
                 // Documentation buttons
                 HStack(spacing: 4) {
                     DocumentationButton(
@@ -192,15 +236,26 @@ struct CanvasTopBar: View {
                 // Updated Export menu
                 Menu {
                     Button("Export...") {
-                        // Tell parent to show the export modal with all options
-                        onExport(.batchExport)
+                        // Synchronize DocumentManager with live UI state before exporting
+                        self.documentManager.configure(
+                            canvasElements: self.liveCanvasElements(),
+                            animationController: self.liveAnimationController(),
+                            canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                        )
+                        showingExportModal = true
                     }
                     
                     Divider()
                     
                     Menu("Quick Export as Video") {
                         Button("Standard MP4") {
-                            onExport(.video)
+                            // Synchronize DocumentManager with live UI state before exporting
+                            self.documentManager.configure(
+                                canvasElements: self.liveCanvasElements(),
+                                animationController: self.liveAnimationController(),
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                            )
+                            showingExportModal = true
                         }
                         
                         Divider()
@@ -210,41 +265,95 @@ struct CanvasTopBar: View {
                             .foregroundColor(.secondary)
                         
                         Button("ProRes 422 Proxy") {
-                            onExport(.video)
+                            // Synchronize DocumentManager with live UI state before exporting
+                            self.documentManager.configure(
+                                canvasElements: self.liveCanvasElements(),
+                                animationController: self.liveAnimationController(),
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                            )
+                            showingExportModal = true
                         }
                         
                         Button("ProRes 422 LT") {
-                            onExport(.video)
+                            // Synchronize DocumentManager with live UI state before exporting
+                            self.documentManager.configure(
+                                canvasElements: self.liveCanvasElements(),
+                                animationController: self.liveAnimationController(),
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                            )
+                            showingExportModal = true
                         }
                         
                         Button("ProRes 422") {
-                            onExport(.video)
+                            // Synchronize DocumentManager with live UI state before exporting
+                            self.documentManager.configure(
+                                canvasElements: self.liveCanvasElements(),
+                                animationController: self.liveAnimationController(),
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                            )
+                            showingExportModal = true
                         }
                         
                         Button("ProRes 422 HQ") {
-                            onExport(.video)
+                            // Synchronize DocumentManager with live UI state before exporting
+                            self.documentManager.configure(
+                                canvasElements: self.liveCanvasElements(),
+                                animationController: self.liveAnimationController(),
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                            )
+                            showingExportModal = true
                         }
                         
                         Button("ProRes 4444") {
-                            onExport(.video)
+                            // Synchronize DocumentManager with live UI state before exporting
+                            self.documentManager.configure(
+                                canvasElements: self.liveCanvasElements(),
+                                animationController: self.liveAnimationController(),
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                            )
+                            showingExportModal = true
                         }
                         
                         Button("ProRes 4444 XQ") {
-                            onExport(.video)
+                            // Synchronize DocumentManager with live UI state before exporting
+                            self.documentManager.configure(
+                                canvasElements: self.liveCanvasElements(),
+                                animationController: self.liveAnimationController(),
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                            )
+                            showingExportModal = true
                         }
                     }
                     
                     Button("Quick Export as GIF") {
-                        onExport(.gif)
+                        // Synchronize DocumentManager with live UI state before exporting
+                        self.documentManager.configure(
+                            canvasElements: self.liveCanvasElements(),
+                            animationController: self.liveAnimationController(),
+                            canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                        )
+                        showingExportModal = true
                     }
                     
                     Menu("Export as Image Sequence") {
                         Button("PNG Sequence") {
-                            onExport(.imageSequence(.png))
+                            // Synchronize DocumentManager with live UI state before exporting
+                            self.documentManager.configure(
+                                canvasElements: self.liveCanvasElements(),
+                                animationController: self.liveAnimationController(),
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                            )
+                            showingExportModal = true
                         }
                         
                         Button("JPEG Sequence") {
-                            onExport(.imageSequence(.jpeg))
+                            // Synchronize DocumentManager with live UI state before exporting
+                            self.documentManager.configure(
+                                canvasElements: self.liveCanvasElements(),
+                                animationController: self.liveAnimationController(),
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                            )
+                            showingExportModal = true
                         }
                     }
                     
@@ -273,7 +382,7 @@ struct CanvasTopBar: View {
                     }
                     
                     Button("Preferences") {
-                        self.showPreferences()
+                        isShowingPreferences = true
                     }
                     
                     Divider()
@@ -304,14 +413,18 @@ struct CanvasTopBar: View {
         .padding(.vertical, 10)
         .background(Color(NSColor.windowBackgroundColor))
         .border(Color.gray.opacity(0.2), width: 0.5)
-    }
-    
-    // Method to show preferences window
-    func showPreferences() {
-        // Post notification that preferences should be shown
-        NotificationCenter.default.post(
-            name: NSNotification.Name("ShowPreferences"),
-            object: nil
-        )
+        .sheet(isPresented: $isShowingPreferences) {
+            PreferencesView()
+        }
+        .sheet(isPresented: $showingExportModal) {
+            ExportModal(
+                asset: AVAsset(url: URL(fileURLWithPath: "")), // Empty asset as placeholder
+                canvasWidth: canvasWidth,
+                canvasHeight: canvasHeight,
+                getAnimationController: liveAnimationController,
+                getCanvasElements: liveCanvasElements,
+                onDismiss: { showingExportModal = false }
+            )
+        }
     }
 } 

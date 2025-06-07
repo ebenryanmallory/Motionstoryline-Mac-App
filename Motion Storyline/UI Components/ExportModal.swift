@@ -182,7 +182,7 @@ struct ExportModal: View {
                 
                 // Format-specific settings
                 switch selectedFormat {
-                case .video:
+                case .video, .videoProRes: // Combine video and videoProRes as they share UI
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Video Format")
                             .font(.subheadline)
@@ -202,7 +202,6 @@ struct ExportModal: View {
                         
                         Toggle("Include Audio", isOn: $includeAudio)
                     }
-                    
                 case .gif:
                     Text("GIF exports are optimized for web sharing")
                         .font(.caption)
