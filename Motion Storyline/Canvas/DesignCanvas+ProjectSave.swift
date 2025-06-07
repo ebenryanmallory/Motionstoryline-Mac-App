@@ -8,68 +8,38 @@ import Foundation
 extension DesignCanvas {
     // MARK: - Project Save Methods
     
-    /// Non-async wrapper for save project
-    func saveProject() {
-        Task {
-            await saveProjectAsync()
-        }
-    }
-    
-    /// Save the current project state 
-    @MainActor
-    func saveProjectAsync() async {
-        print("Saving project with \(self.canvasElements.count) canvas elements")
+    /// Save the project with Save As dialog
+    internal func saveAsProjectInternal() async {
+        // Configure the save panel
+        let savePanel = NSSavePanel()
+        savePanel.title = "Save Project"
+        savePanel.nameFieldStringValue = "Untitled Project.mstory"
+        savePanel.allowedContentTypes = [.init(filenameExtension: "mstory")!]
+        savePanel.canCreateDirectories = true
         
-        // Create a document manager
-        let documentManager = DocumentManager()
-        
-        // Configure it with the current canvas state
-        documentManager.configure(
-            canvasElements: self.canvasElements,
-            animationController: self.animationController,
-            canvasSize: CGSize(width: self.canvasWidth, height: self.canvasHeight)
-        )
-        
-        // Save the project
-        if documentManager.saveCurrentState() {
-            showSaveSuccessNotification()
-        } else {
-            print("Failed to save project")
-        }
-    }
-    
-    /// Non-async wrapper for save as project
-    func saveAsProject() {
-        Task {
-            await saveAsProjectAsync()
-        }
-    }
-    
-    /// Save the current project with a new filename
-    @MainActor
-    func saveAsProjectAsync() async {
-        print("Save As project with \(self.canvasElements.count) canvas elements")
-        
-        // Create a document manager
-        let documentManager = DocumentManager()
-        
-        // Configure it with the current canvas state
-        documentManager.configure(
-            canvasElements: self.canvasElements, 
-            animationController: self.animationController,
-            canvasSize: CGSize(width: self.canvasWidth, height: self.canvasHeight)
-        )
-        
-        // Save the project - this will prompt the user for location
-        if documentManager.saveCurrentState() {
-            showSaveSuccessNotification()
-        } else {
-            print("Failed to save project")
+        // Show the save panel
+        if savePanel.runModal() == .OK, let url = savePanel.url {
+            // Update document manager with current state
+            documentManager.configure(
+                canvasElements: self.canvasElements,
+                animationController: self.animationController,
+                canvasSize: CGSize(width: self.canvasWidth, height: self.canvasHeight)
+            )
+            
+            // Save to the selected URL
+            documentManager.currentProjectURL = url
+            let success = documentManager.saveProject()
+            
+            // Update project name in app state
+            if success {
+                appState.currentProjectName = url.lastPathComponent
+                showSaveSuccessNotification()
+            }
         }
     }
     
     /// Helper to show success notification
-    private func showSaveSuccessNotification() {
+    internal func showSaveSuccessNotification() {
         let content = UNMutableNotificationContent()
         content.title = "Project Saved"
         content.body = "Your project has been saved successfully"

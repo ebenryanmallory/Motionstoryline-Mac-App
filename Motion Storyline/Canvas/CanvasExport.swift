@@ -11,8 +11,11 @@ import Foundation
 // MARK: - Canvas Video Renderer for Exports
 
 class CanvasExportRenderer {
+    // Shared instance for static access
+    static let shared = CanvasExportRenderer()
+    
     private var elements: [CanvasElement] = []
-    private var animationController: AnimationController
+    private var animationController: AnimationController?
     
     struct Configuration {
         let width: Int
@@ -23,6 +26,12 @@ class CanvasExportRenderer {
         let canvasHeight: CGFloat
     }
     
+    // Default initializer for shared instance
+    private init() {
+        self.animationController = nil
+    }
+    
+    // Initializer with animation controller
     init(animationController: AnimationController) {
         self.animationController = animationController
     }
@@ -31,10 +40,61 @@ class CanvasExportRenderer {
         self.elements = elements
     }
     
+    // Method to match the signature used in DesignCanvas.swift
     func renderToVideo(
+        width: Int,
+        height: Int,
+        duration: Double,
+        frameRate: Float,
+        elements: [CanvasElement]? = nil,
+        animationController: AnimationController? = nil,
+        canvasWidth: CGFloat,
+        canvasHeight: CGFloat,
+        progressHandler: @escaping (Float) -> Void = { _ in }
+    ) async throws -> AVAsset {
+        // Set elements and animation controller if provided
+        if let elements = elements {
+            self.elements = elements
+        }
+        
+        if let animationController = animationController {
+            self.animationController = animationController
+        }
+        
+        // Create configuration from parameters
+        let configuration = Configuration(
+            width: width,
+            height: height,
+            duration: duration,
+            frameRate: frameRate,
+            canvasWidth: canvasWidth,
+            canvasHeight: canvasHeight
+        )
+        
+        return try await renderToVideoInternal(configuration: configuration, progressHandler: progressHandler)
+    }
+    
+    // Internal implementation of renderToVideo
+    private func renderToVideoInternal(
         configuration: Configuration,
         progressHandler: @escaping (Float) -> Void
     ) async throws -> AVAsset {
+        var elementsToRender = self.elements
+        // var placeholderAdded = false // Removed unused variable
+
+        // Check if we have elements to export, add placeholder if not
+        if elementsToRender.isEmpty {
+            var placeholderText = CanvasElement.text(
+                at: CGPoint(x: Double(configuration.canvasWidth)/2, y: Double(configuration.canvasHeight)/2)
+            )
+            placeholderText.text = "Motion Storyline Export"
+            placeholderText.size = CGSize(width: 500, height: 100) // Example size
+            placeholderText.color = .black
+            placeholderText.textAlignment = .center
+            
+            elementsToRender.append(placeholderText)
+        }
+
         // Create a temporary URL for the rendered video
         let tempDir = FileManager.default.temporaryDirectory
         let temporaryVideoURL = tempDir.appendingPathComponent("temp_canvas_\(UUID().uuidString).mov")
@@ -102,12 +162,12 @@ class CanvasExportRenderer {
         let frameDuration = CMTime(value: 1, timescale: CMTimeScale(configuration.frameRate))
         
         // Store the current animation state to restore later
-        let currentAnimationTime = animationController.currentTime
-        let isCurrentlyPlaying = animationController.isPlaying
+        let currentAnimationTime = animationController?.currentTime ?? 0.0
+        let isCurrentlyPlaying = animationController?.isPlaying ?? false
         
         // Pause the animation during export (if playing)
         if isCurrentlyPlaying {
-            animationController.pause()
+            animationController?.pause()
         }
         
         // Create a queue for writing
@@ -137,7 +197,7 @@ class CanvasExportRenderer {
                     // Update animation controller to this time and update canvas elements
                     DispatchQueue.main.sync {
                         // Set animation time (this updates all animated properties)
-                        self.animationController.currentTime = frameTimeInSeconds
+                        self.animationController?.currentTime = frameTimeInSeconds
                     }
                     
                     // Create a context for this frame
@@ -158,7 +218,8 @@ class CanvasExportRenderer {
                     context.fill(CGRect(x: 0, y: 0, width: configuration.width, height: configuration.height))
                     
                     // Draw each element
-                    for element in self.elements {
+                    for element in elementsToRender { // Use the potentially modified elementsToRender list
+
                         let scaledSize = CGSize(
                             width: element.size.width * scaleFactor,
                             height: element.size.height * scaleFactor
@@ -169,10 +230,10 @@ class CanvasExportRenderer {
                             y: element.position.y * scaleFactor + yOffset
                         )
                         
-                        // Position the element (convert from center to top-left origin)
+                        // Position the element (convert from center to top-left origin for CGContext's bottom-left origin)
                         let rect = CGRect(
                             x: scaledPosition.x - scaledSize.width / 2,
-                            y: scaledPosition.y - scaledSize.height / 2,
+                            y: CGFloat(configuration.height) - scaledPosition.y - scaledSize.height / 2, // Adjusted for Y-up CGContext
                             width: scaledSize.width,
                             height: scaledSize.height
                         )
@@ -180,10 +241,10 @@ class CanvasExportRenderer {
                         // Save the context state before transformations
                         context.saveGState()
                         
-                        // Apply rotation (around the center of the element)
-                        context.translateBy(x: scaledPosition.x, y: scaledPosition.y)
-                        context.rotate(by: element.rotation * .pi / 180)
-                        context.translateBy(x: -scaledPosition.x, y: -scaledPosition.y)
+                        // Apply rotation (around the center of the element, adjusted for CGContext)
+                        context.translateBy(x: scaledPosition.x, y: CGFloat(configuration.height) - scaledPosition.y) // Translate to element center (Y-flipped)
+                        context.rotate(by: -element.rotation * .pi / 180) // Apply rotation (negative for CGContext)
+                        context.translateBy(x: -scaledPosition.x, y: -(CGFloat(configuration.height) - scaledPosition.y)) // Translate back
                         
                         // Apply opacity
                         context.setAlpha(CGFloat(element.opacity))
@@ -299,10 +360,35 @@ class CanvasExportRenderer {
                             
                             // Restore the graphics state after drawing
                             context.restoreGState()
-                        case .image, .video:
-                            // Draw a placeholder for images/videos
-                            context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
+                        case .image:
+                            context.saveGState()
+                            if let assetURL = element.assetURL, assetURL.isFileURL, 
+                               let imageData = try? Data(contentsOf: assetURL), 
+                               let nsImage = NSImage(data: imageData) {
+                                
+                                var imageRect = CGRect(x: 0, y: 0, width: nsImage.size.width, height: nsImage.size.height)
+                                if let cgImage = nsImage.cgImage(forProposedRect: &imageRect, context: nil, hints: nil) {
+                                    context.setAlpha(CGFloat(element.opacity)) // Apply opacity specifically for the image
+                                    context.draw(cgImage, in: rect) // Draw the image in the calculated rect
+                                }
+                            } else {
+                                // Fallback placeholder if image loading fails
+                                context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
+                                context.fill(rect)
+                                let p = NSParagraphStyle.default.mutableCopy() as! NSMutableParagraphStyle
+                                p.alignment = .center
+                                let attrs = [NSAttributedString.Key.font: NSFont.systemFont(ofSize: 12), NSAttributedString.Key.paragraphStyle: p, NSAttributedString.Key.foregroundColor: NSColor.black]
+                                ("Image Error" as NSString).draw(in: rect.insetBy(dx: 5, dy: 5), withAttributes: attrs)
+                            }
+                            context.restoreGState()
+                        case .video:
+                            // Draw a placeholder for videos
+                            context.setFillColor(CGColor(gray: 0.7, alpha: 1.0))
                             context.fill(rect)
+                            let p = NSParagraphStyle.default.mutableCopy() as! NSMutableParagraphStyle
+                            p.alignment = .center
+                            let attrs = [NSAttributedString.Key.font: NSFont.systemFont(ofSize: 12), NSAttributedString.Key.paragraphStyle: p, NSAttributedString.Key.foregroundColor: NSColor.black]
+                            ("Video Placeholder" as NSString).draw(in: rect.insetBy(dx: 5, dy: 5), withAttributes: attrs)
                         }
                         
                         // Restore the context state
@@ -383,9 +469,9 @@ class CanvasExportRenderer {
                             
                             // Restore original animation state
                             DispatchQueue.main.async {
-                                self.animationController.currentTime = currentAnimationTime
+                                self.animationController?.currentTime = currentAnimationTime
                                 if isCurrentlyPlaying {
-                                    self.animationController.play()
+                                    self.animationController?.play()
                                 }
                             }
                             
@@ -405,18 +491,20 @@ class CanvasExportRenderer {
                     userInfo: ["progress": Float(0.95)]
                 )
             }
-            
+
             // Restore original animation state
-            DispatchQueue.main.async {
-                self.animationController.currentTime = currentAnimationTime
+            DispatchQueue.main.sync {
+                self.animationController?.currentTime = currentAnimationTime
                 if isCurrentlyPlaying {
-                    self.animationController.play()
+                    self.animationController?.play()
                 }
             }
-            
+
+            // If a placeholder was added, it's part of a local copy 'elementsToRender', so no need to remove from self.elements
+
             // Finish writing
             writerInput.markAsFinished()
-            
+
             // Signal completion
             semaphore.signal()
         }
@@ -577,7 +665,13 @@ class CanvasVideoExporter {
         completion: @escaping (Result<URL, Error>) -> Void
     ) async {
         // Check if we have a valid asset
-        guard asset.tracks.count > 0 else {
+        do {
+            let tracks = try await asset.load(.tracks)
+            guard tracks.count > 0 else {
+                completion(.failure(ExportError.invalidAsset))
+                return
+            }
+        } catch {
             completion(.failure(ExportError.invalidAsset))
             return
         }
@@ -594,7 +688,7 @@ class CanvasVideoExporter {
         exportSession.outputURL = configuration.outputURL
         
         // Use different settings based on whether ProRes is requested
-        if let proResProfile = configuration.proResProfile {
+        if configuration.proResProfile != nil {
             // Use ProRes codec
             exportSession.outputFileType = .mov
             
@@ -609,7 +703,7 @@ class CanvasVideoExporter {
         }
         
         // Create a timer to periodically check progress
-        var progressObserver: NSObjectProtocol?
+        let progressObserver: NSObjectProtocol? = nil
         
         // Setup a timer to update progress
         let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in

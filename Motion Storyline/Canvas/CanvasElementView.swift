@@ -1,12 +1,15 @@
 import SwiftUI
+import AVFoundation
 
 struct CanvasElementView: View {
     let element: CanvasElement
     let isSelected: Bool
     var onResize: ((CGSize) -> Void)?
     var onRotate: ((Double) -> Void)?
+    var onTap: ((CanvasElement) -> Void)?
     var isTemporary: Bool = false
     var isDragging: Bool = false
+    var currentTime: TimeInterval = 0.0 // Current timeline position for video synchronization
     
     // Use the element's rotationAnchorPoint property for rotation
     // We convert it to a UnitPoint which is required by rotationEffect
@@ -20,7 +23,7 @@ struct CanvasElementView: View {
         ZStack {
             // Add a transparent hit area that's easy to click
             Rectangle()
-                .fill(Color.clear)
+                .fill(Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 0.0))
                 .contentShape(Rectangle())
                 .frame(width: element.size.width + 30, height: element.size.height + 30)
             
@@ -64,7 +67,7 @@ struct CanvasElementView: View {
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
                                     .frame(width: element.size.width, height: element.size.height)
-                                    .foregroundColor(.gray)
+                                    .foregroundColor(Color(white: 0.5, opacity: 1.0))
                             @unknown default:
                                 EmptyView()
                             }
@@ -76,26 +79,38 @@ struct CanvasElementView: View {
                             .resizable()
                             .aspectRatio(contentMode: .fit)
                             .frame(width: element.size.width, height: element.size.height)
-                            .foregroundColor(.gray)
+                            .foregroundColor(Color(white: 0.5, opacity: 1.0))
                             .opacity(element.opacity)
                             .contentShape(Rectangle())
                     }
                 case .video:
-                    ZStack {
-                        Rectangle()
-                            .fill(Color.gray.opacity(0.3))
-                        Image(systemName: "film")
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: min(element.size.width, element.size.height) * 0.5)
-                            .foregroundColor(.white.opacity(0.7))
+                    if let videoURL = element.assetURL {
+                        // Calculate the video time based on timeline position and video start offset
+                        let videoTime = max(0, currentTime - element.videoStartTime)
+                        
+                        VideoFrameView(
+                            videoURL: videoURL,
+                            currentTime: videoTime,
+                            size: element.size,
+                            opacity: element.opacity
+                        )
+                    } else {
+                        // Fallback placeholder if no video URL
+                        ZStack {
+                            Rectangle()
+                                .fill(Color(white: 0.5, opacity: 1.0).opacity(0.3))
+                            Image(systemName: "film")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: min(element.size.width, element.size.height) * 0.5)
+                                .foregroundColor(Color(red: 1.0, green: 1.0, blue: 1.0, opacity: 1.0).opacity(0.7))
+                        }
+                        .frame(width: element.size.width, height: element.size.height)
+                        .opacity(element.opacity)
+                        .clipped()
+                        .contentShape(Rectangle())
                     }
-                    .frame(width: element.size.width, height: element.size.height)
-                    .opacity(element.opacity)
-                    .clipped()
-                    .contentShape(Rectangle())
-                default:
-                    EmptyView()
+                // Removed default case as all ElementType cases (rectangle, ellipse, text, image, video, path) are handled
                 }
             }
             
@@ -115,14 +130,14 @@ struct CanvasElementView: View {
                 Group {
                     if element.type == .rectangle {
                         Rectangle()
-                            .stroke(Color.blue, style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
+                            .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
                             .frame(width: element.size.width, height: element.size.height)
                     } else if element.type == .ellipse {
                         Ellipse()
-                            .stroke(Color.blue, style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
+                            .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
                             .frame(width: element.size.width, height: element.size.height)
                     } else if element.type == .path {
-                        PathView(points: element.path, color: .blue, opacity: 0.5, isOutlineOnly: true)
+                        PathView(points: element.path, color: Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), opacity: 0.5, isOutlineOnly: true)
                             .frame(width: element.size.width, height: element.size.height)
                     }
                 }
@@ -132,13 +147,19 @@ struct CanvasElementView: View {
         // Explicitly set the anchor point to the center of the element
         // The element's position is its center, and we're rotating around that center
         .rotationEffect(.degrees(element.rotation), anchor: anchorPoint)
-        .shadow(color: isDragging ? Color.black.opacity(0.5) : Color.clear, radius: 8)
+        .shadow(color: isDragging ? Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 1.0).opacity(0.5) : Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 0.0), radius: 8)
         .scaleEffect(isDragging ? 1.02 : 1.0)
         .animation(.interactiveSpring(), value: isDragging)
         // Make sure this view is above other elements in the ZStack
         .zIndex(isSelected ? 10 : 5)
         // Explicitly allow hit testing
         .allowsHitTesting(true)
+        // Add tap gesture to handle selection
+        .onTapGesture {
+            if let onTap = onTap {
+                onTap(element)
+            }
+        }
     }
 }
 
@@ -251,7 +272,7 @@ struct SelectionOverlay: View {
         ZStack {
             // Selection border - use a Rectangle directly positioned at the center
             Rectangle()
-                .stroke(Color.blue, lineWidth: 2)
+                .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), lineWidth: 2)
                 .frame(width: size.width + 2*outlineOffset, height: size.height + 2*outlineOffset)
             
             // Corner handles
@@ -311,7 +332,7 @@ struct SelectionOverlay: View {
                     path.move(to: CGPoint(x: size.width / 2, y: -outlineOffset))
                     path.addLine(to: CGPoint(x: size.width / 2, y: -rotationHandleOffset + rotationHandleSize/2))
                 }
-                .stroke(Color.blue, lineWidth: 1)
+                .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), lineWidth: 1)
             }
         }
         .frame(width: size.width, height: size.height) // Frame the whole overlay to match element size
@@ -421,23 +442,23 @@ struct ResizeHandle: View {
             if position == .topCenter {
                 // Special handle for rotation
                 Circle()
-                    .fill(Color.white)
+                    .fill(Color(red: 1.0, green: 1.0, blue: 1.0, opacity: 1.0))
                     .frame(width: size, height: size)
                     .overlay(
                         Circle()
-                            .stroke(Color.blue, lineWidth: 1)
+                            .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), lineWidth: 1)
                     )
-                    .shadow(color: Color.black.opacity(0.3), radius: 1, x: 0, y: 1)
+                    .shadow(color: Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 1.0).opacity(0.3), radius: 1, x: 0, y: 1)
             } else {
                 // Regular resize handles
                 Rectangle()
-                    .fill(Color.white)
+                    .fill(Color(red: 1.0, green: 1.0, blue: 1.0, opacity: 1.0))
                     .frame(width: size, height: size)
                     .overlay(
                         Rectangle()
-                            .stroke(Color.blue, lineWidth: 1)
+                            .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), lineWidth: 1)
                     )
-                    .shadow(color: Color.black.opacity(0.3), radius: 1, x: 0, y: 1)
+                    .shadow(color: Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 1.0).opacity(0.3), radius: 1, x: 0, y: 1)
             }
         }
     }
@@ -446,7 +467,7 @@ struct ResizeHandle: View {
 #if !DISABLE_PREVIEWS
 #Preview {
     ZStack {
-        Color.gray.opacity(0.2)
+        Color(white: 0.5, opacity: 1.0).opacity(0.2)
         
         CanvasElementView(
             element: CanvasElement.rectangle(at: CGPoint(x: 150, y: 150), size: CGSize(width: 200, height: 150)),

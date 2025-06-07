@@ -28,7 +28,7 @@ struct GridBackground: View {
                             path.addLine(to: CGPoint(x: geometry.size.width, y: y))
                         }
                     }
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 0.5)
+                    .stroke(Color(white: 0.5, opacity: 1.0).opacity(0.2), lineWidth: 0.5)
                     
                     // Major grid lines
                     Path { path in
@@ -50,7 +50,7 @@ struct GridBackground: View {
                             }
                         }
                     }
-                    .stroke(Color.gray.opacity(0.4), lineWidth: 1.0)
+                    .stroke(Color(white: 0.5, opacity: 1.0).opacity(0.4), lineWidth: 1.0)
                 }
                 
                 // Center crosshair - always show
@@ -66,7 +66,7 @@ struct GridBackground: View {
                     path.move(to: CGPoint(x: centerX, y: 0))
                     path.addLine(to: CGPoint(x: centerX, y: geometry.size.height))
                 }
-                .stroke(Color.blue.opacity(0.5), lineWidth: 1.0)
+                .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0).opacity(0.5), lineWidth: 1.0)
             }
         }
     }

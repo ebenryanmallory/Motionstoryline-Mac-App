@@ -35,7 +35,7 @@ extension Color {
 }
 #endif
 
-public struct CanvasElement: Identifiable, Equatable, Codable {
+public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
     public var id = UUID()
     var type: ElementType
     var position: CGPoint
@@ -51,6 +51,11 @@ public struct CanvasElement: Identifiable, Equatable, Codable {
     var path: [CGPoint] = [] // Store path points for path animation
     var assetURL: URL? // URL for image or video assets
     
+    // Video-specific properties
+    var videoDuration: TimeInterval? // Duration of the video asset
+    var videoStartTime: TimeInterval = 0.0 // Start time offset for video playback
+    var videoFrameRate: Float = 30.0 // Frame rate of the video (default 30fps)
+    
     // Default initializer
     init(
         type: ElementType,
@@ -65,7 +70,10 @@ public struct CanvasElement: Identifiable, Equatable, Codable {
         displayName: String,
         isAspectRatioLocked: Bool = true,
         path: [CGPoint] = [],
-        assetURL: URL? = nil
+        assetURL: URL? = nil,
+        videoDuration: TimeInterval? = nil,
+        videoStartTime: TimeInterval = 0.0,
+        videoFrameRate: Float = 30.0
     ) {
         self.id = UUID()
         self.type = type
@@ -81,6 +89,9 @@ public struct CanvasElement: Identifiable, Equatable, Codable {
         self.isAspectRatioLocked = isAspectRatioLocked
         self.path = path
         self.assetURL = assetURL
+        self.videoDuration = videoDuration
+        self.videoStartTime = videoStartTime
+        self.videoFrameRate = videoFrameRate
     }
     
     // Computed property to get the center of the element as the rotation anchor point
@@ -225,21 +236,29 @@ public struct CanvasElement: Identifiable, Equatable, Codable {
     
     // Helper functions for decoding types from strings
     public static func decodeCGPoint(from stringValue: String) throws -> CGPoint {
-        let components = stringValue.split(separator: ",")
+        // Remove common non-numeric characters and trim whitespace
+        let cleanedString = stringValue.replacingOccurrences(of: "[{()}]", with: "", options: .regularExpression)
+                                       .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        let components = cleanedString.split(separator: ",")
         guard components.count == 2,
-              let xStr = components.first.map(String.init), let x = Double(xStr),
-              let yStr = components.last.map(String.init), let y = Double(yStr) else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(codingPath: [], debugDescription: "Invalid CGPoint format: \(stringValue)"))
+              let xStr = components.first.map(String.init)?.trimmingCharacters(in: .whitespacesAndNewlines), let x = Double(xStr),
+              let yStr = components.last.map(String.init)?.trimmingCharacters(in: .whitespacesAndNewlines), let y = Double(yStr) else {
+            throw DecodingError.dataCorrupted(DecodingError.Context(codingPath: [], debugDescription: "Invalid CGPoint format after cleaning: '\(stringValue)' -> '\(cleanedString)'"))
         }
         return CGPoint(x: x, y: y)
     }
 
     public static func decodeCGSize(from stringValue: String) throws -> CGSize {
-        let components = stringValue.split(separator: ",")
+        // Remove common non-numeric characters and trim whitespace
+        let cleanedString = stringValue.replacingOccurrences(of: "[{()}]", with: "", options: .regularExpression)
+                                       .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let components = cleanedString.split(separator: ",")
         guard components.count == 2,
-              let wStr = components.first.map(String.init), let width = Double(wStr),
-              let hStr = components.last.map(String.init), let height = Double(hStr) else {
-            throw DecodingError.dataCorrupted(DecodingError.Context(codingPath: [], debugDescription: "Invalid CGSize format: \(stringValue)"))
+              let wStr = components.first.map(String.init)?.trimmingCharacters(in: .whitespacesAndNewlines), let width = Double(wStr),
+              let hStr = components.last.map(String.init)?.trimmingCharacters(in: .whitespacesAndNewlines), let height = Double(hStr) else {
+            throw DecodingError.dataCorrupted(DecodingError.Context(codingPath: [], debugDescription: "Invalid CGSize format after cleaning: '\(stringValue)' -> '\(cleanedString)'"))
         }
         return CGSize(width: width, height: height)
     }
@@ -348,14 +367,17 @@ public struct CanvasElement: Identifiable, Equatable, Codable {
         )
     }
 
-    public static func video(at position: CGPoint, assetURL: URL?, displayName: String, size: CGSize, scale: CGFloat = 1.0) -> CanvasElement {
+    public static func video(at position: CGPoint, assetURL: URL?, displayName: String, size: CGSize, scale: CGFloat = 1.0, videoDuration: TimeInterval? = nil, videoStartTime: TimeInterval = 0.0, videoFrameRate: Float = 30.0) -> CanvasElement {
         CanvasElement(
             type: .video,
             position: position,
             size: size,
             scale: scale,
             displayName: displayName,
-            assetURL: assetURL
+            assetURL: assetURL,
+            videoDuration: videoDuration,
+            videoStartTime: videoStartTime,
+            videoFrameRate: videoFrameRate
         )
     }
 } 
