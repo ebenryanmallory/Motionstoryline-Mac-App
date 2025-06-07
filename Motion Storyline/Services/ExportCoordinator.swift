@@ -116,7 +116,7 @@ public class ExportCoordinator {
                 progressHandler: progressHandler
             )
             
-        case .video:
+        case .video, .videoProRes: // Combined .video and .videoProRes
             return try await exportVideo(
                 with: configuration,
                 progressHandler: progressHandler
@@ -129,12 +129,15 @@ public class ExportCoordinator {
             )
             
         case .projectFile:
-            throw NSError(domain: "ExportCoordinator", code: 1, 
-                          userInfo: [NSLocalizedDescriptionKey: "Project file export not implemented"])
-            
-        case .batchExport:
-            throw NSError(domain: "ExportCoordinator", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "Batch export not implemented"])
+            // Placeholder for project file export logic
+            // This might involve serializing project data and saving to a file
+            os_log("Project file export not yet implemented.", log: ExportCoordinator.logger, type: .default)
+            throw NSError(domain: "ExportCoordinator", code: 1, userInfo: [NSLocalizedDescriptionKey: "Project file export is not yet implemented."])
+        // BatchExport is handled by BatchExportManager, not directly here.
+        // If it were to be handled, it would require a different approach.
+        default:
+            os_log("Unsupported export format: %{public}@", log: ExportCoordinator.logger, type: .error, String(describing: configuration.format))
+            throw NSError(domain: "ExportCoordinator", code: 2, userInfo: [NSLocalizedDescriptionKey: "Unsupported export format encountered."])
         }
     }
     
@@ -275,146 +278,32 @@ public class ExportCoordinator {
         
         // Create a function to get elements at a specific time
         let getElementsAtTime: (CMTime) -> [CanvasElement] = { [weak self] time in
-            // Log that we're exporting a frame at this time
-            os_log("Exporting frame at time %{public}f", log: ExportCoordinator.logger, type: .debug, time.seconds)
+            // Log that we're getting elements for a frame at this time
+            os_log("Getting elements for frame at time %{public}f", log: ExportCoordinator.logger, type: .debug, time.seconds) // 'time' is the parameter of the closure
             
             guard let self = self else {
-                // If self is nil, return empty array (should never happen)
+                os_log("ExportCoordinator instance is nil, cannot get elements at time.", log: ExportCoordinator.logger, type: .error)
                 return []
             }
             
-            // Convert CMTime to seconds for animation calculation
-            let timeSeconds = time.seconds
-            
-            // If we have actual canvas elements and animation controller, use them
-            if let animationController = self.animationController, !self.canvasElements.isEmpty {
-                // Make a deep copy of the current canvas elements
-                var elementsAtTime = self.canvasElements
-                
-                // For each element, apply all animated properties at the current time
-                for i in 0..<elementsAtTime.count {
-                    let element = elementsAtTime[i]
-                    let elementId = element.id.uuidString
-                    
-                    let initialElementPositionForFrame = elementsAtTime[i].position // Capture current state from elementsAtTime for this frame's evaluation
-                    os_log("[ExportFrameDebug] Element ID: %{public}s, Initial Pos for frame eval: (%f, %f)", log: ExportCoordinator.logger, type: .debug, elementId, initialElementPositionForFrame.x, initialElementPositionForFrame.y)
-
-                    // Update position if there's a position track
-                    let positionTrackId = "\(elementId)_position"
-                    if let track = animationController.getTrack(id: positionTrackId) as? KeyframeTrack<CGPoint> {
-                        os_log("[ExportFrameDebug] Element ID: %{public}s - Found position track.", log: ExportCoordinator.logger, type: .debug, elementId)
-                        if let animatedPosition = track.getValue(at: timeSeconds) {
-                            os_log("[ExportFrameDebug] Element ID: %{public}s - Animated Pos from track: (%f, %f). OVERRIDING initial frame eval pos.", log: ExportCoordinator.logger, type: .debug, elementId, animatedPosition.x, animatedPosition.y)
-                            elementsAtTime[i].position = animatedPosition
-                        } else {
-                            os_log("[ExportFrameDebug] Element ID: %{public}s - Position track getValue returned nil. Using initial pos for frame eval: (%f, %f).", log: ExportCoordinator.logger, type: .debug, elementId, initialElementPositionForFrame.x, initialElementPositionForFrame.y)
-                            // elementsAtTime[i].position remains initialElementPositionForFrame
-                        }
-                    } else {
-                        os_log("[ExportFrameDebug] Element ID: %{public}s - No position track found. Using initial pos for frame eval: (%f, %f).", log: ExportCoordinator.logger, type: .debug, elementId, initialElementPositionForFrame.x, initialElementPositionForFrame.y)
-                        // elementsAtTime[i].position remains initialElementPositionForFrame
-                    }
-                    os_log("[ExportFrameDebug] Element ID: %{public}s, Final Pos for frame render: (%f, %f)", log: ExportCoordinator.logger, type: .debug, elementId, elementsAtTime[i].position.x, elementsAtTime[i].position.y)
-                    
-                    // Update scale/size if there's a scale track
-                    let sizeTrackId = "\(elementId)_size"
-                    if let track = animationController.getTrack(id: sizeTrackId) as? KeyframeTrack<CGFloat>,
-                       let size = track.getValue(at: timeSeconds) {
-                        // Apply scale to the original size
-                        if elementsAtTime[i].isAspectRatioLocked {
-                            let ratio = element.size.height / element.size.width
-                            elementsAtTime[i].size = CGSize(width: size, height: size * ratio)
-                        } else {
-                            elementsAtTime[i].size.width = size
-                        }
-                    }
-                    
-                    // Update rotation if there's a rotation track
-                    let rotationTrackId = "\(elementId)_rotation"
-                    if let track = animationController.getTrack(id: rotationTrackId) as? KeyframeTrack<Double>,
-                       let rotation = track.getValue(at: timeSeconds) {
-                        elementsAtTime[i].rotation = rotation
-                    }
-                    
-                    // Update opacity if there's an opacity track
-                    let opacityTrackId = "\(elementId)_opacity"
-                    if let track = animationController.getTrack(id: opacityTrackId) as? KeyframeTrack<Double>,
-                       let opacity = track.getValue(at: timeSeconds) {
-                        elementsAtTime[i].opacity = opacity
-                    }
-                    
-                    // Update color if there's a color track
-                    let colorTrackId = "\(elementId)_color"
-                    if let track = animationController.getTrack(id: colorTrackId) as? KeyframeTrack<Color>,
-                       let color = track.getValue(at: timeSeconds) {
-                        elementsAtTime[i].color = color
-                    }
-                    
-                    // Path animation if applicable
-                    let pathTrackId = "\(elementId)_path"
-                    if let track = animationController.getTrack(id: pathTrackId) as? KeyframeTrack<[CGPoint]>,
-                       let pathPoints = track.getValue(at: timeSeconds) {
-                        elementsAtTime[i].path = pathPoints
-                    }
-                }
-                
-                os_log("Exporting frame with %{public}d animated elements", 
-                       log: ExportCoordinator.logger, type: .debug, elementsAtTime.count)
-                return elementsAtTime
-            } else {
-                // Fallback to demo animation if no actual data is provided
-                // Create example elements
-                var elementsAtTime: [CanvasElement] = [
-                    // Rectangle that moves horizontally
-                    CanvasElement.rectangle(
-                        at: CGPoint(x: 640, y: 360),
-                        size: CGSize(width: 200, height: 150)
-                    ),
-                    
-                    // Ellipse that changes size
-                    CanvasElement.ellipse(
-                        at: CGPoint(x: 640, y: 360),
-                        size: CGSize(width: 150, height: 150)
-                    ),
-                    
-                    // Text element that changes opacity
-                    CanvasElement.text(
-                        at: CGPoint(x: 640, y: 200),
-                        content: "Motion Storyline"
-                    )
-                ]
-                
-                // Apply demo animations
-                for i in 0..<elementsAtTime.count {
-                    if i == 0 { // For the rectangle (first element)
-                        // Simulate horizontal movement animation
-                        let newX = 640 + 200 * sin(timeSeconds * 2.0)
-                        elementsAtTime[i].position = CGPoint(x: newX, y: elementsAtTime[i].position.y)
-                    } else if i == 1 { // For the ellipse (second element)
-                        // Simulate size animation
-                        let scaleFactor = 1.0 + 0.5 * sin(timeSeconds * 3.0)
-                        let baseSize = CGSize(width: 150, height: 150)
-                        elementsAtTime[i].size = CGSize(
-                            width: baseSize.width * scaleFactor,
-                            height: baseSize.height * scaleFactor
-                        )
-                        
-                        // Add rotation animation
-                        elementsAtTime[i].rotation = 45 * sin(timeSeconds)
-                    } else if i == 2 { // For the text (third element)
-                        // Simulate opacity animation
-                        elementsAtTime[i].opacity = 0.5 + 0.5 * sin(timeSeconds * 1.5)
-                        
-                        // Color animation
-                        let hue = (timeSeconds / 3.0).truncatingRemainder(dividingBy: 1.0)
-                        elementsAtTime[i].color = Color(hue: hue, saturation: 0.7, brightness: 0.9)
-                    }
-                }
-                
-                os_log("Using demo animation data because no actual animation controller or elements were provided", 
-                       log: ExportCoordinator.logger, type: .info)
-                return elementsAtTime
+            // Ensure animationController is available
+            guard let animationController = self.animationController else {
+                 os_log("AnimationController is nil in ExportCoordinator. Cannot apply animations. Returning current elements.", log: ExportCoordinator.logger, type: .error)
+                return self.canvasElements 
             }
+
+            // If canvasElements is empty, no need to apply animations
+            if self.canvasElements.isEmpty {
+                os_log("CanvasElements is empty in ExportCoordinator. Returning empty.", log: ExportCoordinator.logger, type: .info)
+                return []
+            }
+            
+            // Call the centralized helper
+            return AnimationHelpers.applyAnimations(
+                toElements: self.canvasElements, 
+                using: animationController,
+                at: time.seconds
+            )
         }
         
         // Use the canvas size from configuration

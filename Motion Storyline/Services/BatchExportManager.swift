@@ -3,6 +3,7 @@ import SwiftUI
 import AVFoundation
 
 /// Manages the exporting of projects in multiple formats simultaneously
+@MainActor // Added to ensure UI updates are on the main thread
 @available(macOS 10.15, *)
 public class BatchExportManager: ObservableObject {
     
@@ -138,11 +139,15 @@ public class BatchExportManager: ObservableObject {
     private func formatName(for configuration: VideoExporter.ExportConfiguration) -> String {
         switch configuration.format {
         case .video:
+            // This case implies H.264 if proResProfile is nil
             if let profile = configuration.proResProfile {
-                return "ProRes \(profile.description)"
+                // This should ideally not happen if .videoProRes is used correctly
+                return "ProRes \(String(describing: profile)) (Legacy Video Case)"
             } else {
-                return "MP4 Video"
+                return "H.264 MP4 Video"
             }
+        case .videoProRes(let profile):
+             return "ProRes \(String(describing: profile))"
         case .gif:
             return "Animated GIF"
         case .imageSequence(let format):
@@ -151,6 +156,8 @@ public class BatchExportManager: ObservableObject {
             return "Project File"
         case .batchExport:
             return "Batch Export"
+        default:
+            return "Unknown Format"
         }
     }
     

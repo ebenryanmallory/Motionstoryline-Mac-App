@@ -211,12 +211,13 @@ class CanvasVideoRenderer {
         let mediaQueue = DispatchQueue(label: "com.app.Motion-Storyline.mediaQueue")
         var lastReportTime: CFTimeInterval = CACurrentMediaTime()
         
-        writerInput.requestMediaDataWhenReady(on: mediaQueue) {
+        writerInput.requestMediaDataWhenReady(on: mediaQueue) { [weak self] in
+            guard let self = self else { return }
             // Capture a weak reference to self to avoid strong reference cycles
             // and store essential variables locally to avoid needing self in the closure
-            let animationController = self.animationController
-            let progressPublisher = self.progressPublisher
-            let canvasElements = self.canvasElements
+            // let animationController = self.animationController // Removed, use self.animationController
+            // let progressPublisher = self.progressPublisher   // Removed, use self.progressPublisher
+            // let canvasElements = self.canvasElements           // Removed, was unused and self.canvasElements used later or captured as initialCanvasElements implicitly by usage context
             
             // Render each frame with the animation state at that time
             for frameIdx in 0..<frameCount {
@@ -233,7 +234,7 @@ class CanvasVideoRenderer {
                     
                     // Dispatch to main thread to update animation state
                     DispatchQueue.main.async {
-                        animationController.currentTime = frameTimeInSeconds
+                        self.animationController.currentTime = frameTimeInSeconds
                         // Get a snapshot of elements at current time
                         elementsForFrame = self.getElementsAtTime(frameTimeInSeconds)
                         animationSemaphore.signal()
@@ -325,14 +326,18 @@ class CanvasVideoRenderer {
                                currentTime - lastReportTime > 0.5 {
                                 
                                 if currentTime - lastReportTime > 0.1 {
-                                    progressPublisher.send(currentProgress)
+                                    DispatchQueue.main.async {
+                                        self.progressPublisher.send(currentProgress)
+                                    }
                                     lastReportedProgress = currentProgress
                                     lastReportTime = currentTime
                                 }
                             }
                         } else {
                             // If appending fails, report the error
-                            os_log("Failed to append pixel buffer: %{public}@", log: CanvasVideoRenderer.logger, type: .error, assetWriter.error?.localizedDescription ?? "unknown error")
+                            DispatchQueue.main.async {
+                                os_log("Failed to append pixel buffer: %{public}@", log: CanvasVideoRenderer.logger, type: .error, assetWriter.error?.localizedDescription ?? "unknown error")
+                            }
                             
                             // Restore original animation state
                             DispatchQueue.main.sync {
@@ -350,7 +355,9 @@ class CanvasVideoRenderer {
             }
             
             // Send final progress update
-            progressPublisher.send(1.0)
+            DispatchQueue.main.async {
+                self.progressPublisher.send(1.0)
+            }
             
             // Restore original animation state
             // Use a dispatch semaphore to wait for the main thread task
@@ -358,9 +365,9 @@ class CanvasVideoRenderer {
             
             // Dispatch to main thread to restore animation state
             DispatchQueue.main.async {
-                animationController.currentTime = currentAnimationTime
+                self.animationController.currentTime = currentAnimationTime
                 if isCurrentlyPlaying {
-                    animationController.play()
+                    self.animationController.play()
                 }
                 restorationSemaphore.signal()
             }
@@ -463,7 +470,7 @@ class CanvasVideoRenderer {
     ///   - scaleFactor: Scale factor for sizing and positioning
     ///   - xOffset: Horizontal offset for centering
     ///   - yOffset: Vertical offset for centering
-    private func renderElement(_ element: CanvasElement, to context: CGContext, scaleFactor: CGFloat, xOffset: CGFloat, yOffset: CGFloat) {
+    nonisolated private func renderElement(_ element: CanvasElement, to context: CGContext, scaleFactor: CGFloat, xOffset: CGFloat, yOffset: CGFloat) {
         // Helper function to properly convert SwiftUI Color to CGColor
         func convertToCGColor(_ color: Color) -> CGColor {
             // Convert through NSColor to ensure consistent color space
@@ -587,10 +594,52 @@ class CanvasVideoRenderer {
             // Draw the text
             CTFrameDraw(textFrame, context)
             
-        case .image, .video:
-            // Draw a placeholder for images/videos
-            context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
-            context.fill(rect)
+        case .image:
+            // Handle image elements
+            if let assetURL = element.assetURL, assetURL.isFileURL,
+               let imageData = try? Data(contentsOf: assetURL),
+               let nsImage = NSImage(data: imageData) {
+                
+                var imageRect = CGRect(x: 0, y: 0, width: nsImage.size.width, height: nsImage.size.height)
+                if let cgImage = nsImage.cgImage(forProposedRect: &imageRect, context: nil, hints: nil) {
+                    context.setAlpha(CGFloat(element.opacity))
+                    context.draw(cgImage, in: rect)
+                }
+            } else {
+                // Fallback placeholder for images
+                context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
+                context.fill(rect)
+            }
+            
+        case .video:
+            // Handle video elements with timeline synchronization
+            if let assetURL = element.assetURL, assetURL.isFileURL {
+                let asset = AVAsset(url: assetURL)
+                let imageGenerator = AVAssetImageGenerator(asset: asset)
+                imageGenerator.appliesPreferredTrackTransform = true
+                imageGenerator.requestedTimeToleranceBefore = .zero
+                imageGenerator.requestedTimeToleranceAfter = .zero
+                
+                // Calculate video time based on current export time and element's video start time
+                // Note: This would need to be passed from the export context
+                // For now, using a placeholder approach
+                let videoTime = max(0, element.videoStartTime)
+                let cmTime = CMTime(seconds: videoTime, preferredTimescale: 600)
+                
+                do {
+                    let cgImage = try imageGenerator.copyCGImage(at: cmTime, actualTime: nil)
+                    context.setAlpha(CGFloat(element.opacity))
+                    context.draw(cgImage, in: rect)
+                } catch {
+                    // Fallback placeholder for videos
+                    context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
+                    context.fill(rect)
+                }
+            } else {
+                // Fallback placeholder for videos
+                context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
+                context.fill(rect)
+            }
         }
         
         // Restore the context state

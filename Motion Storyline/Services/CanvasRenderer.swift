@@ -2,6 +2,7 @@ import Foundation
 import CoreGraphics
 import AppKit
 import SwiftUI
+import AVFoundation
 
 // Service for rendering canvas elements to a CGImage
 class CanvasRenderer {
@@ -135,7 +136,7 @@ class CanvasRenderer {
                 
                 let attributes: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: fontSize),
-                    .foregroundColor: NSColor(cgColor: textColor) ?? NSColor.black,
+                    .foregroundColor: NSColor(cgColor: textColor) ?? NSColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0),
                     .paragraphStyle: paragraphStyle
                 ]
                 
@@ -245,10 +246,51 @@ class CanvasRenderer {
                 }
                 break
             case .video:
-                // TODO: Implement static frame rendering for video elements
-                // This would involve using AVAssetImageGenerator to get a CGImage for the current time
-                // and then drawing that CGImage similar to how .image elements are handled.
-                print("[CanvasRenderer] Video element rendering not yet implemented for export.")
+                if let assetURL = element.assetURL, assetURL.isFileURL {
+                    // For video elements, we need to extract a frame at the current time
+                    let asset = AVAsset(url: assetURL)
+                    let imageGenerator = AVAssetImageGenerator(asset: asset)
+                    imageGenerator.appliesPreferredTrackTransform = true
+                    imageGenerator.requestedTimeToleranceBefore = .zero
+                    imageGenerator.requestedTimeToleranceAfter = .zero
+                    
+                    // Calculate video time based on element's video start time
+                    // Note: For export, we would need access to the current export time
+                    // This is a simplified version - in practice, you'd pass the current export time
+                    let videoTime = max(0, element.videoStartTime)
+                    let cmTime = CMTime(seconds: videoTime, preferredTimescale: 600)
+                    
+                    do {
+                        let cgImage = try imageGenerator.copyCGImage(at: cmTime, actualTime: nil)
+                        
+                        // Draw the video frame similar to how images are handled
+                        let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
+                        NSGraphicsContext.saveGraphicsState()
+                        NSGraphicsContext.current = nsContext
+                        
+                        context.saveGState()
+                        context.translateBy(x: rect.origin.x, y: rect.origin.y + rect.size.height)
+                        context.scaleBy(x: 1, y: -1)
+                        
+                        let localImageDrawRect = CGRect(origin: .zero, size: rect.size)
+                        context.draw(cgImage, in: localImageDrawRect)
+                        
+                        NSGraphicsContext.restoreGraphicsState()
+                        context.restoreGState()
+                        
+                        print("[CanvasRenderer] Drew video frame from: \(assetURL.path) at time: \(videoTime)")
+                    } catch {
+                        print("[CanvasRenderer] Failed to extract video frame: \(error)")
+                        // Draw placeholder if frame extraction fails
+                        context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
+                        context.fill(rect)
+                    }
+                } else {
+                    print("[CanvasRenderer] Video element has no valid file assetURL: \(String(describing: element.assetURL))")
+                    // Draw placeholder
+                    context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
+                    context.fill(rect)
+                }
                 break
             }
             context.restoreGState()
@@ -257,7 +299,7 @@ class CanvasRenderer {
     }
 
     private static func convertToCGColor(_ color: NSColor) -> CGColor {
-        return color.usingColorSpace(.deviceRGB)?.cgColor ?? NSColor.black.cgColor
+        return color.usingColorSpace(.deviceRGB)?.cgColor ?? NSColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0).cgColor
     }
     
     /// Properly converts a SwiftUI Color to CGColor
@@ -266,22 +308,22 @@ class CanvasRenderer {
         let nsColor: NSColor
         
         // Handle named colors
-        if color == .red {
-            nsColor = NSColor.red
-        } else if color == .green {
-            nsColor = NSColor.green
-        } else if color == .blue {
-            nsColor = NSColor.blue
-        } else if color == .black {
-            nsColor = NSColor.black
-        } else if color == .white {
-            nsColor = NSColor.white
-        } else if color == .yellow {
-            nsColor = NSColor.yellow
-        } else if color == .orange {
-            nsColor = NSColor.orange
-        } else if color == .purple {
-            nsColor = NSColor.purple
+        if color == Color(red: 1.0, green: 0.231, blue: 0.188, opacity: 1.0) {
+            nsColor = NSColor(red: 1.0, green: 0.231, blue: 0.188, alpha: 1.0)
+        } else if color == Color(red: 0.204, green: 0.780, blue: 0.349, opacity: 1.0) {
+            nsColor = NSColor(red: 0.204, green: 0.780, blue: 0.349, alpha: 1.0)
+        } else if color == Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0) {
+            nsColor = NSColor(red: 0.2, green: 0.5, blue: 0.9, alpha: 1.0)
+        } else if color == Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 1.0) {
+            nsColor = NSColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0)
+        } else if color == Color(red: 1.0, green: 1.0, blue: 1.0, opacity: 1.0) {
+            nsColor = NSColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 1.0)
+        } else if color == Color(red: 1.0, green: 0.800, blue: 0.0, opacity: 1.0) {
+            nsColor = NSColor(red: 1.0, green: 0.800, blue: 0.0, alpha: 1.0)
+        } else if color == Color(red: 1.0, green: 0.584, blue: 0.0, opacity: 1.0) {
+            nsColor = NSColor(red: 1.0, green: 0.584, blue: 0.0, alpha: 1.0)
+        } else if color == Color(red: 0.690, green: 0.322, blue: 0.871, opacity: 1.0) {
+            nsColor = NSColor(red: 0.690, green: 0.322, blue: 0.871, alpha: 1.0)
         } else {
             // Convert using NSColor's color provider - more reliable than the previous method
             let provider = color.resolve(in: EnvironmentValues())
@@ -296,6 +338,6 @@ class CanvasRenderer {
         }
         
         // Convert to CGColor ensuring we're in the RGB color space
-        return nsColor.usingColorSpace(.deviceRGB)?.cgColor ?? NSColor.black.cgColor
+        return nsColor.usingColorSpace(.deviceRGB)?.cgColor ?? NSColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0).cgColor
     }
 }

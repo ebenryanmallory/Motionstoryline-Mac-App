@@ -138,7 +138,6 @@ class DragHandler: ObservableObject {
     ///   - decelerationRate: Rate at which velocity decreases (0-1)
     /// - Returns: A future publisher that emits the decelerating velocity over time
     func calculateDeceleration(initialVelocity: CGPoint, decelerationRate: CGFloat = 0.95) -> AnyPublisher<CGPoint, Never> {
-        let subject = PassthroughSubject<CGPoint, Never>()
         var currentVelocity = initialVelocity
         
         // Create a timer that updates the velocity with deceleration

@@ -7,6 +7,10 @@ import AVFoundation
 /// Manages document operations such as exporting, saving, and loading
 @MainActor
 class DocumentManager: ObservableObject {
+    // Project state
+    @Published var currentProjectURL: URL? = nil
+    @Published var hasUnsavedChanges: Bool = false
+    
     // Export state
     @Published var isExporting = false
     @Published var exportProgress: Float = 0
@@ -23,15 +27,25 @@ class DocumentManager: ObservableObject {
         exportCompletedSubject.eraseToAnyPublisher()
     }
     
-    // Project state
     private var canvasElements: [CanvasElement] = []
     private var animationController: AnimationController?
     private var canvasSize: CGSize = CGSize(width: 1280, height: 720)
     
-    /// Set up the document manager with the current canvas state
+    /// Set up the document manager with the current canvas state. This is typically called when DesignCanvas state changes.
     func configure(canvasElements: [CanvasElement], 
                   animationController: AnimationController,
                   canvasSize: CGSize) {
+        // Consider if a deep comparison is needed to truly determine if changes occurred.
+        // For now, any configuration implies potential changes.
+        // If the project is new (no URL) and empty, it might not have unsaved changes initially.
+        // However, if configure is called due to user action, it's safer to assume changes.
+        if self.currentProjectURL != nil || !canvasElements.isEmpty { // Basic check to avoid marking a new, empty project as changed immediately
+            // More sophisticated change detection could be implemented here if needed
+            // by comparing new values with existing ones before assigning.
+            // For now, we assume that if configure is called, it's likely due to a change.
+            // self.hasUnsavedChanges = true // This will be set by the caller (e.g., DesignCanvas) more accurately
+        }
+
         self.canvasElements = canvasElements
         self.animationController = animationController
         self.canvasSize = canvasSize
@@ -93,25 +107,69 @@ class DocumentManager: ObservableObject {
         }
     }
     
-    /// Save the current state of the project
-    func saveCurrentState() -> Bool {
+    /// Saves the project to a new location chosen by the user ("Save As...").
+    /// Updates `currentProjectURL` and resets `hasUnsavedChanges` on success.
+    func saveProjectAs() -> Bool {
         // Debug check to make sure canvas elements are properly set
-        print("Starting save with \(canvasElements.count) canvas elements")
+        print("Initiating Save As... with \(canvasElements.count) canvas elements")
         
-        // Create a save panel to choose where to save the file
         let savePanel = NSSavePanel()
         savePanel.canCreateDirectories = true
         savePanel.showsTagField = true
-        savePanel.nameFieldStringValue = "Motion Storyline Project.storyline"
+        savePanel.nameFieldStringValue = currentProjectURL?.lastPathComponent ?? "Motion Storyline Project.storyline"
         savePanel.allowedContentTypes = [UTType(filenameExtension: "storyline")!]
         savePanel.message = "Save your Motion Storyline project"
+        if let existingDir = currentProjectURL?.deletingLastPathComponent() {
+            savePanel.directoryURL = existingDir
+        }
         
         let response = savePanel.runModal()
         
         guard response == .OK, let url = savePanel.url else {
+            print("Save As cancelled by user or save panel failed.")
             return false
         }
         
+        if performSaveInternal(to: url) {
+            self.currentProjectURL = url
+            self.hasUnsavedChanges = false
+            print("Project successfully saved as \(url.path)")
+            // Update window title or other UI elements if necessary via AppStateManager or direct binding
+            return true
+        } else {
+            print("Failed to save project to \(url.path) during Save As operation.")
+            return false
+        }
+    }
+
+    /// Saves the project to its `currentProjectURL` if known, otherwise performs a "Save As".
+    /// Resets `hasUnsavedChanges` on success.
+    func saveProject() -> Bool {
+        if let url = currentProjectURL {
+            print("Saving project to existing URL: \(url.path) with \(canvasElements.count) elements")
+            // Directly call performSave without showing a panel again
+            if performSaveInternal(to: url) { // Changed to performSaveInternal
+                self.hasUnsavedChanges = false
+                print("Project successfully saved to \(url.path)")
+                return true
+            } else {
+                print("Failed to save project to \(url.path)")
+                return false
+            }
+        } else {
+            print("No current project URL, initiating Save As...")
+            return saveProjectAs() // This will show the panel and then call performSaveInternal
+        }
+    }
+
+    /// Private helper function to perform the actual saving logic without showing a panel.
+    private func performSaveInternal(to url: URL) -> Bool {
+        // Debug check to make sure canvas elements are properly set
+        print("Starting save with \(canvasElements.count) canvas elements")
+        
+        // The URL is now passed directly to this function.
+        // The save panel logic is handled by saveProjectAs() or not at all if saving to an existing URL.
+
         // Create project data structure
         let projectData = createProjectData()
         
@@ -136,9 +194,11 @@ class DocumentManager: ObservableObject {
             // Provide haptic feedback on successful save
             NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
             
+            // Update document state (e.g., mark as clean, update window title)
+            // This is now handled by the callers (saveProject, saveProjectAs) by setting hasUnsavedChanges
             return true
         } catch {
-            print("Error saving project: \(error.localizedDescription)")
+            print("Error performing save to \(url.path): \(error.localizedDescription)")
             
             // More detailed error logging
             if let encodingError = error as? EncodingError {
@@ -157,7 +217,8 @@ class DocumentManager: ObservableObject {
         }
     }
     
-    /// Load a saved project from a file URL
+    /// Load a saved project from a file URL.
+    /// Updates `currentProjectURL` and resets `hasUnsavedChanges` on success.
     func loadProject(from url: URL) throws -> (elements: [CanvasElement], tracksData: [TrackData], duration: Double, canvasWidth: CGFloat, canvasHeight: CGFloat, projectName: String)? {
         // Note: The NSOpenPanel logic is now handled by the caller (e.g., DesignCanvas)
         
@@ -174,14 +235,62 @@ class DocumentManager: ObservableObject {
             // The AnimationController will be reconstructed in DesignCanvas.
             
             let projectName = url.deletingPathExtension().lastPathComponent
+            
+            // Successfully loaded, update document manager state
+            self.currentProjectURL = url
+            self.hasUnsavedChanges = false // Project is clean right after loading
+            
+            // Configure the document manager with the loaded data if it's supposed to hold it directly
+            // Or, ensure the caller (DesignCanvas) calls configure() with this data.
+            // For now, DesignCanvas is responsible for calling configure().
+            // self.canvasElements = projectData.elements // This would be redundant if DesignCanvas configures
+            // self.canvasSize = CGSize(width: projectData.canvasWidth, height: projectData.canvasHeight)
+            // self.animationController = ... // Rebuilding AnimationController is complex here, better done in DesignCanvas
+
+            print("Project successfully loaded from \(url.path)")
             return (projectData.elements, projectData.tracks, projectData.duration, projectData.canvasWidth, projectData.canvasHeight, projectName)
         } catch {
             print("Error loading project: \(error.localizedDescription)")
             // Propagate the error so the caller can handle it
+            self.currentProjectURL = nil // Ensure URL is cleared on load failure
+            self.hasUnsavedChanges = false // Or true, depending on desired state after failed load
             throw error 
         }
     }
     
+    // MARK: - Undo/Redo State Management
+
+    /// Serializes the current project state into Data for undo/redo.
+    func getCurrentProjectStateData() -> Data? {
+        // Ensure animationController is available, otherwise state is incomplete
+        guard self.animationController != nil else {
+            print("Warning: AnimationController not available during state serialization for undo/redo.")
+            // Depending on strictness, you might return nil or a partially valid state.
+            // For robust undo, a complete state is preferred.
+            return nil 
+        }
+        let projectData = createProjectData() // Uses current canvasElements, animationController, canvasSize
+        do {
+            let encoder = JSONEncoder()
+            // No need for prettyPrinted for internal undo/redo states
+            return try encoder.encode(projectData)
+        } catch {
+            print("Error encoding project state for undo/redo: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Deserializes Data back into ProjectData.
+    func decodeProjectState(from data: Data) -> ProjectData? {
+        do {
+            let decoder = JSONDecoder()
+            return try decoder.decode(ProjectData.self, from: data)
+        } catch {
+            print("Error decoding project state for undo/redo: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
     // MARK: - Private Helper Methods
     
     /// Create an export coordinator for handling the export process
@@ -355,7 +464,7 @@ class DocumentManager: ObservableObject {
     }
     
     /// Convert easing function to string representation
-    private func easingToString(_ easing: EasingFunction) -> String {
+    internal func easingToString(_ easing: EasingFunction) -> String {
         switch easing {
         case .linear: return "linear"
         case .easeIn: return "easeIn"
@@ -371,7 +480,7 @@ class DocumentManager: ObservableObject {
     }
 
     /// Convert string representation to easing function
-    private func easingFromString(_ easingString: String) -> EasingFunction {
+    internal func easingFromString(_ easingString: String) -> EasingFunction {
         switch easingString.lowercased() {
         case "linear": return .linear
         case "easein": return .easeIn
