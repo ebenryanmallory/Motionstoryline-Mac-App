@@ -87,6 +87,7 @@ public struct Project: Identifiable, Hashable, Codable {
     public var thumbnail: String
     public var lastModified: Date
     public var mediaAssets: [MediaAsset] = []
+    public var audioLayers: [AudioLayer] = [] // Audio tracks in the timeline
     public var isStarred: Bool = false
     
     // Viewport settings
@@ -96,6 +97,7 @@ public struct Project: Identifiable, Hashable, Codable {
     
     public init(id: UUID = UUID(), name: String, thumbnail: String, lastModified: Date, 
          mediaAssets: [MediaAsset] = [],
+         audioLayers: [AudioLayer] = [],
          isStarred: Bool = false,
          zoomLevel: CGFloat = 1.0, panOffsetX: CGFloat = 0.0, panOffsetY: CGFloat = 0.0) {
         self.id = id
@@ -103,6 +105,7 @@ public struct Project: Identifiable, Hashable, Codable {
         self.thumbnail = thumbnail
         self.lastModified = lastModified
         self.mediaAssets = mediaAssets
+        self.audioLayers = audioLayers
         self.isStarred = isStarred
         self.zoomLevel = zoomLevel
         self.panOffsetX = panOffsetX
@@ -119,6 +122,16 @@ public struct Project: Identifiable, Hashable, Codable {
     
     public mutating func addMediaAsset(_ asset: MediaAsset) {
         mediaAssets.append(asset)
+        lastModified = Date()
+    }
+    
+    public mutating func addAudioLayer(_ audioLayer: AudioLayer) {
+        audioLayers.append(audioLayer)
+        lastModified = Date()
+    }
+    
+    public mutating func removeAudioLayer(withId id: UUID) {
+        audioLayers.removeAll { $0.id == id }
         lastModified = Date()
     }
 } 

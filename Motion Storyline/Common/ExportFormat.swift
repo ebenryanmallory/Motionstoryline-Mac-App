@@ -5,6 +5,9 @@ public enum ExportFormat: Sendable, Hashable {
     /// Video export option (e.g. MP4)
     case video
     
+    /// ProRes video export option with specific profile
+    case videoProRes(ProResProfile)
+    
     /// Animated GIF export option
     case gif
     
@@ -17,11 +20,24 @@ public enum ExportFormat: Sendable, Hashable {
     /// Batch export option for multiple formats simultaneously
     case batchExport
     
+    /// ProRes profile options
+    public enum ProResProfile: String, Sendable, Hashable {
+        case proxy = "ProRes 422 Proxy"
+        case lt = "ProRes 422 LT"
+        case standard = "ProRes 422"
+        case hq = "ProRes 422 HQ"
+        case fourFourFourFour = "ProRes 4444"
+        case fourFourFourFourXQ = "ProRes 4444 XQ"
+    }
+    
     // Implement Hashable conformance manually since we have associated values
     public func hash(into hasher: inout Hasher) {
         switch self {
         case .video:
             hasher.combine(0)
+        case .videoProRes(let profile):
+            hasher.combine(5)
+            hasher.combine(profile)
         case .gif:
             hasher.combine(1)
         case .imageSequence(let format):
@@ -38,6 +54,8 @@ public enum ExportFormat: Sendable, Hashable {
         switch (lhs, rhs) {
         case (.video, .video):
             return true
+        case (.videoProRes(let lhsProfile), .videoProRes(let rhsProfile)):
+            return lhsProfile == rhsProfile
         case (.gif, .gif):
             return true
         case (.imageSequence(let lhsFormat), .imageSequence(let rhsFormat)):

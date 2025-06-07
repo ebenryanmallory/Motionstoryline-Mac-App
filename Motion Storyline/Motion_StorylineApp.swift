@@ -10,7 +10,9 @@ import Foundation
 
 @main
 struct Motion_StorylineApp: App {
-    @StateObject private var appState = AppStateManager()
+    @StateObject private var appStateManager = AppStateManager.shared // Use the shared instance
+    @StateObject private var documentManager = DocumentManager() // Add DocumentManager
+    @Environment(\.scenePhase) private var scenePhase // Get scenePhase from environment
     @State private var isCreatingNewProject = false
     @AppStorage("recentProjects") private var recentProjectsData: Data = Data()
     @AppStorage("userProjects") private var userProjectsData: Data = Data()
@@ -21,15 +23,16 @@ struct Motion_StorylineApp: App {
     var body: some Scene {
         WindowGroup {
             NavigationStack {
-                if appState.selectedProject != nil {
+                if self.appStateManager.selectedProject != nil {
                     DesignCanvas()
                         .withUITestIdentifier()
                         .navigationBarBackButtonHidden(true)
-                        .environmentObject(appState)
+                        .environmentObject(self.appStateManager)
+                        .environmentObject(self.documentManager) // Add DocumentManager to environment
                         .onAppear {
                             // We can set up any necessary state here if needed
                         }
-                        .onChange(of: appState.selectedProject) { oldValue, newValue in
+                        .onChange(of: self.appStateManager.selectedProject) { oldValue, newValue in
                             if let updatedProject = newValue {
                                 updateProject(updatedProject)
                             }
@@ -40,8 +43,8 @@ struct Motion_StorylineApp: App {
                         userProjects: $userProjects,
                         statusMessage: $statusMessage,
                         onProjectSelected: { project in
-                            appState.selectedProject = project
-                            addToRecentProjects(project)
+                            self.appStateManager.selectedProject = project
+                            self.addToRecentProjects(project)
                         },
                         isCreatingNewProject: $isCreatingNewProject,
                         onCreateNewProject: { name, type in
@@ -51,7 +54,7 @@ struct Motion_StorylineApp: App {
                         onRenameProject: renameProject,
                         onToggleProjectStar: toggleProjectStar
                     )
-                    .environmentObject(appState)
+                    .environmentObject(self.appStateManager)
                     .onAppear {
                         loadRecentProjects()
                         loadAllProjects()
@@ -76,25 +79,56 @@ struct Motion_StorylineApp: App {
                 }
                 
                 // Initialize appearance based on saved preference
-                appState.updateAppAppearance()
+                self.appStateManager.updateAppAppearance()
             }
             .overlay {
                 // Documentation overlay
-                if let docType = appState.activeDocumentationType, appState.isDocumentationVisible {
+                if let docType = self.appStateManager.activeDocumentationType, self.appStateManager.isDocumentationVisible {
                     let content = DocumentationService.shared.getDocumentation(type: docType)
                     InfoOverlayView(
                         isVisible: Binding<Bool>(
-                            get: { appState.isDocumentationVisible }, 
-                            set: { if !$0 { appState.hideDocumentation() } }
+                            get: { self.appStateManager.isDocumentationVisible }, 
+                            set: { if !$0 { self.appStateManager.hideDocumentation() } }
                         ),
                         title: docType.title,
                         content: content
                     )
-                }
-            }
+                } // Closes 'if let docType...'
+            } // Closes '.overlay'
+        } // Closes 'WindowGroup' content block
+        .onChange(of: scenePhase) { oldPhase, newPhase in
+            print("Scene phase changed from \(oldPhase) to: \(newPhase)")
+            self.appStateManager.scenePhase = newPhase
         }
         .windowToolbarStyle(.unified)
         .commands {
+            CommandMenu("Edit") {
+                Button("Undo") {
+                    self.appStateManager.undoAction?()
+                }
+                .keyboardShortcut("z", modifiers: .command)
+                .disabled(!self.appStateManager.canUndo)
+
+                Button("Redo") {
+                    self.appStateManager.redoAction?()
+                }
+                .keyboardShortcut("z", modifiers: [.shift, .command])
+                .disabled(!self.appStateManager.canRedo)
+                
+                // Standard edit items (can be implemented later)
+                Divider()
+                Button("Cut") { /* TODO: Implement Cut */ }
+                    .keyboardShortcut("x", modifiers: .command)
+                Button("Copy") { /* TODO: Implement Copy */ }
+                    .keyboardShortcut("c", modifiers: .command)
+                Button("Paste") { /* TODO: Implement Paste */ }
+                    .keyboardShortcut("v", modifiers: .command)
+                Button("Delete") { /* TODO: Implement Delete (e.g., selected element) */ }
+                    .keyboardShortcut(.delete, modifiers: []) // Backspace/Delete key
+                Button("Select All") { /* TODO: Implement Select All */ }
+                    .keyboardShortcut("a", modifiers: .command)
+            }
+
             CommandGroup(replacing: .newItem) {
                 Menu("New File") {
                     Button("New Design") {
@@ -123,16 +157,16 @@ struct Motion_StorylineApp: App {
                 Divider()
                 
                 Button("Keyboard Shortcuts") {
-                    appState.showDocumentation(.keyboardShortcuts)
+                    self.appStateManager.showDocumentation(.keyboardShortcuts)
                 }
                 .keyboardShortcut("/", modifiers: [.command])
                 
                 Button("VoiceOver Compatibility") {
-                    appState.showDocumentation(.voiceOverCompatibility)
+                    self.appStateManager.showDocumentation(.voiceOverCompatibility)
                 }
                 
                 Button("VoiceOver Testing Checklist") {
-                    appState.showDocumentation(.voiceOverTestingChecklist)
+                    self.appStateManager.showDocumentation(.voiceOverTestingChecklist)
                 }
             }
         }
@@ -147,7 +181,7 @@ struct Motion_StorylineApp: App {
     
     // Create a project from an existing Project object
     private func createNewProject(_ project: Project) {
-        appState.selectedProject = project
+        self.appStateManager.selectedProject = project
         addToRecentProjects(project)
         addToAllProjects(project)
         saveRecentProjects()
@@ -170,8 +204,8 @@ struct Motion_StorylineApp: App {
         }
         
         // Update selected project if it's the same one
-        if appState.selectedProject?.id == updatedProject.id {
-            appState.selectedProject = updatedProject
+        if self.appStateManager.selectedProject?.id == updatedProject.id {
+            self.appStateManager.selectedProject = updatedProject
         }
     }
     
@@ -296,8 +330,8 @@ struct Motion_StorylineApp: App {
         userProjects.removeAll { $0.id == project.id }
         
         // If this was the selected project, navigate back to home
-        if appState.selectedProject?.id == project.id {
-            appState.navigateToHome()
+        if self.appStateManager.selectedProject?.id == project.id {
+            self.appStateManager.navigateToHome()
         }
         
         // Save the changes to persistent storage
@@ -331,8 +365,8 @@ struct Motion_StorylineApp: App {
         }
         
         // Update selected project if it's the same one
-        if appState.selectedProject?.id == project.id {
-            appState.selectedProject = renamedProject
+        if self.appStateManager.selectedProject?.id == project.id {
+            self.appStateManager.selectedProject = renamedProject
         }
         
         // Save the changes to persistent storage
@@ -365,8 +399,8 @@ struct Motion_StorylineApp: App {
         }
         
         // Update selected project if it's the same one
-        if appState.selectedProject?.id == project.id {
-            appState.selectedProject = updatedProject
+        if appStateManager.selectedProject?.id == project.id {
+            appStateManager.selectedProject = updatedProject
         }
         
         // Save the changes to persistent storage

@@ -18,6 +18,14 @@ extension View {
     func cornerRadius(_ radius: CGFloat, corners: RectCorner) -> some View {
         clipShape(RoundedCorner(radius: radius, corners: corners))
     }
+
+    func withUITestIdentifier(_ identifier: String = "defaultIdentifier") -> some View {
+        // This is a simplified placeholder.
+        // In a real app, you might use this for UI testing,
+        // for example, by setting accessibilityIdentifier.
+        // print("withUITestIdentifier called with: \(identifier)")
+        return self.accessibilityIdentifier(identifier) // A more conventional implementation
+    }
 }
 
 // Define which corners to round

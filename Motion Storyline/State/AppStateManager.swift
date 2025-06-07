@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 class AppStateManager: ObservableObject {
     // Add a shared instance for global access
@@ -11,6 +12,26 @@ class AppStateManager: ObservableObject {
     // Documentation state
     @Published var activeDocumentationType: DocumentationService.DocumentationType?
     @Published var isDocumentationVisible: Bool = false
+
+    // Scene Phase for auto-save and lifecycle management
+    @Published var scenePhase: ScenePhase = .active
+
+    // Project State for UI updates (e.g., window title)
+    @Published var currentProjectURL: URL? = nil
+    @Published var hasUnsavedChanges: Bool = false
+    @Published var currentTimelineScale: Double = 1.0
+    @Published var currentTimelineOffset: Double = 0.0
+    @Published var currentProjectName: String = "Untitled Project"
+    @Published var currentProjectURLToLoad: URL? = nil
+    @Published var isShowingOpenDialog: Bool = false
+
+    @Published var undoRedoManager = UndoRedoManager()
+    // Undo/Redo State & Actions
+    @Published var canUndo: Bool = false
+    @Published var canRedo: Bool = false
+    var undoAction: (() -> Void)?
+    var redoAction: (() -> Void)?
+    private var cancellables = Set<AnyCancellable>()
     
     func navigateToHome() {
         selectedProject = nil
@@ -82,5 +103,55 @@ class AppStateManager: ObservableObject {
     init() {
         // Initialize app appearance based on saved preference
         updateAppAppearance()
+    }
+
+    // MARK: - Undo/Redo Integration
+    func registerUndoRedoActions(
+        undo: @escaping () -> Void,
+        redo: @escaping () -> Void,
+        canUndoPublisher: AnyPublisher<Bool, Never>,
+        canRedoPublisher: AnyPublisher<Bool, Never>,
+        hasUnsavedChangesPublisher: AnyPublisher<Bool, Never>,
+        currentProjectURLPublisher: AnyPublisher<URL?, Never>
+    ) {
+        self.undoAction = undo
+        self.redoAction = redo
+
+        // Clear previous subscriptions
+        cancellables.forEach { $0.cancel() }
+        cancellables.removeAll()
+
+        canUndoPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] canUndoValue in
+                self?.canUndo = canUndoValue
+            }
+            .store(in: &cancellables)
+
+        canRedoPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] canRedoValue in
+                self?.canRedo = canRedoValue
+            }
+            .store(in: &cancellables)
+
+        hasUnsavedChangesPublisher
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$hasUnsavedChanges)
+
+        currentProjectURLPublisher
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$currentProjectURL)
+    }
+
+    func clearUndoRedoActions() {
+        self.undoAction = nil
+        self.redoAction = nil
+        self.canUndo = false
+        self.canRedo = false
+        self.hasUnsavedChanges = false
+        self.currentProjectURL = nil
+        cancellables.forEach { $0.cancel() }
+        cancellables.removeAll()
     }
 } 
