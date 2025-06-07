@@ -19,6 +19,7 @@ struct AnimationTimelineView: View {
     var audioURL: URL?  // For single track backward compatibility
     var showAudioWaveform: Bool = false
     var mediaAssets: [MediaAsset] = []  // For multiple audio tracks
+    var audioLayerManager: AudioLayerManager? // New audio layer system
     @State private var showMultiTrackAudio: Bool = false
     @State private var showAudioMarkerTooltip: Bool = false
     @State private var audioMarkerManager: AudioMarkerManager?
@@ -142,8 +143,23 @@ struct AnimationTimelineView: View {
             )
             .frame(height: timelineHeight - 70) // Adjust dynamically based on available space
             
+            // Show audio layers if available
+            if let audioLayerManager = audioLayerManager, !audioLayerManager.audioLayers.isEmpty {
+                Divider()
+                
+                AudioLayerTimelineView(
+                    audioLayerManager: audioLayerManager,
+                    currentTime: $animationController.currentTime,
+                    isPlaying: $isPlaying,
+                    scale: timelineScale,
+                    offset: $timelineOffset,
+                    timelineDuration: animationController.duration
+                )
+                .frame(minHeight: 120, maxHeight: 300)
+            }
+            
             // Decide which audio visualization to show based on available data
-            if !mediaAssets.filter({ $0.type == .audio }).isEmpty && showMultiTrackAudio {
+            else if !mediaAssets.filter({ $0.type == .audio }).isEmpty && showMultiTrackAudio {
                 // Show multi-track audio timeline
                 Divider()
                 
@@ -210,6 +226,18 @@ struct AnimationTimelineView: View {
         // If we have audio assets, add a button to toggle multi-track audio view
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
+                // Show audio layer indicator if we have audio layers
+                if let audioLayerManager = audioLayerManager, !audioLayerManager.audioLayers.isEmpty {
+                    HStack {
+                        Image(systemName: "waveform.circle.fill")
+                            .foregroundColor(.blue)
+                        Text("\(audioLayerManager.audioLayers.count)")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    }
+                    .help("Audio Layers: \(audioLayerManager.audioLayers.count)")
+                }
+                
                 if !mediaAssets.filter({ $0.type == .audio }).isEmpty {
                     Button(action: {
                         withAnimation {
@@ -252,9 +280,18 @@ struct AnimationTimelineView: View {
                 // Update audio synchronization by seeking to current time
                 let currentTime = animationController.currentTime
                 animationController.seekToTime(currentTime)
+                
+                // Start audio layer playback if available
+                if let audioLayerManager = audioLayerManager {
+                    audioLayerManager.currentTime = currentTime
+                    audioLayerManager.play()
+                }
             } else {
                 // Pause animation playback
                 animationController.pause()
+                
+                // Pause audio layer playback if available
+                audioLayerManager?.pause()
             }
         }
         .onChange(of: animationController.currentTime) { oldValue, newTime in
@@ -262,6 +299,9 @@ struct AnimationTimelineView: View {
             if !isPlaying && abs(newTime - animationController.currentTime) > 0.01 {
                 animationController.seekToTime(newTime)
             }
+            
+            // Sync audio layers with timeline
+            audioLayerManager?.seekToTime(newTime)
         }
         // Force the view to update when the property ID changes or when keyframes are added/removed
         .id("\(propertyId)_\(keyframeTimes.count)")

@@ -108,7 +108,7 @@ public enum EasingFunction: Hashable {
         case .sine:
             // Simple sine implementation
             return sin(t * .pi / 2)
-        case .customCubicBezier(let x1, let y1, let x2, let y2):
+        case .customCubicBezier(let x1, _, let x2, _):
             // A simple approximation of cubic bezier for this implementation
             // For production, consider a more accurate bezier curve implementation
             let t1 = 1 - t
@@ -186,6 +186,15 @@ extension CGFloat: Interpolatable {
     }
 }
 
+extension CGSize: Interpolatable {
+    public func interpolate(to: CGSize, progress: Double) -> CGSize {
+        return CGSize(
+            width: width + (to.width - width) * CGFloat(progress),
+            height: height + (to.height - height) * CGFloat(progress)
+        )
+    }
+}
+
 extension CGPoint: Interpolatable {
     public func interpolate(to: CGPoint, progress: Double) -> CGPoint {
         return CGPoint(
@@ -257,15 +266,6 @@ extension Color: Interpolatable {
     }
 }
 
-// Add support for CGSize
-extension CGSize: Interpolatable {
-    public func interpolate(to: CGSize, progress: Double) -> CGSize {
-        return CGSize(
-            width: width + (to.width - width) * CGFloat(progress),
-            height: height + (to.height - height) * CGFloat(progress)
-        )
-    }
-}
 
 // Add support for String
 extension String: Interpolatable {
@@ -815,7 +815,7 @@ struct AnimationControllerPreview: View {
                     Text("Custom Bezier").tag(EasingFunction.customCubicBezier(x1: 0.42, y1: 0, x2: 0.58, y2: 1.0))
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: selectedEasing) { _ in
+                .onChange(of: selectedEasing) {
                     // Recreate animation with new easing
                     setupAnimation()
                 }

@@ -202,11 +202,13 @@ struct KeyframeEditorView: View {
         }
         .id(selectedElement?.id.uuidString ?? "no-element") // Force view refresh when selected element changes
         .onChange(of: selectedElement) { oldValue, newValue in
-            // When the selected element changes
             if let newElement = newValue {
-                // If it's a completely new element (different ID)
-                if oldValue == nil || newElement.id != oldValue?.id {
-                    // Reset selected property when element changes
+                // Element was selected or changed
+                print("KeyframeEditorView: Element changed to \(newElement.displayName)")
+                
+                if oldValue?.id != newElement.id {
+                    // Different element selected
+                    print("KeyframeEditorView: New element selected, setting up tracks")
                     selectedProperty = nil
                     selectedKeyframeTime = nil
                     
@@ -215,6 +217,11 @@ struct KeyframeEditorView: View {
                     
                     // Force refresh all properties with current element values
                     animationController.updateAnimatedProperties()
+                    
+                    // Select the first property by default
+                    if let firstProperty = properties.first {
+                        selectedProperty = firstProperty
+                    }
                 } 
                 // Even if it's the same element, update tracks if properties changed
                 else if let oldElement = oldValue {
@@ -224,11 +231,13 @@ struct KeyframeEditorView: View {
                        newElement.color != oldElement.color ||
                        newElement.opacity != oldElement.opacity ||
                        newElement.path != oldElement.path {
+                        print("KeyframeEditorView: Element properties changed, updating tracks")
                         setupTracksForSelectedElement(newElement)
                     }
                 }
             } else {
                 // Element was deselected
+                print("KeyframeEditorView: Element deselected")
                 selectedProperty = nil
                 selectedKeyframeTime = nil
             }
@@ -240,11 +249,14 @@ struct KeyframeEditorView: View {
         .onAppear {
             // Setup tracks for the initially selected element, if any
             if let element = selectedElement {
+                print("KeyframeEditorView onAppear with element: \(element.displayName)")
                 setupTracksForSelectedElement(element)
                 
                 // Force the animation controller to update with initial values
                 animationController.seekToTime(0)
                 animationController.updateAnimatedProperties()
+            } else {
+                print("KeyframeEditorView onAppear with no element selected")
             }
             
             // Setup keyboard shortcuts for timeline navigation

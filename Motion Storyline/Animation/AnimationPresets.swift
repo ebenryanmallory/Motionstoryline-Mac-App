@@ -236,7 +236,7 @@ public class AnimationPreset {
             ?? animationController.addTrack(id: positionTrackId) { (_: CGPoint) in }
         
         // Calculate bounce positions based on direction
-        var bounceOffsets: [CGFloat] = [0, intensity, -intensity * 0.6, intensity * 0.3, -intensity * 0.15, 0]
+        let bounceOffsets: [CGFloat] = [0, intensity, -intensity * 0.6, intensity * 0.3, -intensity * 0.15, 0]
         
         // Add position keyframes for bounce effect
         for (index, offset) in bounceOffsets.enumerated() {
