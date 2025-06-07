@@ -109,9 +109,7 @@ struct DesignCanvas: View {
     @State internal var canvasHeight: CGFloat = 720
     
     // State variables for path drawing
-    @State private var isDrawingPath: Bool = false
-    @State private var pathPoints: [CGPoint] = []
-    @State private var currentPathPoint: CGPoint? = nil
+
     
     // Media management
     @State private var showMediaBrowser = false
@@ -170,6 +168,9 @@ struct DesignCanvas: View {
     @State private var showOnboarding: Bool = false
     @State internal var isProgrammaticChange: Bool = false
     @StateObject internal var undoRedoManager = UndoRedoManager()
+    
+    // State to track if we're in the middle of closing to prevent auto-save loops
+    @State private var isClosing: Bool = false
     
     // MARK: - Main View
 
@@ -342,9 +343,8 @@ struct DesignCanvas: View {
             CanvasTopBar(
                 projectName: appState.selectedProject?.name ?? "Motion Storyline",
                 onClose: {
-                    // Close the canvas and return to project selection
-                    appState.selectedProject = nil
-                    appState.navigateToHome()
+                    // Check for unsaved changes before closing
+                    handleCloseWithUnsavedChanges()
                 },
                 onCameraRecord: {
                     showCameraView = true
@@ -373,13 +373,15 @@ struct DesignCanvas: View {
                 onCut: { print("Cut action") },
                 onCopy: { print("Copy action") },
                 onPaste: { print("Paste action") },
+                onUndo: performUndo,
+                onRedo: performRedo,
                 showGrid: Binding<Bool>(get: { self.showGrid }, set: { self.showGrid = $0 }),
                 showRulers: Binding<Bool>(get: { true }, set: { _ in }),  // Placeholder binding
                 onSave: {
-                    print("Save action triggered")
+                    handleSaveProject()
                 },
                 onSaveAs: {
-                    print("Save As action triggered")
+                    handleSaveProjectAs()
                 },
                 onOpenProject: openProject,
                 onZoomIn: zoomIn,
@@ -391,7 +393,7 @@ struct DesignCanvas: View {
                 canvasWidth: Int(canvasWidth),
                 canvasHeight: Int(canvasHeight)
             )
-            .environmentObject(UndoRedoManager())
+            .environmentObject(undoRedoManager)
             
             // Add a Divider to clearly separate the top bar from the toolbar
             Divider()
@@ -463,8 +465,6 @@ struct DesignCanvas: View {
                         NSCursor.arrow.set()
                     } else if selectedTool == .rectangle || selectedTool == .ellipse {
                         NSCursor.crosshair.set()
-                    } else if selectedTool == .path {
-                        NSCursor.crosshair.set()
                     }
                 }
             )
@@ -474,11 +474,38 @@ struct DesignCanvas: View {
                 zoomIn: zoomIn,
                 zoomOut: zoomOut,
                 resetZoom: resetZoom,
-                saveProject: { print("Save project action triggered") }
+                saveProject: { print("Save project action triggered") },
+                deleteSelectedElement: {
+                    if let elementId = selectedElementId {
+                        recordStateBeforeChange(actionName: "Delete Element")
+                        canvasElements.removeAll(where: { $0.id == elementId })
+                        selectedElementId = nil
+                        markDocumentAsChanged(actionName: "Delete Element")
+                    }
+                }
             )
             
             // Setup initial animations (if present)
             setupInitialAnimations()
+            
+            // Configure DocumentManager with current state
+            configureDocumentManager()
+            
+            // If this is a new project without a URL, prepare it for auto-saving
+            if documentManager.currentProjectURL == nil {
+                print("New project detected, preparing for auto-save...")
+                prepareNewProjectForAutoSave()
+            }
+            
+            // Register undo/redo actions with AppStateManager
+            appState.registerUndoRedoActions(
+                undo: performUndo,
+                redo: performRedo,
+                canUndoPublisher: undoRedoManager.$canUndo.eraseToAnyPublisher(),
+                canRedoPublisher: undoRedoManager.$canRedo.eraseToAnyPublisher(),
+                hasUnsavedChangesPublisher: documentManager.$hasUnsavedChanges.eraseToAnyPublisher(),
+                currentProjectURLPublisher: documentManager.$currentProjectURL.eraseToAnyPublisher()
+            )
         }
         .onChange(of: selectedElementId) { oldValue, newValue in
             // Update selectedElement based on the selected ID
@@ -489,21 +516,58 @@ struct DesignCanvas: View {
             }
         }
         .onChange(of: selectedElement) { oldValue, newValue in
+            // Skip if this is a programmatic change (e.g., during drag operations)
+            guard !isProgrammaticChange else { return }
+            
             // Update the corresponding element in canvasElements when selectedElement is modified
             print("Selected element changed: \(String(describing: newValue))")
             
+            // Only update if the element actually changed and avoid circular updates
             if let updatedElement = newValue,
                let index = canvasElements.firstIndex(where: { $0.id == updatedElement.id }) {
-                // Update the element in the canvas elements array
-                canvasElements[index] = updatedElement
                 
-                // Record undo state for property changes
-                recordUndoState(actionName: "Update Element Properties")
+                // Check if the element actually changed to avoid unnecessary updates
+                let currentElement = canvasElements[index]
+                let hasChanged = currentElement.position != updatedElement.position ||
+                                currentElement.size != updatedElement.size ||
+                                currentElement.rotation != updatedElement.rotation ||
+                                currentElement.opacity != updatedElement.opacity ||
+                                currentElement.color != updatedElement.color ||
+                                currentElement.text != updatedElement.text ||
+                                currentElement.textAlignment != updatedElement.textAlignment ||
+                                currentElement.displayName != updatedElement.displayName
+                
+                if hasChanged {
+                    // Record state before making changes
+                    recordStateBeforeChange(actionName: "Update Element Properties")
+                    
+                    // Update the element in the canvas elements array
+                    canvasElements[index] = updatedElement
+                    
+                    // Mark document as changed for property changes
+                    markDocumentAsChanged(actionName: "Update Element Properties")
+                }
             }
         }
         .onDisappear {
             // Teardown key monitor when view disappears
             keyMonitorController.teardownMonitor()
+            
+            // Clear undo/redo actions from AppStateManager
+            appState.clearUndoRedoActions()
+            
+            // Auto-save if there are unsaved changes and we're not in the middle of a close operation
+            if documentManager.hasUnsavedChanges && !isClosing {
+                print("Auto-saving project on view disappear...")
+                autoSaveProject()
+            }
+        }
+        .onChange(of: appState.scenePhase) { oldPhase, newPhase in
+            // Auto-save when app goes to background
+            if newPhase == .background && documentManager.hasUnsavedChanges {
+                print("App going to background, auto-saving project...")
+                autoSaveProject()
+            }
         }
         // Add the ExportModal sheet here
         .sheet(isPresented: $showingExportModal) {
@@ -534,6 +598,9 @@ struct DesignCanvas: View {
             MediaBrowserView(project: projectBinding, onAddElementToCanvas: { newElement in
                 canvasElements.append(newElement)
                 handleElementSelection(newElement)
+                markDocumentAsChanged(actionName: "Add Media Element")
+            }, onMediaAssetImported: {
+                markDocumentAsChanged(actionName: "Import Media Asset")
             })
                 .frame(width: 800, height: 600)
         }
@@ -576,12 +643,32 @@ struct DesignCanvas: View {
                     isSelected: element.id == selectedElementId,
                     onResize: { newSize in
                         if let index = canvasElements.firstIndex(where: { $0.id == element.id }) {
+                            recordStateBeforeChange(actionName: "Resize Element")
                             canvasElements[index].size = newSize
+                            
+                            // Update selectedElement if this is the selected element
+                            if element.id == selectedElementId {
+                                isProgrammaticChange = true
+                                selectedElement = canvasElements[index]
+                                isProgrammaticChange = false
+                            }
+                            
+                            markDocumentAsChanged(actionName: "Resize Element")
                         }
                     },
                     onRotate: { newRotation in
                         if let index = canvasElements.firstIndex(where: { $0.id == element.id }) {
+                            recordStateBeforeChange(actionName: "Rotate Element")
                             canvasElements[index].rotation = newRotation
+                            
+                            // Update selectedElement if this is the selected element
+                            if element.id == selectedElementId {
+                                isProgrammaticChange = true
+                                selectedElement = canvasElements[index]
+                                isProgrammaticChange = false
+                            }
+                            
+                            markDocumentAsChanged(actionName: "Rotate Element")
                         }
                     },
                     onTap: { tappedElement in
@@ -593,6 +680,9 @@ struct DesignCanvas: View {
                     isDragging: element.id == draggedElementId,
                     currentTime: animationController.currentTime
                 )
+                .contextMenu {
+                    elementContextMenu(for: element)
+                }
                 .gesture(
                     DragGesture()
                         .onChanged { value in
@@ -600,6 +690,7 @@ struct DesignCanvas: View {
                                 if draggedElementId != element.id {
                                     // First time this element is being dragged in this gesture
                                     draggedElementId = element.id
+                                    recordStateBeforeChange(actionName: "Move Element")
                                     
                                     // Store the initial position of the element
                                     if let index = canvasElements.firstIndex(where: { $0.id == element.id }) {
@@ -630,10 +721,23 @@ struct DesignCanvas: View {
                                     
                                     // Update the element's position
                                     canvasElements[index].position = newPosition
+                                    
+                                    // Also update selectedElement if this is the selected element
+                                    // Use isProgrammaticChange to prevent triggering onChange
+                                    if element.id == selectedElementId {
+                                        isProgrammaticChange = true
+                                        selectedElement = canvasElements[index]
+                                        isProgrammaticChange = false
+                                    }
                                 }
                             }
                         }
                         .onEnded { _ in
+                            // Mark document as changed after drag operation
+                            if draggedElementId != nil {
+                                markDocumentAsChanged(actionName: "Move Element")
+                            }
+                            
                             // Reset drag state
                             draggedElementId = nil
                             initialDragElementPosition = nil
@@ -657,21 +761,7 @@ struct DesignCanvas: View {
                         .frame(width: current.x - start.x, height: current.y - start.y)
                 }
                 
-                // Preview of path being drawn
-                if self.isDrawingPath && pathPoints.count > 1 {
-                    Path { path in
-                        path.move(to: pathPoints.first!)
-                        
-                        for point in pathPoints.dropFirst() {
-                            path.addLine(to: point)
-                        }
-                        
-                        if let currentPoint = currentPathPoint {
-                            path.addLine(to: currentPoint)
-                        }
-                    }
-                    .stroke(Color.purple, lineWidth: 2)
-                }
+
             }
             
             // Mouse tracking view for cursor management
@@ -745,16 +835,18 @@ struct DesignCanvas: View {
                     isEditingText = false
                 } else if selectedTool == .text {
                     // Handle text tool - create text at tap location
+                    recordStateBeforeChange(actionName: "Create Text")
+                    
                     // Create text at the exact click location
                     let newText = CanvasElement.text(at: location)
                     canvasElements.append(newText)
                     handleElementSelection(newText)
                     isEditingText = true
                     editingText = newText.text
+                    
+                    // Mark document as changed
+                    markDocumentAsChanged(actionName: "Create Text")
                 } else if selectedTool == .select {
-                    // Deselect the current element when clicking on empty canvas area
-                    selectedElementId = nil
-                } else if selectedTool == .path {
                     // Deselect the current element when clicking on empty canvas area
                     selectedElementId = nil
                 }
@@ -776,9 +868,6 @@ struct DesignCanvas: View {
                     } else if selectedTool == .rectangle || selectedTool == .ellipse {
                         // Change cursor to crosshair when in shape drawing mode
                         NSCursor.crosshair.set()
-                    } else if selectedTool == .path {
-                        // Change cursor to pen when in path drawing mode
-                        NSCursor.crosshair.set()
                     }
                 }
             }
@@ -786,51 +875,6 @@ struct DesignCanvas: View {
     }
     
     // Canvas context menu content is now in DesignCanvas+ContextMenus.swift
-    
-    // Grid settings submenu
-    private var gridSettingsMenuOriginal: some View {
-        Menu("Grid Settings") {
-            Toggle(isOn: $showGrid) {
-                Label("Show Grid", systemImage: "grid")
-            }
-            
-            Toggle(isOn: $snapToGridEnabled) {
-                Label("Snap to Grid", systemImage: "arrow.up.and.down.and.arrow.left.and.right")
-            }
-            
-            Menu("Grid Size") {
-                Button(action: {
-                    gridSize = 10
-                }) {
-                    Label("Small (10px)", systemImage: gridSize == 10 ? "checkmark" : "")
-                }
-                
-                Button(action: {
-                    gridSize = 20
-                }) {
-                    Label("Medium (20px)", systemImage: gridSize == 20 ? "checkmark" : "")
-                }
-                
-                Button(action: {
-                    gridSize = 40
-                }) {
-                    Label("Large (40px)", systemImage: gridSize == 40 ? "checkmark" : "")
-                }
-            }
-            
-            Divider()
-            
-            Text("Keyboard Shortcuts:")
-                .foregroundColor(.secondary)
-                .font(.caption)
-            Text("⌘G: Toggle Grid")
-                .foregroundColor(.secondary)
-                .font(.caption)
-            Text("⇧⌘G: Toggle Snap to Grid")
-                .foregroundColor(.secondary)
-                .font(.caption)
-        }
-    }
     
     // Canvas drawing gesture
     private var canvasDrawingGesture: some Gesture {
@@ -862,6 +906,8 @@ struct DesignCanvas: View {
                         
                         // Only create rectangle if it has a meaningful size
                         if rect.width > 5 && rect.height > 5 {
+                            recordStateBeforeChange(actionName: "Create Rectangle")
+                            
                             // Create rectangle at the calculated position and size
                             let centerPosition = CGPoint(x: rect.midX, y: rect.midY)
                             let newRectangle = CanvasElement.rectangle(
@@ -874,6 +920,9 @@ struct DesignCanvas: View {
                             
                             // Select the new rectangle
                             handleElementSelection(newRectangle)
+                            
+                            // Mark document as changed
+                            markDocumentAsChanged(actionName: "Create Rectangle")
                         }
                     }
                     
@@ -917,6 +966,8 @@ struct DesignCanvas: View {
                         
                         // Only create ellipse if it has a meaningful size
                         if rect.width > 5 && rect.height > 5 {
+                            recordStateBeforeChange(actionName: "Create Ellipse")
+                            
                             // Create ellipse at the calculated position and size
                             let centerPosition = CGPoint(x: rect.midX, y: rect.midY)
                             let newEllipse = CanvasElement.ellipse(
@@ -929,6 +980,9 @@ struct DesignCanvas: View {
                             
                             // Select the new ellipse
                             handleElementSelection(newEllipse)
+                            
+                            // Mark document as changed
+                            markDocumentAsChanged(actionName: "Create Ellipse")
                         }
                     }
                     
@@ -942,42 +996,6 @@ struct DesignCanvas: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                         aspectRatioInfoVisible = false
                     }
-                }
-            )
-        } else if selectedTool == .path {
-            return AnyGesture(
-                DragGesture(minimumDistance: 2)
-                .onChanged { value in
-                    // Start path drawing if not already started
-                    if !isDrawingPath {
-                        isDrawingPath = true
-                        pathPoints = [value.startLocation]
-                    }
-                    
-                    // Add current point to path
-                    pathPoints.append(value.location)
-                    currentPathPoint = value.location
-                }
-                .onEnded { value in
-                    // Finalize path
-                    if isDrawingPath && pathPoints.count > 1 {
-                        // Create path element
-                        let path = CanvasElement.path(
-                            at: pathPoints.first ?? CGPoint.zero,
-                            points: pathPoints
-                        )
-                        
-                        // Add the path to the canvas
-                        canvasElements.append(path)
-                        
-                        // Select the new path
-                        handleElementSelection(path)
-                    }
-                    
-                    // Reset path drawing state
-                    isDrawingPath = false
-                    pathPoints = []
-                    currentPathPoint = nil
                 }
             )
         } else {
@@ -1020,6 +1038,12 @@ struct DesignCanvas: View {
         self.canvasWidth = projectData.canvasWidth
         self.canvasHeight = projectData.canvasHeight
         
+        // Update the current project with loaded media assets
+        if self.appState.selectedProject != nil {
+            self.appState.selectedProject?.mediaAssets = projectData.mediaAssets
+            print("Loaded \(projectData.mediaAssets.count) media assets into project")
+        }
+        
         // Rebuild AnimationController state
         self.animationController.reset()
         self.animationController.setup(duration: projectData.duration)
@@ -1056,9 +1080,10 @@ struct DesignCanvas: View {
         documentManager.configure(
             canvasElements: self.canvasElements,
             animationController: self.animationController,
-            canvasSize: CGSize(width: self.canvasWidth, height: self.canvasHeight)
+            canvasSize: CGSize(width: self.canvasWidth, height: self.canvasHeight),
+            currentProject: appState.selectedProject
         )
-        print("DocumentManager configured with current canvas state. URL: \(documentManager.currentProjectURL?.path ?? "None")")
+        print("DocumentManager configured with \(canvasElements.count) elements, hasUnsavedChanges: \(documentManager.hasUnsavedChanges)")
     }
     
     internal func recordUndoState(actionName: String) {
@@ -1072,6 +1097,96 @@ struct DesignCanvas: View {
         if let stateData = try? JSONEncoder().encode(currentState) {
             undoRedoManager.addUndoState(stateBeforeOperation: stateData)
         }
+    }
+    
+    // MARK: - Document State Management
+    
+    /// Records the current state before a change and marks the document as changed
+    /// This should be called before any user action that modifies the canvas
+    internal func recordStateBeforeChange(actionName: String) {
+        // Skip if this is a programmatic change (e.g., during project loading)
+        guard !isProgrammaticChange else { return }
+        
+        // Record the current state for undo/redo BEFORE the change
+        recordUndoState(actionName: actionName)
+        
+        print("State recorded before change: \(actionName)")
+    }
+    
+    /// Marks the document as changed after a modification
+    /// This should be called after any user action that modifies the canvas
+    internal func markDocumentAsChanged(actionName: String) {
+        // Skip if this is a programmatic change (e.g., during project loading)
+        guard !isProgrammaticChange else { return }
+        
+        // Mark the document as having unsaved changes
+        documentManager.hasUnsavedChanges = true
+        
+        // Update the document manager with the current state
+        // Use a small delay to ensure all state updates are complete
+        DispatchQueue.main.async {
+            self.configureDocumentManager()
+        }
+        
+        print("Document marked as changed: \(actionName)")
+    }
+    
+    // MARK: - Undo/Redo Operations
+    
+    /// Performs undo operation by restoring the previous state
+    internal func performUndo() {
+        // Get current state for potential redo
+        guard let currentState = documentManager.getCurrentProjectStateData() else {
+            print("Cannot get current state for undo operation")
+            return
+        }
+        
+        // Perform undo and get the state to restore
+        guard let stateToRestore = undoRedoManager.undo(currentStateForRedo: currentState) else {
+            print("No undo state available")
+            return
+        }
+        
+        // Decode and apply the restored state
+        guard let projectData = documentManager.decodeProjectState(from: stateToRestore) else {
+            print("Failed to decode undo state")
+            return
+        }
+        
+        // Apply the restored state
+        isProgrammaticChange = true
+        applyProjectData(projectData: projectData)
+        isProgrammaticChange = false
+        
+        print("Undo operation completed")
+    }
+    
+    /// Performs redo operation by restoring the next state
+    internal func performRedo() {
+        // Get current state for potential undo
+        guard let currentState = documentManager.getCurrentProjectStateData() else {
+            print("Cannot get current state for redo operation")
+            return
+        }
+        
+        // Perform redo and get the state to restore
+        guard let stateToRestore = undoRedoManager.redo(currentStateForUndo: currentState) else {
+            print("No redo state available")
+            return
+        }
+        
+        // Decode and apply the restored state
+        guard let projectData = documentManager.decodeProjectState(from: stateToRestore) else {
+            print("Failed to decode redo state")
+            return
+        }
+        
+        // Apply the restored state
+        isProgrammaticChange = true
+        applyProjectData(projectData: projectData)
+        isProgrammaticChange = false
+        
+        print("Redo operation completed")
     }
     
     // MARK: - Element Selection
@@ -1180,19 +1295,7 @@ struct DesignCanvas: View {
             track.add(keyframe: Keyframe(time: 0.0, value: element.opacity))
         }
         
-        // Path track - only for path elements
-        if element.type == .path {
-            let pathTrackId = "\(idPrefix)_path"
-            if canvas.animationController.getTrack(id: pathTrackId) as? KeyframeTrack<[CGPoint]> == nil {
-                let track = canvas.animationController.addTrack(id: pathTrackId) { [canvas] (newPath: [CGPoint]) in
-                    if let index = canvas.canvasElements.firstIndex(where: { $0.id == element.id }) {
-                        canvas.canvasElements[index].path = newPath
-                    }
-                }
-                // Add initial keyframe at time 0
-                track.add(keyframe: Keyframe(time: 0.0, value: element.path))
-            }
-        }
+
     }
 }
 
@@ -1219,3 +1322,160 @@ extension DesignCanvas {
 
 // MARK: - Export Helpers
 // Export helpers are implemented in DesignCanvas+ExportHelpers.swift
+
+// MARK: - Document Management Methods
+extension DesignCanvas {
+    
+    /// Handles closing the canvas with unsaved changes
+    private func handleCloseWithUnsavedChanges() {
+        if documentManager.hasUnsavedChanges {
+            // Set closing flag to prevent auto-save loops
+            isClosing = true
+            
+            // Auto-save the project before closing
+            print("Auto-saving project before closing...")
+            autoSaveProject()
+            
+            // Small delay to ensure save completes
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.performClose()
+            }
+        } else {
+            // No unsaved changes, close immediately
+            performClose()
+        }
+    }
+    
+    /// Performs the actual close operation
+    private func performClose() {
+        print("Closing canvas and returning to home")
+        appState.selectedProject = nil
+        appState.navigateToHome()
+        isClosing = false // Reset the flag
+    }
+    
+    /// Auto-saves the project without showing dialogs
+    private func autoSaveProject() {
+        // Configure the document manager with current state
+        configureDocumentManager()
+        
+        // If we have a current project URL, save to it
+        if documentManager.currentProjectURL != nil {
+            let success = documentManager.saveProject()
+            if success {
+                print("Project auto-saved successfully")
+            } else {
+                print("Failed to auto-save project")
+            }
+        } else {
+            // No existing URL, create a default save location
+            createDefaultProjectSave()
+        }
+    }
+    
+    /// Creates a default save location for new projects
+    private func createDefaultProjectSave() {
+        let fileManager = FileManager.default
+        
+        // Get the Documents directory
+        guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            print("Could not access Documents directory for auto-save")
+            return
+        }
+        
+        // Create Motion Storyline Projects folder if it doesn't exist
+        let projectsFolder = documentsURL.appendingPathComponent("Motion Storyline Projects")
+        if !fileManager.fileExists(atPath: projectsFolder.path) {
+            do {
+                try fileManager.createDirectory(at: projectsFolder, withIntermediateDirectories: true)
+            } catch {
+                print("Failed to create projects folder: \(error.localizedDescription)")
+                return
+            }
+        }
+        
+        // Generate a filename based on the project name or a default
+        let projectName = appState.selectedProject?.name ?? "Untitled Project"
+        let sanitizedName = projectName.replacingOccurrences(of: "[^a-zA-Z0-9 ]", with: "", options: .regularExpression)
+        let baseFilename = sanitizedName.isEmpty ? "Untitled Project" : sanitizedName
+        
+        // Check if a file with this name already exists and add a number if needed
+        var filename = "\(baseFilename).storyline"
+        var counter = 1
+        var saveURL = projectsFolder.appendingPathComponent(filename)
+        
+        while fileManager.fileExists(atPath: saveURL.path) {
+            filename = "\(baseFilename) \(counter).storyline"
+            saveURL = projectsFolder.appendingPathComponent(filename)
+            counter += 1
+        }
+        
+        // Set the URL for future saves
+        documentManager.currentProjectURL = saveURL
+        appState.currentProjectName = saveURL.deletingPathExtension().lastPathComponent
+        
+        // Now actually save the project
+        let success = documentManager.saveProject()
+        
+        if success {
+            print("Project auto-saved to: \(saveURL.path)")
+        } else {
+            print("Failed to auto-save project to: \(saveURL.path)")
+        }
+    }
+    
+
+    
+    /// Shows an error alert when save fails
+    private func showSaveErrorAlert() {
+        let alert = NSAlert()
+        alert.messageText = "Save Failed"
+        alert.informativeText = "Could not save the project. Please try again or choose a different location."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+    
+    /// Prepares a new project for auto-save by setting up a default file URL
+    private func prepareNewProjectForAutoSave() {
+        let fileManager = FileManager.default
+        
+        // Get the Documents directory
+        guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            print("Could not access Documents directory for auto-save")
+            return
+        }
+        
+        // Create Motion Storyline Projects folder if it doesn't exist
+        let projectsFolder = documentsURL.appendingPathComponent("Motion Storyline Projects")
+        if !fileManager.fileExists(atPath: projectsFolder.path) {
+            do {
+                try fileManager.createDirectory(at: projectsFolder, withIntermediateDirectories: true)
+            } catch {
+                print("Failed to create projects folder: \(error.localizedDescription)")
+                return
+            }
+        }
+        
+        // Generate a filename based on the project name or a default
+        let projectName = appState.selectedProject?.name ?? "Untitled Project"
+        let sanitizedName = projectName.replacingOccurrences(of: "[^a-zA-Z0-9 ]", with: "", options: .regularExpression)
+        let baseFilename = sanitizedName.isEmpty ? "Untitled Project" : sanitizedName
+        
+        // Check if a file with this name already exists and add a number if needed
+        var filename = "\(baseFilename).storyline"
+        var counter = 1
+        var saveURL = projectsFolder.appendingPathComponent(filename)
+        
+        while fileManager.fileExists(atPath: saveURL.path) {
+            filename = "\(baseFilename) \(counter).storyline"
+            saveURL = projectsFolder.appendingPathComponent(filename)
+            counter += 1
+        }
+        
+        // Set the URL for future saves
+        documentManager.currentProjectURL = saveURL
+        appState.currentProjectName = saveURL.deletingPathExtension().lastPathComponent
+        
+        print("Prepared new project for auto-save at: \(saveURL.path)")
+    }
+}

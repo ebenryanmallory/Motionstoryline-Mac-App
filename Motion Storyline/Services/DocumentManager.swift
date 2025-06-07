@@ -30,25 +30,20 @@ class DocumentManager: ObservableObject {
     private var canvasElements: [CanvasElement] = []
     private var animationController: AnimationController?
     private var canvasSize: CGSize = CGSize(width: 1280, height: 720)
+    private var currentProject: Project?
     
     /// Set up the document manager with the current canvas state. This is typically called when DesignCanvas state changes.
     func configure(canvasElements: [CanvasElement], 
                   animationController: AnimationController,
-                  canvasSize: CGSize) {
-        // Consider if a deep comparison is needed to truly determine if changes occurred.
-        // For now, any configuration implies potential changes.
-        // If the project is new (no URL) and empty, it might not have unsaved changes initially.
-        // However, if configure is called due to user action, it's safer to assume changes.
-        if self.currentProjectURL != nil || !canvasElements.isEmpty { // Basic check to avoid marking a new, empty project as changed immediately
-            // More sophisticated change detection could be implemented here if needed
-            // by comparing new values with existing ones before assigning.
-            // For now, we assume that if configure is called, it's likely due to a change.
-            // self.hasUnsavedChanges = true // This will be set by the caller (e.g., DesignCanvas) more accurately
-        }
-
+                  canvasSize: CGSize,
+                  currentProject: Project? = nil) {
+        print("DocumentManager.configure called with \(canvasElements.count) elements")
+        
         self.canvasElements = canvasElements
         self.animationController = animationController
         self.canvasSize = canvasSize
+        self.currentProject = currentProject
+        print("DocumentManager configured with \(canvasElements.count) elements and project: \(currentProject?.name ?? "None")")
     }
     
     /// Export the timeline to a video or image sequence
@@ -219,7 +214,7 @@ class DocumentManager: ObservableObject {
     
     /// Load a saved project from a file URL.
     /// Updates `currentProjectURL` and resets `hasUnsavedChanges` on success.
-    func loadProject(from url: URL) throws -> (elements: [CanvasElement], tracksData: [TrackData], duration: Double, canvasWidth: CGFloat, canvasHeight: CGFloat, projectName: String)? {
+    func loadProject(from url: URL) throws -> (elements: [CanvasElement], tracksData: [TrackData], duration: Double, canvasWidth: CGFloat, canvasHeight: CGFloat, mediaAssets: [MediaAsset], projectName: String)? {
         // Note: The NSOpenPanel logic is now handled by the caller (e.g., DesignCanvas)
         
         do {
@@ -248,7 +243,7 @@ class DocumentManager: ObservableObject {
             // self.animationController = ... // Rebuilding AnimationController is complex here, better done in DesignCanvas
 
             print("Project successfully loaded from \(url.path)")
-            return (projectData.elements, projectData.tracks, projectData.duration, projectData.canvasWidth, projectData.canvasHeight, projectName)
+            return (projectData.elements, projectData.tracks, projectData.duration, projectData.canvasWidth, projectData.canvasHeight, projectData.mediaAssets, projectName)
         } catch {
             print("Error loading project: \(error.localizedDescription)")
             // Propagate the error so the caller can handle it
@@ -454,7 +449,8 @@ class DocumentManager: ObservableObject {
             tracks: tracks,
             duration: animationController.duration,
             canvasWidth: self.canvasSize.width,
-            canvasHeight: self.canvasSize.height
+            canvasHeight: self.canvasSize.height,
+            mediaAssets: currentProject?.mediaAssets ?? []
         )
         
         // Verification check
@@ -513,6 +509,7 @@ struct ProjectData: Codable {
     var duration: Double
     var canvasWidth: CGFloat
     var canvasHeight: CGFloat
+    var mediaAssets: [MediaAsset] = [] // Add media assets to project data
 }
 
 /// Data structure for animation tracks

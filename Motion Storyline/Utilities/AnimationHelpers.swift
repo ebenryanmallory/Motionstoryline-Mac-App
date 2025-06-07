@@ -68,14 +68,7 @@ struct AnimationHelpers {
                 elementsAtTime[i].color = colorValue
             }
 
-            // Animate path (if applicable)
-            if element.type == .path {
-                let pathTrackId = "\(elementId)_path"
-                if let track = animationController.getTrack(id: pathTrackId) as? KeyframeTrack<[CGPoint]>,
-                   let pathValue = track.getValue(at: time) {
-                    elementsAtTime[i].path = pathValue
-                }
-            }
+
         }
         return elementsAtTime
     }

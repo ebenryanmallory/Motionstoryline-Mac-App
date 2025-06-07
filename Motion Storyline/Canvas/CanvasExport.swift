@@ -279,42 +279,7 @@ class CanvasExportRenderer {
                             
                             // Restore graphics state
                             context.restoreGState()
-                        case .path:
-                            // Save graphics state
-                            context.saveGState()
-                            
-                            // Set stroke color and width
-                            let pathColor = convertToCGColor(element.color)
-                            context.setStrokeColor(pathColor)
-                            context.setAlpha(element.opacity)
-                            context.setLineWidth(2.0)
-                            
-                            // Draw the path if points are available
-                            if element.path.count > 1 {
-                                context.beginPath()
-                                
-                                // Scale points to the element rect
-                                let scaledPoints = element.path.map { point in
-                                    CGPoint(
-                                        x: rect.origin.x + point.x * rect.width,
-                                        y: rect.origin.y + point.y * rect.height
-                                    )
-                                }
-                                
-                                // Start at the first point
-                                context.move(to: scaledPoints[0])
-                                
-                                // Add lines to remaining points
-                                for point in scaledPoints.dropFirst() {
-                                    context.addLine(to: point)
-                                }
-                                
-                                // Stroke the path
-                                context.strokePath()
-                            }
-                            
-                            // Restore graphics state
-                            context.restoreGState()
+
                         case .text:
                             // Implement proper text rendering using Core Text
                             let attributedString = NSAttributedString(

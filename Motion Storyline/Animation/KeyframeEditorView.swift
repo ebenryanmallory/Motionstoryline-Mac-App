@@ -230,7 +230,7 @@ struct KeyframeEditorView: View {
                        newElement.rotation != oldElement.rotation ||
                        newElement.color != oldElement.color ||
                        newElement.opacity != oldElement.opacity ||
-                       newElement.path != oldElement.path {
+                       false {
                         print("KeyframeEditorView: Element properties changed, updating tracks")
                         setupTracksForSelectedElement(newElement)
                     }
@@ -401,25 +401,7 @@ struct KeyframeEditorView: View {
             }
         }
         
-        // Path track - only for path elements
-        if element.type == .path {
-            let pathTrackId = "\(idPrefix)_path"
-            if animationController.getTrack(id: pathTrackId) as? KeyframeTrack<[CGPoint]> == nil {
-                let track = animationController.addTrack(id: pathTrackId) { (newPath: [CGPoint]) in
-                    // Update the element's path when the animation plays
-                    guard var updatedElement = self.selectedElement, updatedElement.id == element.id else { return }
-                    updatedElement.path = newPath
-                    self.selectedElement = updatedElement
-                }
-                // Add initial keyframe at time 0
-                track.add(keyframe: Keyframe(time: 0.0, value: element.path))
-            } else if let track = animationController.getTrack(id: pathTrackId) as? KeyframeTrack<[CGPoint]> {
-                // Ensure the initial keyframe exists and is correct
-                if !track.allKeyframes.contains(where: { $0.time == 0.0 }) {
-                    track.add(keyframe: Keyframe(time: 0.0, value: element.path))
-                }
-            }
-        }
+
     }
     
     /// Get the number of keyframes for a property

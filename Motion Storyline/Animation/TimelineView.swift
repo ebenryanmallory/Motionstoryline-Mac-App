@@ -186,10 +186,7 @@ struct KeyframeTimelineView: View {
             if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<Double> {
                 return track.allKeyframes.map { $0.time }
             }
-        case .path:
-            if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<[CGPoint]> {
-                return track.allKeyframes.map { $0.time }
-            }
+
         default:
             break
         }
@@ -387,6 +384,15 @@ struct TimelineView: View {
     // State for handling timeline height
     @State private var timelineHeight: CGFloat = 120
     
+    // Dynamic constraints based on available space
+    @State private var availableHeight: CGFloat = 0
+    @State private var dynamicMaxHeight: CGFloat = 400
+    
+    // Height calculation constants
+    private let resizeHandleHeight: CGFloat = 14 // 12 + 2 for padding
+    private let rulerHeight: CGFloat = 30
+    private let safetyMargin: CGFloat = 80 // Minimum space to keep above timeline
+
     // Computed property for keyframe times to pass to TimelineRuler
     private var keyframeTimes: [Double] {
         var times: Set<Double> = []
@@ -413,10 +419,7 @@ struct TimelineView: View {
             if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<Color> {
                 times.formUnion(track.allKeyframes.map { $0.time })
             }
-        case .path:
-            if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<[CGPoint]> {
-                times.formUnion(track.allKeyframes.map { $0.time })
-            }
+
         default:
             break
         }
@@ -435,11 +438,11 @@ struct TimelineView: View {
             // Background line/divider
             Divider()
             
-            // Visual handle indicator
+            // Visual handle indicator with dynamic styling based on constraints
             HStack(spacing: 2) {
                 ForEach(0..<3) { _ in
                     RoundedRectangle(cornerRadius: 1)
-                        .fill(Color(NSColor.separatorColor))
+                        .fill(handleColor)
                         .frame(width: 20, height: 3)
                 }
             }
@@ -454,8 +457,11 @@ struct TimelineView: View {
                             // Calculate new height based on drag
                             let proposedHeight = timelineHeight - value.translation.height
                             
-                            // Enforce constraints (min: 70, max: 400)
-                            timelineHeight = min(400, max(70, proposedHeight))
+                            // Use dynamic max height that considers available space
+                            let effectiveMaxHeight = min(400, dynamicMaxHeight)
+                            
+                            // Enforce constraints with dynamic maximum (min: 70, max: dynamic)
+                            timelineHeight = min(effectiveMaxHeight, max(70, proposedHeight))
                         }
                 )
                 .onHover { isHovering in
@@ -471,101 +477,158 @@ struct TimelineView: View {
         .padding(.vertical, 1)
     }
     
+    /// Color for the resize handle that indicates constraint status
+    private var handleColor: Color {
+        let effectiveMaxHeight = min(400, dynamicMaxHeight)
+        
+        // If we're at or near the maximum height, use a warning color
+        if timelineHeight >= effectiveMaxHeight - 5 {
+            return Color.orange
+        }
+        // If we're at the minimum height, use a different indicator
+        else if timelineHeight <= 75 {
+            return Color.blue
+        }
+        // Normal state
+        else {
+            return Color(NSColor.separatorColor)
+        }
+    }
+    
     var body: some View {
-        VStack(spacing: 4) {
-            // Add resize handle at the top of the timeline
-            resizeHandle
-            
-            // Timeline ruler
-            TimelineRuler(
-                duration: animationController.duration,
-                currentTime: $animationController.currentTime,
-                scale: timelineScale,
-                offset: $timelineOffset,
-                keyframeTimes: keyframeTimes,  // Pass keyframe times for snapping
-                audioMarkerTimes: audioMarkerTimes  // Pass audio marker times
-            )
-            .frame(height: 30)
-            
-            // Keyframe timeline
-            KeyframeTimelineView(
-                animationController: animationController,
-                propertyId: propertyId,
-                propertyType: propertyType,
-                currentTime: $animationController.currentTime,
-                selectedKeyframeTime: $selectedKeyframeTime,
-                newKeyframeTime: $newKeyframeTime,
-                isAddingKeyframe: $isAddingKeyframe,
-                scale: timelineScale,
-                offset: $timelineOffset,
-                onAddKeyframe: onAddKeyframe
-            )
-            .frame(height: timelineHeight - 70) // Adjust dynamically based on available space
-            
-            // Decide which audio visualization to show based on available data
-            if !mediaAssets.filter({ $0.type == .audio }).isEmpty && showMultiTrackAudio {
-                // Show multi-track audio timeline
-                Divider()
+        GeometryReader { geometry in
+            VStack(spacing: 4) {
+                // Add resize handle at the top of the timeline
+                resizeHandle
                 
-                MultiTrackAudioTimelineView(
-                    animationController: animationController,
+                // Timeline ruler
+                TimelineRuler(
+                    duration: animationController.duration,
                     currentTime: $animationController.currentTime,
-                    isPlaying: $isPlaying,
                     scale: timelineScale,
                     offset: $timelineOffset,
-                    audioAssets: mediaAssets,
-                    markerManager: audioMarkerManager
+                    keyframeTimes: keyframeTimes,  // Pass keyframe times for snapping
+                    audioMarkerTimes: audioMarkerTimes  // Pass audio marker times
                 )
-                .frame(minHeight: 200, maxHeight: 400)
-                .onAppear {
-                    // Initialize audio marker manager if needed
-                    if audioMarkerManager == nil {
-                        audioMarkerManager = AudioMarkerManager(animationController: animationController)
-                    }
-                }
-            } else if let audioURL = audioURL, showAudioWaveform {
-                // Legacy single-track audio timeline (for backward compatibility)
-                Divider()
+                .frame(height: 30)
                 
-                VStack(spacing: 0) {
-                    if showAudioMarkerTooltip {
-                        Text("Click the pin icon to add markers for audio beats, then use the key icon to create keyframes at those markers")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .padding(6)
-                            .background(Color(NSColor.controlBackgroundColor))
-                            .cornerRadius(4)
-                            .onAppear {
-                                // Auto-dismiss after 6 seconds
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
-                                    showAudioMarkerTooltip = false
-                                }
-                            }
-                    }
+                // Keyframe timeline
+                KeyframeTimelineView(
+                    animationController: animationController,
+                    propertyId: propertyId,
+                    propertyType: propertyType,
+                    currentTime: $animationController.currentTime,
+                    selectedKeyframeTime: $selectedKeyframeTime,
+                    newKeyframeTime: $newKeyframeTime,
+                    isAddingKeyframe: $isAddingKeyframe,
+                    scale: timelineScale,
+                    offset: $timelineOffset,
+                    onAddKeyframe: onAddKeyframe
+                )
+                .frame(height: timelineHeight - 70) // Adjust dynamically based on available space
+                
+                // Decide which audio visualization to show based on available data
+                if !mediaAssets.filter({ $0.type == .audio }).isEmpty && showMultiTrackAudio {
+                    // Show multi-track audio timeline
+                    Divider()
                     
-                    AudioTimelineView(
+                    MultiTrackAudioTimelineView(
                         animationController: animationController,
-                        audioURL: audioURL,
-                        audioTrackId: "audio_\(propertyId)",
                         currentTime: $animationController.currentTime,
+                        isPlaying: $isPlaying,
                         scale: timelineScale,
                         offset: $timelineOffset,
+                        audioAssets: mediaAssets,
                         markerManager: audioMarkerManager
                     )
-                    .frame(height: 100)
+                    .frame(minHeight: 200, maxHeight: 400)
                     .onAppear {
                         // Initialize audio marker manager if needed
                         if audioMarkerManager == nil {
                             audioMarkerManager = AudioMarkerManager(animationController: animationController)
                         }
+                    }
+                } else if let audioURL = audioURL, showAudioWaveform {
+                    // Legacy single-track audio timeline (for backward compatibility)
+                    Divider()
+                    
+                    VStack(spacing: 0) {
+                        if showAudioMarkerTooltip {
+                            Text("Click the pin icon to add markers for audio beats, then use the key icon to create keyframes at those markers")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(6)
+                                .background(Color(NSColor.controlBackgroundColor))
+                                .cornerRadius(4)
+                                .onAppear {
+                                    // Auto-dismiss after 6 seconds
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 6) {
+                                        showAudioMarkerTooltip = false
+                                    }
+                                }
+                        }
                         
-                        // Show the tooltip the first time audio is added
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                            showAudioMarkerTooltip = true
+                        AudioTimelineView(
+                            animationController: animationController,
+                            audioURL: audioURL,
+                            audioTrackId: "audio_\(propertyId)",
+                            currentTime: $animationController.currentTime,
+                            scale: timelineScale,
+                            offset: $timelineOffset,
+                            markerManager: audioMarkerManager
+                        )
+                        .frame(height: 100)
+                        .onAppear {
+                            // Initialize audio marker manager if needed
+                            if audioMarkerManager == nil {
+                                audioMarkerManager = AudioMarkerManager(animationController: animationController)
+                            }
+                            
+                            // Show the tooltip the first time audio is added
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                                showAudioMarkerTooltip = true
+                            }
                         }
                     }
                 }
             }
+            .onAppear {
+                // Set up synchronization with the animation controller's playback state
+                isPlaying = animationController.isPlaying
+                
+                // Calculate initial available space and dynamic constraints
+                updateDynamicConstraints(availableHeight: geometry.size.height)
+            }
+            .onChange(of: animationController.isPlaying) { oldValue, newIsPlaying in
+                // Keep our local isPlaying in sync with the controller
+                if isPlaying != newIsPlaying {
+                    isPlaying = newIsPlaying
+                }
+            }
+            .onChange(of: geometry.size.height) { oldValue, newHeight in
+                // Update dynamic constraints when available space changes
+                updateDynamicConstraints(availableHeight: newHeight)
+            }
+            .onChange(of: isPlaying) { oldValue, newValue in
+                if newValue {
+                    // Start animation playback
+                    animationController.play()
+                    // Update audio synchronization by seeking to current time
+                    let currentTime = animationController.currentTime
+                    animationController.seekToTime(currentTime)
+                } else {
+                    // Pause animation playback
+                    animationController.pause()
+                }
+            }
+            .onChange(of: animationController.currentTime) { oldValue, newTime in
+                // Ensure the animation time is synchronized with audio time
+                if !isPlaying && abs(newTime - animationController.currentTime) > 0.01 {
+                    animationController.seekToTime(newTime)
+                }
+            }
+            // Force the view to update when the property ID changes or when keyframes are added/removed
+            .id("\(propertyId)_\(keyframeTimes.count)")
         }
         // If we have audio assets, add a button to toggle multi-track audio view
         .toolbar {
@@ -595,36 +658,24 @@ struct TimelineView: View {
                 .help(isPlaying ? "Pause" : "Play")
             }
         }
-        .onAppear {
-            // Set up synchronization with the animation controller's playback state
-            isPlaying = animationController.isPlaying
+    }
+    
+    /// Updates the dynamic height constraints based on available space
+    private func updateDynamicConstraints(availableHeight: CGFloat) {
+        self.availableHeight = availableHeight
+        
+        // Calculate the maximum height that still leaves space for resize handles to be accessible
+        // We need to account for: resize handle + ruler + safety margin
+        let reservedSpace = resizeHandleHeight + rulerHeight + safetyMargin
+        let calculatedMaxHeight = max(70, availableHeight - reservedSpace)
+        
+        // Use the smaller of our absolute max (400) and the calculated max
+        dynamicMaxHeight = min(400, calculatedMaxHeight)
+        
+        // If current timeline height exceeds the new dynamic max, adjust it
+        if timelineHeight > dynamicMaxHeight {
+            timelineHeight = dynamicMaxHeight
         }
-        .onChange(of: animationController.isPlaying) { oldValue, newIsPlaying in
-            // Keep our local isPlaying in sync with the controller
-            if isPlaying != newIsPlaying {
-                isPlaying = newIsPlaying
-            }
-        }
-        .onChange(of: isPlaying) { oldValue, newValue in
-            if newValue {
-                // Start animation playback
-                animationController.play()
-                // Update audio synchronization by seeking to current time
-                let currentTime = animationController.currentTime
-                animationController.seekToTime(currentTime)
-            } else {
-                // Pause animation playback
-                animationController.pause()
-            }
-        }
-        .onChange(of: animationController.currentTime) { oldValue, newTime in
-            // Ensure the animation time is synchronized with audio time
-            if !isPlaying && abs(newTime - animationController.currentTime) > 0.01 {
-                animationController.seekToTime(newTime)
-            }
-        }
-        // Force the view to update when the property ID changes or when keyframes are added/removed
-        .id("\(propertyId)_\(keyframeTimes.count)")
     }
 }
 

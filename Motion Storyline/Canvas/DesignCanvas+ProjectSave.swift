@@ -23,7 +23,8 @@ extension DesignCanvas {
             documentManager.configure(
                 canvasElements: self.canvasElements,
                 animationController: self.animationController,
-                canvasSize: CGSize(width: self.canvasWidth, height: self.canvasHeight)
+                canvasSize: CGSize(width: self.canvasWidth, height: self.canvasHeight),
+                currentProject: appState.selectedProject
             )
             
             // Save to the selected URL

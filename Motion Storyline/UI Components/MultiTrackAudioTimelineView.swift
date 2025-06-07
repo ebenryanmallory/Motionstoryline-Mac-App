@@ -307,10 +307,8 @@ public struct MultiTrackAudioTimelineView: View {
                 if animationController.getTrack(id: trackId) as? KeyframeTrack<Color> != nil {
                     return trackId
                 }
-            case .path:
-                if animationController.getTrack(id: trackId) as? KeyframeTrack<[CGPoint]> != nil {
-                    return trackId
-                }
+
+
             default:
                 // Handle any future property types that might be added
                 continue

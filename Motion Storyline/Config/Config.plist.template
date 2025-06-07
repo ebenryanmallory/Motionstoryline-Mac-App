@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>ClerkPublishableKey</key>
+    <string>YOUR_CLERK_PUBLISHABLE_KEY_HERE</string>
+    <key>Environment</key>
+    <string>development</string>
+    <key>APIBaseURL</key>
+    <string>https://api.clerk.dev</string>
+</dict>
+</plist> 

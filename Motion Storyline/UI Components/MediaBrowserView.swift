@@ -15,6 +15,7 @@ public struct MediaBrowserView: View {
     @State private var isPreviewPlaying = false
     var onAddElementToCanvas: ((CanvasElement) -> Void)?
     var onAddAudioToTimeline: ((AudioLayer) -> Void)?
+    var onMediaAssetImported: (() -> Void)? // Callback for when media assets are imported
     var currentTimelineTime: TimeInterval = 0.0 // Current frame time for audio start position
     
     enum SortOrder: String, CaseIterable, Identifiable {
@@ -26,10 +27,11 @@ public struct MediaBrowserView: View {
         var id: String { self.rawValue }
     }
     
-    public init(project: Binding<Project>, onAddElementToCanvas: ((CanvasElement) -> Void)? = nil, onAddAudioToTimeline: ((AudioLayer) -> Void)? = nil, currentTimelineTime: TimeInterval = 0.0) {
+    public init(project: Binding<Project>, onAddElementToCanvas: ((CanvasElement) -> Void)? = nil, onAddAudioToTimeline: ((AudioLayer) -> Void)? = nil, onMediaAssetImported: (() -> Void)? = nil, currentTimelineTime: TimeInterval = 0.0) {
         self._project = project
         self.onAddElementToCanvas = onAddElementToCanvas
         self.onAddAudioToTimeline = onAddAudioToTimeline
+        self.onMediaAssetImported = onMediaAssetImported
         self.currentTimelineTime = currentTimelineTime
     }
     
@@ -443,6 +445,9 @@ public struct MediaBrowserView: View {
     private func addAssetToProject(_ asset: MediaAsset) {
         // Add the asset to the project
         project.addMediaAsset(asset)
+        
+        // Notify that a media asset was imported
+        onMediaAssetImported?()
     }
     
     private func deleteAsset(_ asset: MediaAsset) {

@@ -18,9 +18,9 @@ extension DesignCanvas {
             if let url = panel.url {
                 print("Attempting to open project file: \(url.path)")
                 do {
-                    // The tuple from loadProject is (elements: [CanvasElement], tracksData: [TrackData], duration: Double, canvasWidth: CGFloat, canvasHeight: CGFloat, projectName: String)
+                    // The tuple from loadProject is (elements: [CanvasElement], tracksData: [TrackData], duration: Double, canvasWidth: CGFloat, canvasHeight: CGFloat, mediaAssets: [MediaAsset], projectName: String)
                     // We need to map this to the ProjectData struct that applyProjectData expects.
-                    // DocumentManager.ProjectData is: { elements, tracks, duration, canvasWidth, canvasHeight, ... }
+                    // DocumentManager.ProjectData is: { elements, tracks, duration, canvasWidth, canvasHeight, mediaAssets, ... }
                     if let loadedTuple = try documentManager.loadProject(from: url) {
                         // Construct ProjectData from the tuple
                         let projectDataInstance = ProjectData(
@@ -28,8 +28,8 @@ extension DesignCanvas {
                             tracks: loadedTuple.tracksData,
                             duration: loadedTuple.duration,
                             canvasWidth: loadedTuple.canvasWidth,
-                            canvasHeight: loadedTuple.canvasHeight
-                            // Removed version, metadata, colorProfiles, gridSettings as they are not in ProjectData init per build error
+                            canvasHeight: loadedTuple.canvasHeight,
+                            mediaAssets: loadedTuple.mediaAssets
                         )
                         // If ProjectData struct is later updated to include version, metadata, colorProfiles, gridSettings as properties,
                         // they can be set here on projectDataInstance, e.g.:
@@ -78,6 +78,11 @@ extension DesignCanvas {
         self.canvasElements = projectData.elements
         self.canvasWidth = projectData.canvasWidth
         self.canvasHeight = projectData.canvasHeight
+        
+        // Update the current project with loaded media assets
+        if self.appState.selectedProject != nil {
+            self.appState.selectedProject?.mediaAssets = projectData.mediaAssets
+        }
         
         // Rebuild AnimationController state
         self.animationController.reset()

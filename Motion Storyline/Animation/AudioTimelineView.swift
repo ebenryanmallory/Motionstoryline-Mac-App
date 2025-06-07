@@ -309,7 +309,7 @@ struct KeyframeGenerationOptions: View {
                     Text("Color").tag(AnimatableProperty.PropertyType.color)
                     Text("Opacity").tag(AnimatableProperty.PropertyType.opacity)
                     Text("Scale").tag(AnimatableProperty.PropertyType.scale)
-                    Text("Path").tag(AnimatableProperty.PropertyType.path)
+    
                     Text("Custom").tag(AnimatableProperty.PropertyType.custom(valueType: [CGPoint].self))
                 }
                 .pickerStyle(.segmented)

@@ -25,6 +25,10 @@ struct CanvasTopBar: View {
     let onCopy: () -> Void
     let onPaste: () -> Void
     
+    // Add undo/redo callbacks
+    let onUndo: () -> Void
+    let onRedo: () -> Void
+    
     // Add grid and ruler visibility bindings
     @Binding var showGrid: Bool
     @Binding var showRulers: Bool
@@ -48,12 +52,32 @@ struct CanvasTopBar: View {
     @State private var isShowingMenu = false
     // Add a state for showing the export modal
     @State private var showingExportModal = false
+    // Add a state for the initial export format
+    @State private var exportModalInitialFormat: ExportFormat = .video
     
     // Undo/Redo manager
     @EnvironmentObject var undoManager: UndoRedoManager
+    // Authentication manager
+    @EnvironmentObject var authManager: AuthenticationManager
     // Add canvas dimensions for the export modal
     let canvasWidth: Int
     let canvasHeight: Int
+    
+    // Computed property for user display name
+    private var userDisplayName: String {
+        let firstName = authManager.user?.firstName ?? ""
+        let lastName = authManager.user?.lastName ?? ""
+        
+        if !firstName.isEmpty && !lastName.isEmpty {
+            return "\(firstName) \(lastName)"
+        } else if !firstName.isEmpty {
+            return firstName
+        } else if !lastName.isEmpty {
+            return lastName
+        } else {
+            return "User"
+        }
+    }
     
     var body: some View {
         HStack(spacing: 16) {
@@ -89,9 +113,9 @@ struct CanvasTopBar: View {
                     self.documentManager.configure(
                         canvasElements: self.liveCanvasElements(),
                         animationController: self.liveAnimationController(),
-                        canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                        canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
                     )
-
+                    exportModalInitialFormat = .video
                     showingExportModal = true
                 })
             } label: {
@@ -105,19 +129,13 @@ struct CanvasTopBar: View {
             // Edit menu
             Menu {
                 Button("Undo") {
-                    // Get current state for potential redo
-                    if let currentState = documentManager.getCurrentProjectStateData() {
-                        _ = undoManager.undo(currentStateForRedo: currentState)
-                    }
+                    onUndo()
                 }
                 .keyboardShortcut("z", modifiers: .command)
                 .disabled(!undoManager.canUndo)
                 
                 Button("Redo") {
-                    // Get current state for potential undo
-                    if let currentState = documentManager.getCurrentProjectStateData() {
-                        _ = undoManager.redo(currentStateForUndo: currentState)
-                    }
+                    onRedo()
                 }
                 .keyboardShortcut("z", modifiers: [.command, .shift])
                 .disabled(!undoManager.canRedo)
@@ -240,8 +258,9 @@ struct CanvasTopBar: View {
                         self.documentManager.configure(
                             canvasElements: self.liveCanvasElements(),
                             animationController: self.liveAnimationController(),
-                            canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                            canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
                         )
+                        exportModalInitialFormat = .video
                         showingExportModal = true
                     }
                     
@@ -253,8 +272,9 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
                             )
+                            exportModalInitialFormat = .video
                             showingExportModal = true
                         }
                         
@@ -269,8 +289,9 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
                             )
+                            exportModalInitialFormat = .video
                             showingExportModal = true
                         }
                         
@@ -279,8 +300,9 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
                             )
+                            exportModalInitialFormat = .video
                             showingExportModal = true
                         }
                         
@@ -289,8 +311,9 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
                             )
+                            exportModalInitialFormat = .video
                             showingExportModal = true
                         }
                         
@@ -299,8 +322,9 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
                             )
+                            exportModalInitialFormat = .video
                             showingExportModal = true
                         }
                         
@@ -309,8 +333,9 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
                             )
+                            exportModalInitialFormat = .video
                             showingExportModal = true
                         }
                         
@@ -319,8 +344,9 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
                             )
+                            exportModalInitialFormat = .video
                             showingExportModal = true
                         }
                     }
@@ -330,8 +356,9 @@ struct CanvasTopBar: View {
                         self.documentManager.configure(
                             canvasElements: self.liveCanvasElements(),
                             animationController: self.liveAnimationController(),
-                            canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                            canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
                         )
+                        exportModalInitialFormat = .gif
                         showingExportModal = true
                     }
                     
@@ -341,8 +368,9 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
                             )
+                            exportModalInitialFormat = .imageSequence(.png)
                             showingExportModal = true
                         }
                         
@@ -351,8 +379,9 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight))
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
                             )
+                            exportModalInitialFormat = .imageSequence(.jpeg)
                             showingExportModal = true
                         }
                     }
@@ -377,6 +406,18 @@ struct CanvasTopBar: View {
                 .help("Export Project")
                 
                 Menu {
+                    // User info section
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(userDisplayName)
+                            .font(.headline)
+                        Text(authManager.user?.primaryEmailAddress?.emailAddress ?? "")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                    
+                    Divider()
+                    
                     Button("Account Settings") {
                         onAccountSettings()
                     }
@@ -398,11 +439,28 @@ struct CanvasTopBar: View {
                     Divider()
                     
                     Button("Sign Out") {
-                        onSignOut()
+                        Task {
+                            await authManager.signOut()
+                        }
                     }
                 } label: {
-                    Image(systemName: "person.circle")
-                        .foregroundColor(.black)
+                    Group {
+                        if let imageUrl = authManager.user?.imageUrl {
+                            AsyncImage(url: URL(string: imageUrl)) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                Image(systemName: "person.circle")
+                                    .foregroundColor(.black)
+                            }
+                        } else {
+                            Image(systemName: "person.circle")
+                                .foregroundColor(.black)
+                        }
+                    }
+                    .frame(width: 20, height: 20)
+                    .clipShape(Circle())
                 }
                 .menuStyle(BorderlessButtonMenuStyle())
                 .fixedSize()
@@ -421,9 +479,13 @@ struct CanvasTopBar: View {
                 asset: AVAsset(url: URL(fileURLWithPath: "")), // Empty asset as placeholder
                 canvasWidth: canvasWidth,
                 canvasHeight: canvasHeight,
+                initialFormat: exportModalInitialFormat,
                 getAnimationController: liveAnimationController,
                 getCanvasElements: liveCanvasElements,
-                onDismiss: { showingExportModal = false }
+                onDismiss: { 
+                    showingExportModal = false
+                    exportModalInitialFormat = .video // Reset to default for next time
+                }
             )
         }
     }

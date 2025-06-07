@@ -90,27 +90,7 @@ class CanvasRenderer {
                 context.setAlpha(element.opacity)
                 context.fillEllipse(in: rect)
                 context.restoreGState()
-            case .path:
-                context.saveGState()
-                let pathColor = convertSwiftUIColorToCGColor(element.color)
-                context.setStrokeColor(pathColor)
-                context.setAlpha(element.opacity)
-                context.setLineWidth(2.0)
-                if !element.path.isEmpty && element.path.count > 1 {
-                    context.beginPath()
-                    let scaledPoints = element.path.map { point in
-                        CGPoint(
-                            x: rect.origin.x + point.x * rect.width,
-                            y: rect.origin.y + point.y * rect.height
-                        )
-                    }
-                    context.move(to: scaledPoints[0])
-                    for pt in scaledPoints.dropFirst() {
-                        context.addLine(to: pt)
-                    }
-                    context.strokePath()
-                }
-                context.restoreGState()
+            
             case .text:
                 context.saveGState()
                 

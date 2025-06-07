@@ -81,6 +81,9 @@ iOSInjectionProject/
 DerivedData/
 build/
 
+# Configuration files with sensitive data
+Config.plist
+
 # fastlane
 #
 # It is recommended to not store the screenshots in the git repo.

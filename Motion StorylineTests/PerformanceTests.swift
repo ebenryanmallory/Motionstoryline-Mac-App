@@ -148,7 +148,7 @@ final class PerformanceTests: XCTestCase {
                 
                 let text = element.text
                 text.draw(in: rect, withAttributes: attributes)
-            case .image, .video, .path:
+            case .image, .video:
                 // Skip drawing images and other types not implemented in this test
                 break
             }

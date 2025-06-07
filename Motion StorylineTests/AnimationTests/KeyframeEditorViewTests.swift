@@ -137,43 +137,7 @@ final class KeyframeEditorViewTests: XCTestCase {
         }
     }
     
-    /// Test that path property is only created for path elements
-    func testPathPropertyForPathElement() throws {
-        // Create a path element
-        let pathElement = CanvasElement.path(
-            at: CGPoint(x: 300, y: 300),
-            points: [
-                CGPoint(x: 0, y: 0),
-                CGPoint(x: 100, y: 0),
-                CGPoint(x: 100, y: 100),
-                CGPoint(x: 0, y: 100)
-            ]
-        )
-        
-        // Create a KeyframeEditorView with the path element
-        let view = KeyframeEditorView(
-            animationController: animationController,
-            selectedElement: .constant(pathElement)
-        )
-        
-        // Setup tracks for the path element
-        view.setupTracksForSelectedElement(pathElement)
-        
-        // Get the track IDs for the path element
-        let idPrefix = pathElement.id.uuidString
-        let pathTrackId = "\(idPrefix)_path"
-        
-        // Verify that the path track was created
-        XCTAssertTrue(animationController.hasTrack(id: pathTrackId), "Path track not created for path element")
-        
-        // Verify that the path track is not created for non-path elements
-        view.setupTracksForSelectedElement(testElement)  // testElement is a rectangle
-        let rectangleIdPrefix = testElement.id.uuidString
-        let rectanglePathTrackId = "\(rectangleIdPrefix)_path"
-        
-        // This should return false since we don't create path tracks for non-path elements
-        XCTAssertFalse(animationController.hasTrack(id: rectanglePathTrackId), "Path track should not be created for non-path elements")
-    }
+
     
     /// Test that keyframe data is correctly populated and accessible in the UI
     func testKeyframeDataPopulation() throws {

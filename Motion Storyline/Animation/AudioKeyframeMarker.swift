@@ -110,14 +110,6 @@ public class AudioMarkerManager: ObservableObject {
                         keyframesAdded += 1
                     }
                 }
-            case .path:
-                if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<[CGPoint]> {
-                    let value = track.getValue(at: marker.time) ?? []
-                    let keyframe = Keyframe(time: marker.time, value: value, easingFunction: interpolationType)
-                    if track.add(keyframe: keyframe) {
-                        keyframesAdded += 1
-                    }
-                }
             case .custom:
                 if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<[CGPoint]> {
                     let value = track.getValue(at: marker.time) ?? []

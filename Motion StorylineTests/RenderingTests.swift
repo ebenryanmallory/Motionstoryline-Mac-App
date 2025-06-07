@@ -120,7 +120,7 @@ final class RenderingTests: XCTestCase {
             case .image:
                 // Skip image rendering in this test as the CanvasElement doesn't have an image property implemented
                 break
-            case .video, .path:
+            case .video:
                 // Other element types not implemented in this test
                 break
             }

@@ -11,6 +11,8 @@ extension DesignCanvas {
             Button(action: { [self] in
                 // Create rectangle at cursor position
                 if let position = self.currentMousePosition {
+                    self.recordStateBeforeChange(actionName: "Create Rectangle")
+                    
                     // Removed constraint to canvas bounds
                     let newRectangle = CanvasElement.rectangle(
                         at: position,
@@ -18,6 +20,7 @@ extension DesignCanvas {
                     )
                     self.canvasElements.append(newRectangle)
                     self.handleElementSelection(newRectangle)
+                    self.markDocumentAsChanged(actionName: "Create Rectangle")
                 }
             }) {
                 Label("Add Rectangle", systemImage: "rectangle")
@@ -26,6 +29,8 @@ extension DesignCanvas {
             Button(action: { [self] in
                 // Create ellipse at cursor position
                 if let position = self.currentMousePosition {
+                    self.recordStateBeforeChange(actionName: "Create Ellipse")
+                    
                     // Removed constraint to canvas bounds
                     let newEllipse = CanvasElement.ellipse(
                         at: position,
@@ -33,6 +38,7 @@ extension DesignCanvas {
                     )
                     self.canvasElements.append(newEllipse)
                     self.handleElementSelection(newEllipse)
+                    self.markDocumentAsChanged(actionName: "Create Ellipse")
                 }
             }) {
                 Label("Add Ellipse", systemImage: "circle")
@@ -41,12 +47,15 @@ extension DesignCanvas {
             Button(action: { [self] in
                 // Create text element at cursor position
                 if let position = self.currentMousePosition {
+                    self.recordStateBeforeChange(actionName: "Create Text")
+                    
                     // Removed constraint to canvas bounds
                     let newText = CanvasElement.text(at: position)
                     self.canvasElements.append(newText)
                     self.handleElementSelection(newText)
                     self.isEditingText = true
                     self.editingText = newText.text
+                    self.markDocumentAsChanged(actionName: "Create Text")
                 }
             }) {
                 Label("Add Text", systemImage: "text.cursor")
@@ -71,9 +80,12 @@ extension DesignCanvas {
                 
                 Button(action: { [self] in
                     // Clear canvas (remove all elements)
+                    self.recordStateBeforeChange(actionName: "Clear Canvas")
+                    
                     // Show confirmation dialog (in a real app)
                     self.canvasElements.removeAll()
                     self.selectedElementId = nil
+                    self.markDocumentAsChanged(actionName: "Clear Canvas")
                 }) {
                     Label("Clear Canvas", systemImage: "xmark.square")
                 }
@@ -202,6 +214,8 @@ extension DesignCanvas {
             Button(action: { [self] in
                 // Duplicate the element
                 if let index = canvasElements.firstIndex(where: { $0.id == element.id }) {
+                    self.recordStateBeforeChange(actionName: "Duplicate Element")
+                    
                     var newElement = canvasElements[index]
                     newElement.id = UUID()
                     newElement.position = CGPoint(
@@ -211,16 +225,19 @@ extension DesignCanvas {
                     newElement.displayName = "Copy of \(newElement.displayName)"
                     self.canvasElements.append(newElement)
                     self.handleElementSelection(newElement)
+                    self.markDocumentAsChanged(actionName: "Duplicate Element")
                 }
             }) {
                 Label("Duplicate", systemImage: "plus.square.on.square")
             }
             
             Button(action: { [self] in
-                self.recordUndoState(actionName: "Delete Element")
                 // Delete the element
+                self.recordStateBeforeChange(actionName: "Delete Element")
+                
                 self.canvasElements.removeAll(where: { $0.id == element.id })
                 self.selectedElementId = nil
+                self.markDocumentAsChanged(actionName: "Delete Element")
             }) {
                 Label("Delete", systemImage: "trash")
             }
@@ -251,7 +268,9 @@ extension DesignCanvas {
             Menu("Text Alignment") {
                 Button(action: { [self] in
                     if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                        self.recordStateBeforeChange(actionName: "Change Text Alignment")
                         self.canvasElements[index].textAlignment = .leading
+                        self.markDocumentAsChanged(actionName: "Change Text Alignment")
                     }
                 }) {
                     Label("Left", systemImage: "text.alignleft")
@@ -259,7 +278,9 @@ extension DesignCanvas {
                 
                 Button(action: { [self] in
                     if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                        self.recordStateBeforeChange(actionName: "Change Text Alignment")
                         self.canvasElements[index].textAlignment = .center
+                        self.markDocumentAsChanged(actionName: "Change Text Alignment")
                     }
                 }) {
                     Label("Center", systemImage: "text.aligncenter")
@@ -267,7 +288,9 @@ extension DesignCanvas {
                 
                 Button(action: { [self] in
                     if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                        self.recordStateBeforeChange(actionName: "Change Text Alignment")
                         self.canvasElements[index].textAlignment = .trailing
+                        self.markDocumentAsChanged(actionName: "Change Text Alignment")
                     }
                 }) {
                     Label("Right", systemImage: "text.alignright")
@@ -282,7 +305,9 @@ extension DesignCanvas {
             ForEach(["Red", "Blue", "Green", "Orange", "Purple", "Black"], id: \.self) { [self] colorName in
                 Button(action: { [self] in
                     if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                        self.recordStateBeforeChange(actionName: "Change Element Color")
                         self.canvasElements[index].color = self.colorForName(colorName)
+                        self.markDocumentAsChanged(actionName: "Change Element Color")
                     }
                 }) {
                     Label(colorName, systemImage: "paintpalette")
@@ -311,7 +336,9 @@ extension DesignCanvas {
             ForEach([1.0, 0.75, 0.5, 0.25], id: \.self) { opacity in
                 Button(action: { [self] in
                     if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
+                        self.recordStateBeforeChange(actionName: "Change Element Opacity")
                         self.canvasElements[index].opacity = opacity
+                        self.markDocumentAsChanged(actionName: "Change Element Opacity")
                     }
                 }) {
                     Label("\(Int(opacity * 100))%", systemImage: "circle.fill")

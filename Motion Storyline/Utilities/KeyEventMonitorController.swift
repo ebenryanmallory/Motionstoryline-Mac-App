@@ -162,7 +162,8 @@ extension KeyEventMonitorController {
         zoomIn: @escaping () -> Void,
         zoomOut: @escaping () -> Void,
         resetZoom: @escaping () -> Void,
-        saveProject: @escaping () -> Void
+        saveProject: @escaping () -> Void,
+        deleteSelectedElement: @escaping () -> Void
     ) {
         keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { event in
             // Only process events if we have focus (not in a text field, etc.)
@@ -193,6 +194,17 @@ extension KeyEventMonitorController {
                 // S key (Command+S: Save Project)
                 case 1: // S key
                     saveProject()
+                    return nil // Consume the event
+                    
+                default:
+                    break
+                }
+            } else {
+                // Handle non-command keys
+                switch event.keyCode {
+                // Delete or Backspace key - delete selected element
+                case 51, 117: // Backspace or Delete
+                    deleteSelectedElement()
                     return nil // Consume the event
                     
                 default:

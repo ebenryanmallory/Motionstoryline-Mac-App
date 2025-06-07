@@ -24,7 +24,7 @@ struct ExportModal: View {
     // State for export configuration
     @State private var selectedFormat: ExportFormat = .video
     @State private var selectedProResProfile: VideoExporter.ProResProfile? = nil
-    @State private var selectedImageFormat: ImageFormat = .png
+    @State private var selectedImageFormat: ImageFormat
     @State private var exportWidth: String
     @State private var exportHeight: String
     @State private var frameRate: String = "60" // Default to 60 for 5s/300 frames
@@ -47,6 +47,7 @@ struct ExportModal: View {
         asset: AVAsset,
         canvasWidth: Int,
         canvasHeight: Int,
+        initialFormat: ExportFormat = .video, // Add parameter to pre-select format
         getAnimationController: @escaping () -> AnimationController? = { nil }, // Default to nil
         getCanvasElements: @escaping () -> [CanvasElement]? = { nil },    // Default to nil
         onDismiss: @escaping () -> Void
@@ -60,6 +61,14 @@ struct ExportModal: View {
         
         _exportWidth = State(initialValue: String(canvasWidth))
         _exportHeight = State(initialValue: String(canvasHeight))
+        _selectedFormat = State(initialValue: initialFormat) // Use the provided initial format
+        
+        // Set the image format based on the initial format if it's an image sequence
+        if case .imageSequence(let imageFormat) = initialFormat {
+            _selectedImageFormat = State(initialValue: imageFormat)
+        } else {
+            _selectedImageFormat = State(initialValue: .png)
+        }
     }
     
     var body: some View {
@@ -461,6 +470,7 @@ struct ExportModal_Previews: PreviewProvider {
             asset: AVAsset(url: URL(fileURLWithPath: "")),
             canvasWidth: 1920, 
             canvasHeight: 1080,
+            initialFormat: .video,
             onDismiss: {}
         )
     }

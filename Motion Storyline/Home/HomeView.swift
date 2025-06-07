@@ -12,6 +12,7 @@ struct HomeView: View {
     @Binding var isCreatingNewProject: Bool
     let onCreateNewProject: (String, String) -> Void
     @EnvironmentObject private var appState: AppStateManager
+    @EnvironmentObject private var authManager: AuthenticationManager
     
     // Add deleteProject function
     var onDeleteProject: ((Project) -> Void)?
@@ -39,6 +40,22 @@ struct HomeView: View {
     }
     private var cardBackground: Color {
         Color(NSColor.controlBackgroundColor)
+    }
+    
+    // Computed property for user display name
+    private var userDisplayName: String {
+        let firstName = authManager.user?.firstName ?? ""
+        let lastName = authManager.user?.lastName ?? ""
+        
+        if !firstName.isEmpty && !lastName.isEmpty {
+            return "\(firstName) \(lastName)"
+        } else if !firstName.isEmpty {
+            return firstName
+        } else if !lastName.isEmpty {
+            return lastName
+        } else {
+            return "User"
+        }
     }
     
     // Filtered projects based on search text
@@ -215,33 +232,93 @@ struct HomeView: View {
                     
                     // User menu
                     Button(action: { isShowingUserMenu.toggle() }) {
-                        Image(systemName: "person.circle.fill")
-                            .font(.title2)
-                            .foregroundColor(.primary)
+                        Group {
+                            if let imageUrl = authManager.user?.imageUrl {
+                                AsyncImage(url: URL(string: imageUrl)) { image in
+                                    image
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                } placeholder: {
+                                    Image(systemName: "person.circle.fill")
+                                        .font(.title2)
+                                        .foregroundColor(.primary)
+                                }
+                            } else {
+                                Image(systemName: "person.circle.fill")
+                                    .font(.title2)
+                                    .foregroundColor(.primary)
+                            }
+                        }
+                        .frame(width: 28, height: 28)
+                        .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("User Menu")
                     .accessibilityHint("Access profile and settings")
                     .popover(isPresented: $isShowingUserMenu) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("User Account")
-                                .font(.headline)
-                                .padding(.bottom, 4)
-                                .accessibilityAddTraits(.isHeader)
+                        VStack(alignment: .leading, spacing: 12) {
+                            // User info header
+                            HStack(spacing: 12) {
+                                Group {
+                                    if let imageUrl = authManager.user?.imageUrl {
+                                        AsyncImage(url: URL(string: imageUrl)) { image in
+                                            image
+                                                .resizable()
+                                                .aspectRatio(contentMode: .fill)
+                                        } placeholder: {
+                                            Image(systemName: "person.circle.fill")
+                                                .font(.title)
+                                                .foregroundColor(.gray)
+                                        }
+                                    } else {
+                                        Image(systemName: "person.circle.fill")
+                                            .font(.title)
+                                            .foregroundColor(.gray)
+                                    }
+                                }
+                                .frame(width: 40, height: 40)
+                                .clipShape(Circle())
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(userDisplayName)
+                                        .font(.headline)
+                                        .lineLimit(1)
+                                    
+                                    Text(authManager.user?.primaryEmailAddress?.emailAddress ?? "")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .lineLimit(1)
+                                }
+                                
+                                Spacer()
+                            }
                             
-                            Button("Profile", action: {})
-                                .accessibilityHint("View your profile")
+                            Divider()
+                            
+                            Button("Profile", action: {
+                                isShowingUserMenu = false
+                                // TODO: Show profile view
+                            })
+                            .accessibilityHint("View your profile")
+                            
                             Button("Settings", action: {
                                 isShowingUserMenu = false
                                 isShowingPreferencesSheet = true
                             })
                             .accessibilityHint("Open application settings")
+                            
                             Divider()
-                            Button("Sign Out", action: {})
-                                .accessibilityHint("Sign out of your account")
+                            
+                            Button("Sign Out", action: {
+                                isShowingUserMenu = false
+                                Task {
+                                    await authManager.signOut()
+                                }
+                            })
+                            .accessibilityHint("Sign out of your account")
                         }
                         .padding()
-                        .frame(width: 200)
+                        .frame(width: 250)
                     }
                 }
                 .padding()

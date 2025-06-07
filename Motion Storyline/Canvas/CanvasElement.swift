@@ -48,7 +48,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
     var textAlignment: TextAlignment = .leading
     var displayName: String
     var isAspectRatioLocked: Bool = true // Default to locked aspect ratio
-    var path: [CGPoint] = [] // Store path points for path animation
+
     var assetURL: URL? // URL for image or video assets
     
     // Video-specific properties
@@ -69,7 +69,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
         textAlignment: TextAlignment = .leading,
         displayName: String,
         isAspectRatioLocked: Bool = true,
-        path: [CGPoint] = [],
+
         assetURL: URL? = nil,
         videoDuration: TimeInterval? = nil,
         videoStartTime: TimeInterval = 0.0,
@@ -87,7 +87,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
         self.textAlignment = textAlignment
         self.displayName = displayName
         self.isAspectRatioLocked = isAspectRatioLocked
-        self.path = path
+
         self.assetURL = assetURL
         self.videoDuration = videoDuration
         self.videoStartTime = videoStartTime
@@ -112,7 +112,6 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
         case text = "Text"
         case image = "Image"
         case video = "Video"
-        case path = "Path"
     }
     
     // Coding keys for Codable implementation
@@ -126,7 +125,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, type, position, size, rotation, opacity, scale, color, text, textAlignment, displayName, isAspectRatioLocked, path, assetURL // Added scale
+        case id, type, position, size, rotation, opacity, scale, color, text, textAlignment, displayName, isAspectRatioLocked, assetURL // Added scale
     }
     
     // Custom encoder to handle SwiftUI types
@@ -169,7 +168,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
         try container.encode(encodeTextAlignment(textAlignment), forKey: .textAlignment)
         try container.encode(displayName, forKey: .displayName)
         try container.encode(isAspectRatioLocked, forKey: .isAspectRatioLocked)
-        try container.encode(encodeCGPointArray(path), forKey: .path)
+
         try container.encodeIfPresent(assetURL?.absoluteString, forKey: .assetURL)
     }
     
@@ -225,7 +224,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
         self.textAlignment = try Self.decodeTextAlignment(from: container.decode(String.self, forKey: .textAlignment))
         self.displayName = try container.decode(String.self, forKey: .displayName)
         self.isAspectRatioLocked = try container.decode(Bool.self, forKey: .isAspectRatioLocked)
-        self.path = try Self.decodeCGPointArray(from: container.decode([String].self, forKey: .path))
+
         
         if let urlString = try container.decodeIfPresent(String.self, forKey: .assetURL) {
             self.assetURL = URL(string: urlString)
@@ -273,19 +272,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
         }
     }
 
-    private static func decodeCGPointArray(from stringArray: [String]) throws -> [CGPoint] {
-        var points: [CGPoint] = []
-        for pointString in stringArray {
-            let components = pointString.split(separator: ",")
-            guard components.count == 2,
-                  let xStr = components.first.map(String.init), let x = Double(xStr),
-                  let yStr = components.last.map(String.init), let y = Double(yStr) else {
-                throw DecodingError.dataCorrupted(DecodingError.Context(codingPath: [], debugDescription: "Invalid CGPoint format in array: \(pointString)"))
-            }
-            points.append(CGPoint(x: x, y: y))
-        }
-        return points
-    }
+
 
     // Helper functions for encoding SwiftUI types to strings
     private func encodeCGPoint(_ point: CGPoint) -> String {
@@ -304,9 +291,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
         }
     }
     
-    private func encodeCGPointArray(_ points: [CGPoint]) -> [String] {
-        return points.map { encodeCGPoint($0) }
-    }
+
     
     // Factory methods for creating different types of elements
     static func rectangle(at position: CGPoint, size: CGSize = CGSize(width: 100, height: 80), scale: CGFloat = 1.0) -> CanvasElement {
@@ -344,17 +329,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
         )
     }
     
-    static func path(at position: CGPoint, points: [CGPoint] = [], scale: CGFloat = 1.0) -> CanvasElement {
-        CanvasElement(
-            type: .path,
-            position: position,
-            size: CGSize(width: 200, height: 200),
-            scale: scale,
-            color: Color(red: 0.6, green: 0.3, blue: 0.7, opacity: 1.0), // Explicit sRGB purple
-            displayName: "Path",
-            path: points
-        )
-    }
+
 
     public static func image(at position: CGPoint, assetURL: URL?, displayName: String, size: CGSize, scale: CGFloat = 1.0) -> CanvasElement {
         CanvasElement(

@@ -10,19 +10,18 @@ let package = Package(
         .executable(name: "MotionStoryline", targets: ["MotionStoryline"])
     ],
     dependencies: [
-        // Add external dependencies here if your project uses any
+        .package(url: "https://github.com/clerk/clerk-ios", from: "0.1.0")
     ],
     targets: [
         .executableTarget(
             name: "MotionStoryline",
-            dependencies: [],
+            dependencies: [
+                .product(name: "Clerk", package: "clerk-ios")
+            ],
             path: "Motion Storyline",
             exclude: [
-                // Exclude Info.plist and entitlements as they're build configuration files
-                "Info.plist",
-                "Motion_Storyline.entitlements",
-                // Exclude backup files
-                "Canvas/DesignCanvas.swift.bak"
+                // Exclude entitlements as they're build configuration files
+                "Motion_Storyline.entitlements"
             ],
             resources: [
                 // Use a specific copying rule for asset catalogs to preserve their structure
@@ -30,7 +29,10 @@ let package = Package(
                 .process("Preview Content"),
                 // Include documentation files
                 .process("ARCHITECTURE.md"),
-                .process("Services/README.md")
+                .process("Services/README.md"),
+                // Include configuration files
+                .process("Config/Config.plist"),
+                .process("Config/Config.plist.template")
             ]
         ),
         .testTarget(

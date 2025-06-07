@@ -47,9 +47,7 @@ struct CanvasElementView: View {
                         .multilineTextAlignment(element.textAlignment)
                         .opacity(element.opacity)
                         .contentShape(Rectangle())
-                case .path:
-                    PathView(points: element.path, color: element.color, opacity: element.opacity)
-                        .frame(width: element.size.width, height: element.size.height)
+
                 case .image:
                     if let url = element.assetURL {
                         AsyncImage(url: url) { phase in
@@ -110,7 +108,7 @@ struct CanvasElementView: View {
                         .clipped()
                         .contentShape(Rectangle())
                     }
-                // Removed default case as all ElementType cases (rectangle, ellipse, text, image, video, path) are handled
+                // Removed default case as all ElementType cases (rectangle, ellipse, text, image, video) are handled
                 }
             }
             
@@ -136,9 +134,6 @@ struct CanvasElementView: View {
                         Ellipse()
                             .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
                             .frame(width: element.size.width, height: element.size.height)
-                    } else if element.type == .path {
-                        PathView(points: element.path, color: Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), opacity: 0.5, isOutlineOnly: true)
-                            .frame(width: element.size.width, height: element.size.height)
                     }
                 }
             }
@@ -163,85 +158,7 @@ struct CanvasElementView: View {
     }
 }
 
-struct PathView: View {
-    let points: [CGPoint]
-    let color: Color
-    let opacity: Double
-    var isOutlineOnly: Bool = false
-    
-    var body: some View {
-        GeometryReader { geometry in
-            if !points.isEmpty {
-                ZStack {
-                    // For filled paths
-                    if !isOutlineOnly && points.count > 2 {
-                        FilledPathShape(points: points.map { scalePoint($0, in: geometry) })
-                            .fill(color.opacity(opacity))
-                    }
-                    
-                    // For outline paths or paths with few points
-                    if isOutlineOnly || points.count <= 2 {
-                        StrokedPathShape(points: points.map { scalePoint($0, in: geometry) }, shouldClose: points.count > 2)
-                            .stroke(color.opacity(opacity), lineWidth: 2)
-                    }
-                }
-            }
-        }
-    }
-    
-    // Scale points to fit within the geometry bounds
-    private func scalePoint(_ point: CGPoint, in geometry: GeometryProxy) -> CGPoint {
-        return CGPoint(
-            x: point.x * geometry.size.width,
-            y: point.y * geometry.size.height
-        )
-    }
-}
 
-// Shape for filled paths
-struct FilledPathShape: Shape {
-    let points: [CGPoint]
-    
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        
-        if let firstPoint = points.first {
-            path.move(to: firstPoint)
-            
-            for point in points.dropFirst() {
-                path.addLine(to: point)
-            }
-            
-            path.closeSubpath()
-        }
-        
-        return path
-    }
-}
-
-// Shape for stroked paths
-struct StrokedPathShape: Shape {
-    let points: [CGPoint]
-    let shouldClose: Bool
-    
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        
-        if let firstPoint = points.first {
-            path.move(to: firstPoint)
-            
-            for point in points.dropFirst() {
-                path.addLine(to: point)
-            }
-            
-            if shouldClose {
-                path.closeSubpath()
-            }
-        }
-        
-        return path
-    }
-}
 
 // Helper extension for conditional view modifiers
 extension View {

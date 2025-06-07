@@ -7,11 +7,14 @@
 
 import SwiftUI
 import Foundation
+import Clerk
 
 @main
 struct Motion_StorylineApp: App {
     @StateObject private var appStateManager = AppStateManager.shared // Use the shared instance
     @StateObject private var documentManager = DocumentManager() // Add DocumentManager
+    @StateObject private var authManager = AuthenticationManager() // Add Authentication Manager
+    @State private var clerk = Clerk.shared
     @Environment(\.scenePhase) private var scenePhase // Get scenePhase from environment
     @State private var isCreatingNewProject = false
     @AppStorage("recentProjects") private var recentProjectsData: Data = Data()
@@ -23,44 +26,66 @@ struct Motion_StorylineApp: App {
     var body: some Scene {
         WindowGroup {
             NavigationStack {
-                if self.appStateManager.selectedProject != nil {
-                    DesignCanvas()
-                        .withUITestIdentifier()
-                        .navigationBarBackButtonHidden(true)
-                        .environmentObject(self.appStateManager)
-                        .environmentObject(self.documentManager) // Add DocumentManager to environment
-                        .onAppear {
-                            // We can set up any necessary state here if needed
+                ZStack {
+                    if !clerk.isLoaded {
+                        // Show loading view while Clerk is initializing
+                        VStack {
+                            ProgressView()
+                                .scaleEffect(1.5)
+                            Text("Loading...")
+                                .padding(.top)
                         }
-                        .onChange(of: self.appStateManager.selectedProject) { oldValue, newValue in
-                            if let updatedProject = newValue {
-                                updateProject(updatedProject)
+                    } else if !authManager.isAuthenticated {
+                        // Show authentication view when user is not signed in
+                        AuthenticationView()
+                            .environmentObject(authManager)
+                    } else if self.appStateManager.selectedProject != nil {
+                        DesignCanvas()
+                            .withUITestIdentifier()
+                            .navigationBarBackButtonHidden(true)
+                            .environmentObject(self.appStateManager)
+                            .environmentObject(self.documentManager) // Add DocumentManager to environment
+                            .environmentObject(self.authManager) // Add AuthManager to environment
+                            .onAppear {
+                                // We can set up any necessary state here if needed
                             }
+                            .onChange(of: self.appStateManager.selectedProject) { oldValue, newValue in
+                                if let updatedProject = newValue {
+                                    updateProject(updatedProject)
+                                }
+                            }
+                    } else {
+                        HomeView(
+                            recentProjects: $recentProjects,
+                            userProjects: $userProjects,
+                            statusMessage: $statusMessage,
+                            onProjectSelected: { project in
+                                self.appStateManager.selectedProject = project
+                                self.addToRecentProjects(project)
+                            },
+                            isCreatingNewProject: $isCreatingNewProject,
+                            onCreateNewProject: { name, type in
+                                createNewProject(name: name, type: type)
+                            },
+                            onDeleteProject: deleteProject,
+                            onRenameProject: renameProject,
+                            onToggleProjectStar: toggleProjectStar
+                        )
+                        .environmentObject(self.appStateManager)
+                        .environmentObject(self.authManager) // Add AuthManager to environment
+                        .onAppear {
+                            loadRecentProjects()
+                            loadAllProjects()
+                            updateStatus()
                         }
-                } else {
-                    HomeView(
-                        recentProjects: $recentProjects,
-                        userProjects: $userProjects,
-                        statusMessage: $statusMessage,
-                        onProjectSelected: { project in
-                            self.appStateManager.selectedProject = project
-                            self.addToRecentProjects(project)
-                        },
-                        isCreatingNewProject: $isCreatingNewProject,
-                        onCreateNewProject: { name, type in
-                            createNewProject(name: name, type: type)
-                        },
-                        onDeleteProject: deleteProject,
-                        onRenameProject: renameProject,
-                        onToggleProjectStar: toggleProjectStar
-                    )
-                    .environmentObject(self.appStateManager)
-                    .onAppear {
-                        loadRecentProjects()
-                        loadAllProjects()
-                        updateStatus()
                     }
-                }
+                } // Close ZStack
+            }
+            .environment(clerk)
+            .task {
+                // Configure Clerk with your publishable key
+                clerk.configure(publishableKey: ClerkConfig.currentPublishableKey)
+                try? await clerk.load()
             }
             .onAppear {
                 // Configure window to prevent automatic snapping during resize
@@ -256,11 +281,6 @@ struct Motion_StorylineApp: App {
     
     // Load recent projects from AppStorage
     private func loadRecentProjects() {
-        guard !recentProjectsData.isEmpty else {
-            recentProjects = []
-            return
-        }
-        
         do {
             let decoder = JSONDecoder()
             recentProjects = try decoder.decode([Project].self, from: recentProjectsData)
@@ -272,148 +292,84 @@ struct Motion_StorylineApp: App {
     
     // Load all projects from AppStorage
     private func loadAllProjects() {
-        guard !userProjectsData.isEmpty else {
-            createSampleProjects()
-            return
-        }
-        
         do {
             let decoder = JSONDecoder()
             userProjects = try decoder.decode([Project].self, from: userProjectsData)
         } catch {
             print("Failed to load all projects: \(error.localizedDescription)")
-            createSampleProjects()
+            userProjects = []
         }
     }
     
-    // Create sample projects for first-time users
-    private func createSampleProjects() {
-        userProjects = [
-            Project(name: "Mobile App Design", thumbnail: "design_thumbnail", lastModified: Date(), isStarred: false),
-            Project(name: "Website Prototype", thumbnail: "prototype_thumbnail", lastModified: Date(), isStarred: false),
-            Project(name: "Brand Style Guide", thumbnail: "style_thumbnail", lastModified: Date(), isStarred: false)
-        ]
-        saveAllProjects()
-    }
-    
-    // Update status message based on projects
+    // Update status message based on project count
     private func updateStatus() {
-        if userProjects.isEmpty {
-            statusMessage = "No projects available"
+        if recentProjects.isEmpty && userProjects.isEmpty {
+            statusMessage = "No projects found. Create your first project to get started."
+        } else if recentProjects.isEmpty {
+            statusMessage = "No recent projects"
         } else {
-            statusMessage = "\(userProjects.count) projects available"
+            statusMessage = "\(recentProjects.count) recent project\(recentProjects.count == 1 ? "" : "s")"
         }
     }
     
-    // Helper function to get a thumbnail based on project type
-    private func getThumbnailForType(_ type: String) -> String {
-        switch type {
-        case "Design":
-            return "design_thumbnail"
-        case "Prototype":
-            return "prototype_thumbnail"
-        case "Component Library":
-            return "component_thumbnail"
-        case "Style Guide":
-            return "style_thumbnail"
-        default:
-            return "placeholder"
-        }
-    }
-    
-    // Add a function to delete projects
+    // Delete a project
     private func deleteProject(_ project: Project) {
-        // Remove from recent projects if present
+        // Remove from recent projects
         recentProjects.removeAll { $0.id == project.id }
         
         // Remove from all projects
         userProjects.removeAll { $0.id == project.id }
         
-        // If this was the selected project, navigate back to home
-        if self.appStateManager.selectedProject?.id == project.id {
-            self.appStateManager.navigateToHome()
-        }
-        
-        // Save the changes to persistent storage
+        // Save changes
         saveRecentProjects()
         saveAllProjects()
+        updateStatus()
         
-        // Update status message
-        statusMessage = "Project \"\(project.name)\" deleted"
-        
-        // Reset the status message after a delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            updateStatus()
+        // If this was the selected project, clear the selection
+        if self.appStateManager.selectedProject?.id == project.id {
+            self.appStateManager.selectedProject = nil
         }
     }
     
-    // Add a function to rename projects
+    // Rename a project
     private func renameProject(_ project: Project, newName: String) {
-        // Create a copy of the project with the new name
-        var renamedProject = project
-        renamedProject.name = newName
-        renamedProject.lastModified = Date()
+        let updatedProject = Project(
+            id: project.id,
+            name: newName,
+            thumbnail: project.thumbnail,
+            lastModified: Date(),
+            isStarred: project.isStarred
+        )
         
-        // Update in recent projects
-        if let index = recentProjects.firstIndex(where: { $0.id == project.id }) {
-            recentProjects[index] = renamedProject
-        }
-        
-        // Update in all projects
-        if let index = userProjects.firstIndex(where: { $0.id == project.id }) {
-            userProjects[index] = renamedProject
-        }
-        
-        // Update selected project if it's the same one
-        if self.appStateManager.selectedProject?.id == project.id {
-            self.appStateManager.selectedProject = renamedProject
-        }
-        
-        // Save the changes to persistent storage
-        saveRecentProjects()
-        saveAllProjects()
-        
-        // Update status message
-        statusMessage = "Project renamed to \"\(newName)\""
-        
-        // Reset the status message after a delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            updateStatus()
-        }
+        updateProject(updatedProject)
     }
     
-    // Add a function to toggle project star status
+    // Toggle project star status
     private func toggleProjectStar(_ project: Project) {
-        // Create a copy of the project with the toggled star status
-        var updatedProject = project
-        updatedProject.isStarred.toggle()
+        let updatedProject = Project(
+            id: project.id,
+            name: project.name,
+            thumbnail: project.thumbnail,
+            lastModified: project.lastModified,
+            isStarred: !project.isStarred
+        )
         
-        // Update in recent projects
-        if let index = recentProjects.firstIndex(where: { $0.id == project.id }) {
-            recentProjects[index] = updatedProject
-        }
-        
-        // Update in all projects
-        if let index = userProjects.firstIndex(where: { $0.id == project.id }) {
-            userProjects[index] = updatedProject
-        }
-        
-        // Update selected project if it's the same one
-        if appStateManager.selectedProject?.id == project.id {
-            appStateManager.selectedProject = updatedProject
-        }
-        
-        // Save the changes to persistent storage
-        saveRecentProjects()
-        saveAllProjects()
-        
-        // Update status message with the new state (not the previous state)
-        let starAction = updatedProject.isStarred ? "starred" : "unstarred"
-        statusMessage = "Project \"\(project.name)\" \(starAction)"
-        
-        // Reset the status message after a delay
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            updateStatus()
+        updateProject(updatedProject)
+    }
+    
+    // Get thumbnail for project type
+    private func getThumbnailForType(_ type: String) -> String {
+        switch type {
+        case "Design":
+            return "rectangle.on.rectangle"
+        case "Prototype":
+            return "play.rectangle"
+        case "Component Library":
+            return "square.grid.3x3"
+        case "Style Guide":
+            return "paintbrush"
+        default:
+            return "doc"
         }
     }
-}
+} 

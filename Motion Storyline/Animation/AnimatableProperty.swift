@@ -30,7 +30,7 @@ public struct AnimatableProperty: Identifiable, Hashable {
         case color
         case opacity
         case scale
-        case path
+
         case custom(valueType: Any.Type)
         
         /// Implement hash(into:) for Hashable conformance
@@ -48,8 +48,7 @@ public struct AnimatableProperty: Identifiable, Hashable {
                 hasher.combine(4)
             case .scale:
                 hasher.combine(6)
-            case .path:
-                hasher.combine(7)
+
             case .custom(let type):
                 hasher.combine(5)
                 hasher.combine(ObjectIdentifier(type)) // Use ObjectIdentifier to hash the type
@@ -64,8 +63,7 @@ public struct AnimatableProperty: Identifiable, Hashable {
                  (.rotation, .rotation),
                  (.color, .color),
                  (.opacity, .opacity),
-                 (.scale, .scale),
-                 (.path, .path):
+                 (.scale, .scale):
                 return true
             case (.custom(let lhsType), .custom(let rhsType)):
                 return ObjectIdentifier(lhsType) == ObjectIdentifier(rhsType)

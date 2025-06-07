@@ -130,20 +130,7 @@ class CanvasController: ObservableObject {
             track.add(keyframe: Keyframe(time: 0.0, value: element.opacity))
         }
         
-        // Path track - only for path elements
-        if element.type == .path {
-            let pathTrackId = "\(idPrefix)_path"
-            if animationController.getTrack(id: pathTrackId) as? KeyframeTrack<[CGPoint]> == nil {
-                let track = animationController.addTrack(id: pathTrackId) { [weak self] (newPath: [CGPoint]) in
-                    guard let self = self else { return }
-                    if let index = self.canvasElements.firstIndex(where: { $0.id == element.id }) {
-                        self.canvasElements[index].path = newPath
-                    }
-                }
-                // Add initial keyframe at time 0
-                track.add(keyframe: Keyframe(time: 0.0, value: element.path))
-            }
-        }
+
     }
     
     /// Internal method to handle the actual export process
