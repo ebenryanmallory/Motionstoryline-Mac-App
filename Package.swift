@@ -20,7 +20,9 @@ let package = Package(
             exclude: [
                 // Exclude Info.plist and entitlements as they're build configuration files
                 "Info.plist",
-                "Motion_Storyline.entitlements"
+                "Motion_Storyline.entitlements",
+                // Exclude backup files
+                "Canvas/DesignCanvas.swift.bak"
             ],
             resources: [
                 // Use a specific copying rule for asset catalogs to preserve their structure
