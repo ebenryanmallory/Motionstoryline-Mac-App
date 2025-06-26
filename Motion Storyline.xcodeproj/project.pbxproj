@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		E472F99A2DF5012800D0F9D6 /* Clerk in Frameworks */ = {isa = PBXBuildFile; productRef = E472F9992DF5012800D0F9D6 /* Clerk */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		E4B8EEFF2D6DD2A80095FBAF /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E472F99A2DF5012800D0F9D6 /* Clerk in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -72,12 +77,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		E472F9982DF5012800D0F9D6 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		E4B8EEE42D6DD2A60095FBAF = {
 			isa = PBXGroup;
 			children = (
 				E4B8EEEF2D6DD2A60095FBAF /* Motion Storyline */,
 				E4B8EF012D6DD2A80095FBAF /* Motion StorylineTests */,
 				E4B8EF0B2D6DD2A90095FBAF /* Motion StorylineUITests */,
+				E472F9982DF5012800D0F9D6 /* Frameworks */,
 				E4B8EEEE2D6DD2A60095FBAF /* Products */,
 			);
 			sourceTree = "<group>";
@@ -112,6 +125,7 @@
 			);
 			name = "Motion Storyline";
 			packageProductDependencies = (
+				E472F9992DF5012800D0F9D6 /* Clerk */,
 			);
 			productName = "Motion Storyline";
 			productReference = E4B8EEED2D6DD2A60095FBAF /* Motion Storyline.app */;
@@ -563,6 +577,14 @@
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E472F9992DF5012800D0F9D6 /* Clerk */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E4A013B02DF4F3370006FEDF /* XCRemoteSwiftPackageReference "clerk-ios" */;
+			productName = Clerk;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = E4B8EEE52D6DD2A60095FBAF /* Project object */;
 }
