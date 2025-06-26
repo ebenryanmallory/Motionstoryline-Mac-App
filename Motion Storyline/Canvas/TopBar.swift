@@ -103,9 +103,10 @@ struct CanvasTopBar: View {
             .help("Back to Home")
             .accessibilityLabel("Back to Home")
             
-            // Design Studio logo (placeholder)
-            Circle()
-                .fill(Color.blue)
+            // Design Studio logo
+            Image("logo")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
                 .frame(width: 24, height: 24)
             
             // File menu

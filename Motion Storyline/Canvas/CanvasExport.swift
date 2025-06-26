@@ -24,6 +24,7 @@ class CanvasExportRenderer {
         let frameRate: Float
         let canvasWidth: CGFloat
         let canvasHeight: CGFloat
+        let proResProfile: VideoExporter.ProResProfile?
     }
     
     // Default initializer for shared instance
@@ -50,6 +51,7 @@ class CanvasExportRenderer {
         animationController: AnimationController? = nil,
         canvasWidth: CGFloat,
         canvasHeight: CGFloat,
+        proResProfile: VideoExporter.ProResProfile? = nil,
         progressHandler: @escaping (Float) -> Void = { _ in }
     ) async throws -> AVAsset {
         // Set elements and animation controller if provided
@@ -68,7 +70,8 @@ class CanvasExportRenderer {
             duration: duration,
             frameRate: frameRate,
             canvasWidth: canvasWidth,
-            canvasHeight: canvasHeight
+            canvasHeight: canvasHeight,
+            proResProfile: proResProfile
         )
         
         return try await renderToVideoInternal(configuration: configuration, progressHandler: progressHandler)
@@ -104,27 +107,16 @@ class CanvasExportRenderer {
             try FileManager.default.removeItem(at: temporaryVideoURL)
         }
         
+        // Determine file type based on codec choice
+        let fileType = getFileType(for: configuration)
+        
         // Create an asset writer to generate a video
-        guard let assetWriter = try? AVAssetWriter(outputURL: temporaryVideoURL, fileType: .mov) else {
+        guard let assetWriter = try? AVAssetWriter(outputURL: temporaryVideoURL, fileType: fileType) else {
             throw NSError(domain: "MotionStoryline", code: 103, userInfo: [NSLocalizedDescriptionKey: "Failed to create asset writer"])
         }
         
-        // Configure video settings with proper color space information
-        let videoSettings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: configuration.width,
-            AVVideoHeightKey: configuration.height,
-            AVVideoColorPropertiesKey: [
-                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
-                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
-                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
-            ],
-            AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: 5000000,
-                AVVideoProfileLevelKey: AVVideoProfileLevelH264BaselineAutoLevel,
-                AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCAVLC
-            ]
-        ]
+        // Configure video settings based on codec choice (H.264 vs ProRes)
+        let videoSettings = createVideoSettings(for: configuration)
         
         // Create a writer input
         let writerInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
@@ -513,6 +505,50 @@ class CanvasExportRenderer {
         return AVAsset(url: temporaryVideoURL)
     }
     
+    /// Create video settings based on codec choice (H.264 vs ProRes)
+    private func createVideoSettings(for configuration: Configuration) -> [String: Any] {
+        if let proResProfile = configuration.proResProfile {
+            // ProRes settings
+            return [
+                AVVideoCodecKey: proResProfile.avCodecKey,
+                AVVideoWidthKey: configuration.width,
+                AVVideoHeightKey: configuration.height,
+                AVVideoColorPropertiesKey: [
+                    AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                    AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                    AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+                ]
+                // No compression properties for ProRes - they're handled internally by the codec
+            ]
+        } else {
+            // H.264 settings (existing implementation)
+            return [
+                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoWidthKey: configuration.width,
+                AVVideoHeightKey: configuration.height,
+                AVVideoColorPropertiesKey: [
+                    AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                    AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                    AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+                ],
+                AVVideoCompressionPropertiesKey: [
+                    AVVideoAverageBitRateKey: 5000000,
+                    AVVideoProfileLevelKey: AVVideoProfileLevelH264BaselineAutoLevel,
+                    AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCAVLC
+                ]
+            ]
+        }
+    }
+    
+    /// Determine the appropriate file type based on codec
+    private func getFileType(for configuration: Configuration) -> AVFileType {
+        if configuration.proResProfile != nil {
+            return .mov  // ProRes requires MOV container
+        } else {
+            return .mov  // Keep MOV for consistency, can be changed to .mp4 for H.264 if needed
+        }
+    }
+    
     /// Create a black pixel buffer for use in video compositions
     func createBlackFramePixelBuffer(width: Int, height: Int) throws -> CVPixelBuffer? {
         var pixelBuffer: CVPixelBuffer?
@@ -556,191 +592,5 @@ class CanvasExportRenderer {
         CVPixelBufferUnlockBaseAddress(pixelBuffer!, CVPixelBufferLockFlags(rawValue: 0))
         
         return pixelBuffer
-    }
-}
-
-// MARK: - Video Exporter
-
-class CanvasVideoExporter {
-    // ProRes profiles for high-quality exports
-    enum ProResProfile {
-        case proRes422Proxy
-        case proRes422LT
-        case proRes422
-        case proRes422HQ
-        case proRes4444
-        case proRes4444XQ
-        
-        var avCodecKey: String {
-            switch self {
-            case .proRes422Proxy: return AVVideoCodecType.proRes422Proxy.rawValue
-            case .proRes422LT: return AVVideoCodecType.proRes422LT.rawValue
-            case .proRes422: return AVVideoCodecType.proRes422.rawValue
-            case .proRes422HQ: return AVVideoCodecType.proRes422HQ.rawValue
-            case .proRes4444: return AVVideoCodecType.proRes4444.rawValue
-            case .proRes4444XQ: return AVVideoCodecType.proRes4444.rawValue // Using ProRes4444 as fallback
-            }
-        }
-    }
-    
-    enum ExportError: Error {
-        case exportFailed(Error)
-        case invalidAsset
-        case exportCancelled
-        case fileCreationFailed
-    }
-    
-    struct ExportConfiguration {
-        enum ExportFormat {
-            case video
-            case gif
-            case imageSequence
-            
-            var fileExtension: String {
-                switch self {
-                case .video: return "mp4"
-                case .gif: return "gif"
-                case .imageSequence: return "png"
-                }
-            }
-        }
-        
-        let format: ExportFormat
-        let width: Int
-        let height: Int
-        let frameRate: Float
-        let proResProfile: ProResProfile?
-        let outputURL: URL
-    }
-    
-    private let asset: AVAsset
-    private var exportSession: AVAssetExportSession?
-    
-    init(asset: AVAsset) {
-        self.asset = asset
-    }
-    
-    func export(
-        with configuration: ExportConfiguration,
-        progressHandler: @escaping (Float) -> Void,
-        completion: @escaping (Result<URL, Error>) -> Void
-    ) async {
-        // Choose appropriate export method based on format
-        switch configuration.format {
-        case .video:
-            await exportVideo(with: configuration, progressHandler: progressHandler, completion: completion)
-        case .gif:
-            await exportGIF(with: configuration, progressHandler: progressHandler, completion: completion)
-        case .imageSequence:
-            await exportImageSequence(with: configuration, progressHandler: progressHandler, completion: completion)
-        }
-    }
-    
-    private func exportVideo(
-        with configuration: ExportConfiguration,
-        progressHandler: @escaping (Float) -> Void,
-        completion: @escaping (Result<URL, Error>) -> Void
-    ) async {
-        // Check if we have a valid asset
-        do {
-            let tracks = try await asset.load(.tracks)
-            guard tracks.count > 0 else {
-                completion(.failure(ExportError.invalidAsset))
-                return
-            }
-        } catch {
-            completion(.failure(ExportError.invalidAsset))
-            return
-        }
-        
-        // Create an export session for the asset
-        guard let exportSession = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
-            completion(.failure(ExportError.invalidAsset))
-            return
-        }
-        
-        self.exportSession = exportSession
-        
-        // Configure the export session
-        exportSession.outputURL = configuration.outputURL
-        
-        // Use different settings based on whether ProRes is requested
-        if configuration.proResProfile != nil {
-            // Use ProRes codec
-            exportSession.outputFileType = .mov
-            
-            // The videoSettings property doesn't exist on AVAssetExportSession
-            // Instead, use preset names or other configuration options if needed
-        } else {
-            // Use H.264 codec
-            exportSession.outputFileType = .mp4
-            
-            // The videoSettings property doesn't exist on AVAssetExportSession
-            // Use other configuration methods instead
-        }
-        
-        // Create a timer to periodically check progress
-        let progressObserver: NSObjectProtocol? = nil
-        
-        // Setup a timer to update progress
-        let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-            let progress = exportSession.progress
-            progressHandler(progress)
-        }
-        
-        // Start the export
-        await exportSession.export()
-        
-        // Cleanup timer and observer
-        timer.invalidate()
-        if let observer = progressObserver {
-            NotificationCenter.default.removeObserver(observer)
-        }
-        
-        // Check export status
-        switch exportSession.status {
-        case .completed:
-            completion(.success(configuration.outputURL))
-        case .cancelled:
-            completion(.failure(ExportError.exportCancelled))
-        case .failed:
-            if let error = exportSession.error {
-                completion(.failure(ExportError.exportFailed(error)))
-            } else {
-                completion(.failure(ExportError.exportFailed(NSError(domain: "VideoExporter", code: 100, userInfo: [NSLocalizedDescriptionKey: "Unknown export error"]))))
-            }
-        default:
-            completion(.failure(ExportError.exportFailed(NSError(domain: "VideoExporter", code: 101, userInfo: [NSLocalizedDescriptionKey: "Export ended with status: \(exportSession.status.rawValue)"]))))
-        }
-    }
-    
-    private func exportGIF(
-        with configuration: ExportConfiguration,
-        progressHandler: @escaping (Float) -> Void,
-        completion: @escaping (Result<URL, Error>) -> Void
-    ) async {
-        // Implement GIF export logic
-        // This is a placeholder for the GIF export method
-        // In a real implementation, you would extract frames from the video
-        // and create an animated GIF file
-        
-        completion(.failure(NSError(domain: "VideoExporter", code: 102, userInfo: [NSLocalizedDescriptionKey: "GIF export not implemented yet"])))
-    }
-    
-    private func exportImageSequence(
-        with configuration: ExportConfiguration,
-        progressHandler: @escaping (Float) -> Void,
-        completion: @escaping (Result<URL, Error>) -> Void
-    ) async {
-        // Implement image sequence export logic
-        // This is a placeholder for the image sequence export method
-        // In a real implementation, you would extract frames from the video
-        // and save them as separate image files
-        
-        completion(.failure(NSError(domain: "VideoExporter", code: 103, userInfo: [NSLocalizedDescriptionKey: "Image sequence export not implemented yet"])))
-    }
-    
-    func cancel() {
-        exportSession?.cancelExport()
     }
 } 
