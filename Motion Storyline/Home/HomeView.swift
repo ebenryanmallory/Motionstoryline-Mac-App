@@ -176,17 +176,12 @@ struct HomeView: View {
                 // Top header (Design Studio-style)
                 HStack(spacing: 16) {
                     // Design Studio logo
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(Color.blue)
-                            .frame(width: 24, height: 24)
-                            .accessibilityHidden(true)
-                        Text("DesignStudio")
-                            .fontWeight(.semibold)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("DesignStudio")
-                    .accessibilityAddTraits(.isHeader)
+                    Image("logo")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 24, height: 24)
+                        .accessibilityLabel("DesignStudio")
+                        .accessibilityAddTraits(.isHeader)
                     
                     Spacer()
                     
