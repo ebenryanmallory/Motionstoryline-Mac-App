@@ -32,6 +32,13 @@ struct PropertyInspectorView: View {
                     opacityEditor(property: property, time: keyframeTime)
                 case .color:
                     colorEditor(property: property, time: keyframeTime)
+                case .scale:
+                    // Handle both scale and fontSize using the same editor since they're both CGFloat
+                    if property.name == "Font Size" {
+                        fontSizeEditor(property: property, time: keyframeTime)
+                    } else {
+                        scaleEditor(property: property, time: keyframeTime)
+                    }
                 default:
                     Text("Unsupported property type")
                 }
@@ -121,24 +128,44 @@ struct PropertyInspectorView: View {
             Text("Size")
                 .font(.headline)
             
-            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGFloat>?,
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGSize>?,
                let value = track.getValue(at: time) {
-                HStack {
-                    Text("Value")
-                        .foregroundColor(.secondary)
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("Width")
+                            .foregroundColor(.secondary)
+                        
+                        TextField("Width", value: Binding(
+                            get: { value.width },
+                            set: { updateSizeValue(for: property, at: time, to: CGSize(width: $0, height: value.height)) }
+                        ), formatter: NumberFormatter())
+                        .frame(width: 80)
+                        .textFieldStyle(.roundedBorder)
+                        
+                        Slider(value: Binding(
+                            get: { value.width },
+                            set: { updateSizeValue(for: property, at: time, to: CGSize(width: $0, height: value.height)) }
+                        ), in: 10...500)
+                        .frame(width: 120)
+                    }
                     
-                    TextField("Size", value: Binding(
-                        get: { value },
-                        set: { updateSizeValue(for: property, at: time, to: $0) }
-                    ), formatter: NumberFormatter())
-                    .frame(width: 80)
-                    .textFieldStyle(.roundedBorder)
-                    
-                    Slider(value: Binding(
-                        get: { value },
-                        set: { updateSizeValue(for: property, at: time, to: $0) }
-                    ), in: 0...200)
-                    .frame(width: 150)
+                    HStack {
+                        Text("Height")
+                            .foregroundColor(.secondary)
+                        
+                        TextField("Height", value: Binding(
+                            get: { value.height },
+                            set: { updateSizeValue(for: property, at: time, to: CGSize(width: value.width, height: $0)) }
+                        ), formatter: NumberFormatter())
+                        .frame(width: 80)
+                        .textFieldStyle(.roundedBorder)
+                        
+                        Slider(value: Binding(
+                            get: { value.height },
+                            set: { updateSizeValue(for: property, at: time, to: CGSize(width: value.width, height: $0)) }
+                        ), in: 10...500)
+                        .frame(width: 120)
+                    }
                 }
             }
         }
@@ -221,6 +248,67 @@ struct PropertyInspectorView: View {
         }
     }
     
+    // Editor for font size property
+    private func fontSizeEditor(property: AnimatableProperty, time: Double) -> some View {
+        VStack(alignment: .leading) {
+            Text("Font Size")
+                .font(.headline)
+            
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGFloat>?,
+               let value = track.getValue(at: time) {
+                HStack {
+                    Text("Size")
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Font Size", value: Binding(
+                        get: { value },
+                        set: { updateFontSizeValue(for: property, at: time, to: $0) }
+                    ), formatter: NumberFormatter())
+                    .frame(width: 80)
+                    .textFieldStyle(.roundedBorder)
+                    
+                    Text("pt")
+                        .foregroundColor(.secondary)
+                    
+                    Slider(value: Binding(
+                        get: { value },
+                        set: { updateFontSizeValue(for: property, at: time, to: $0) }
+                    ), in: 8...200)
+                    .frame(width: 150)
+                }
+            }
+        }
+    }
+    
+    // Editor for scale property
+    private func scaleEditor(property: AnimatableProperty, time: Double) -> some View {
+        VStack(alignment: .leading) {
+            Text("Scale")
+                .font(.headline)
+            
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGFloat>?,
+               let value = track.getValue(at: time) {
+                HStack {
+                    Text("Value")
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Scale", value: Binding(
+                        get: { value },
+                        set: { updateScaleValue(for: property, at: time, to: $0) }
+                    ), formatter: NumberFormatter())
+                    .frame(width: 80)
+                    .textFieldStyle(.roundedBorder)
+                    
+                    Slider(value: Binding(
+                        get: { value },
+                        set: { updateScaleValue(for: property, at: time, to: $0) }
+                    ), in: 0.1...5.0)
+                    .frame(width: 150)
+                }
+            }
+        }
+    }
+    
     // MARK: - Value Update Methods
     
     /// Update the position value for a keyframe
@@ -242,8 +330,8 @@ struct PropertyInspectorView: View {
     }
     
     /// Update the size value for a keyframe
-    private func updateSizeValue(for property: AnimatableProperty, at time: Double, to newValue: CGFloat) {
-        guard let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGFloat>? else { return }
+    private func updateSizeValue(for property: AnimatableProperty, at time: Double, to newValue: CGSize) {
+        guard let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGSize>? else { return }
         
         // Get the existing keyframe to preserve its easing function
         if let existingKeyframe = track.allKeyframes.first(where: { abs($0.time - time) < 0.001 }) {
@@ -314,6 +402,48 @@ struct PropertyInspectorView: View {
         }
     }
     
+    /// Update the font size value for a keyframe
+    private func updateFontSizeValue(for property: AnimatableProperty, at time: Double, to newValue: CGFloat) {
+        guard let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGFloat>? else { return }
+        
+        // Constrain the font size between 8pt and 200pt
+        let constrainedValue = max(8, min(200, newValue))
+        
+        // Get the existing keyframe to preserve its easing function
+        if let existingKeyframe = track.allKeyframes.first(where: { abs($0.time - time) < 0.001 }) {
+            // Remove the old keyframe
+            track.removeKeyframe(at: time)
+            
+            // Add a new keyframe with the updated value
+            let newKeyframe = Keyframe(time: time, value: constrainedValue, easingFunction: existingKeyframe.easingFunction)
+            track.add(keyframe: newKeyframe)
+            
+            // Force the AnimationController to update
+            animationController.updateAnimatedProperties()
+        }
+    }
+    
+    /// Update the scale value for a keyframe
+    private func updateScaleValue(for property: AnimatableProperty, at time: Double, to newValue: CGFloat) {
+        guard let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGFloat>? else { return }
+        
+        // Constrain the scale between 0.1 and 5.0
+        let constrainedValue = max(0.1, min(5.0, newValue))
+        
+        // Get the existing keyframe to preserve its easing function
+        if let existingKeyframe = track.allKeyframes.first(where: { abs($0.time - time) < 0.001 }) {
+            // Remove the old keyframe
+            track.removeKeyframe(at: time)
+            
+            // Add a new keyframe with the updated value
+            let newKeyframe = Keyframe(time: time, value: constrainedValue, easingFunction: existingKeyframe.easingFunction)
+            track.add(keyframe: newKeyframe)
+            
+            // Force the AnimationController to update
+            animationController.updateAnimatedProperties()
+        }
+    }
+    
     /// Update the easing function for a keyframe
     private func updateEasingFunction(for property: AnimatableProperty, at time: Double, to newEasing: EasingFunction) {
         switch property.type {
@@ -328,7 +458,7 @@ struct PropertyInspectorView: View {
                 track.add(keyframe: newKeyframe)
             }
         case .size:
-            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGFloat>?,
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGSize>?,
                let keyframe = track.allKeyframes.first(where: { abs($0.time - time) < 0.001 }) {
                 // Remove the old keyframe
                 track.removeKeyframe(at: time)
@@ -383,7 +513,7 @@ struct PropertyInspectorView: View {
                 selectedEasing = keyframe.easingFunction
             }
         case .size:
-            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGFloat>?,
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGSize>?,
                let keyframe = track.allKeyframes.first(where: { abs($0.time - keyframeTime) < 0.001 }) {
                 selectedEasing = keyframe.easingFunction
             }

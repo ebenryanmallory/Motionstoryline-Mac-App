@@ -15,24 +15,45 @@ struct KeyframeEditorView: View {
     // Add keyboard shortcut controller
     @StateObject private var keyEventController = KeyEventMonitorController()
     
+    // Add a property refresh trigger to force UI updates
+    @State private var propertyRefreshTrigger = UUID()
+    
     // Dynamically generate properties based on the selected element
     internal var properties: [AnimatableProperty] {
+        // Reference the refresh trigger to ensure this computed property re-evaluates
+        _ = propertyRefreshTrigger
+        
         guard let element = selectedElement else { return [] }
         
         // Create a unique ID prefix for this element's properties
         let idPrefix = element.id.uuidString
         
-        return [
+        var baseProperties = [
             AnimatableProperty(id: "\(idPrefix)_position", name: "Position", type: .position, icon: "arrow.up.and.down.and.arrow.left.and.right"),
             AnimatableProperty(id: "\(idPrefix)_size", name: "Size", type: .size, icon: "arrow.up.left.and.arrow.down.right"),
             AnimatableProperty(id: "\(idPrefix)_rotation", name: "Rotation", type: .rotation, icon: "arrow.clockwise"),
             AnimatableProperty(id: "\(idPrefix)_color", name: "Color", type: .color, icon: "paintpalette"),
             AnimatableProperty(id: "\(idPrefix)_opacity", name: "Opacity", type: .opacity, icon: "slider.horizontal.below.rectangle")
         ]
+        
+        // Add fontSize property for text elements
+        if element.type == .text {
+            baseProperties.append(AnimatableProperty(id: "\(idPrefix)_fontSize", name: "Font Size", type: .scale, icon: "textformat.size"))
+        }
+        
+        return baseProperties
     }
     
     var body: some View {
-        HSplitView {
+        // Debug logging to track state
+        let _ = print("KeyframeEditorView DEBUG: selectedElement = \(selectedElement?.displayName ?? "nil")")
+        let _ = print("KeyframeEditorView DEBUG: selectedElement ID = \(selectedElement?.id.uuidString ?? "nil")")
+        let _ = print("KeyframeEditorView DEBUG: properties count = \(properties.count)")
+        let _ = print("KeyframeEditorView DEBUG: selectedProperty = \(selectedProperty?.name ?? "nil")")
+        let _ = print("KeyframeEditorView DEBUG: animation controller tracks = \(animationController.getAllTracks())")
+        let _ = print("KeyframeEditorView DEBUG: propertyRefreshTrigger = \(propertyRefreshTrigger)")
+        
+        return HSplitView {
             // Property List
             VStack(spacing: 0) {
                 Text("Properties")
@@ -44,8 +65,13 @@ struct KeyframeEditorView: View {
                 Divider()
                 
                 if selectedElement != nil {
+                    let _ = print("KeyframeEditorView DEBUG: About to show List with \(properties.count) properties")
                     List {
                         ForEach(properties) { property in
+                            let _ = print("KeyframeEditorView DEBUG: Rendering property \(property.name) with ID \(property.id)")
+                            let keyframeCount = getKeyframeCount(for: property.id)
+                            let _ = print("KeyframeEditorView DEBUG: Property \(property.name) has \(keyframeCount ?? -1) keyframes")
+                            
                             HStack {
                                 Image(systemName: property.icon)
                                     .frame(width: 24)
@@ -55,7 +81,7 @@ struct KeyframeEditorView: View {
                                 Spacer()
                                 
                                 // Show active keyframe count
-                                if let count = getKeyframeCount(for: property.id) {
+                                if let count = keyframeCount {
                                     Text("\(count)")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
@@ -69,12 +95,15 @@ struct KeyframeEditorView: View {
                             .contentShape(Rectangle())
                             .background(selectedProperty?.id == property.id ? Color(NSColor.selectedContentBackgroundColor) : Color.clear)
                             .onTapGesture {
+                                print("KeyframeEditorView DEBUG: Property \(property.name) tapped")
                                 selectedProperty = property
                             }
                         }
                     }
                     .listStyle(.sidebar)
+                    .id(propertyRefreshTrigger) // Force List to refresh when trigger changes
                 } else {
+                    let _ = print("KeyframeEditorView DEBUG: No element selected, showing empty state")
                     Spacer()
                     Text("No element selected")
                         .foregroundColor(.secondary)
@@ -168,7 +197,7 @@ struct KeyframeEditorView: View {
                                 isAddingKeyframe = true
                             }
                         )
-                        .frame(height: 120)
+                        .frame(maxWidth: .infinity, minHeight: 120, maxHeight: .infinity)
                         .padding()
                         
                         Divider()
@@ -179,8 +208,8 @@ struct KeyframeEditorView: View {
                             property: property,
                             selectedKeyframeTime: $selectedKeyframeTime
                         )
+                        .frame(maxWidth: .infinity, minHeight: 100, maxHeight: .infinity)
                         .padding()
-                        .frame(height: 200)
                         .id(property.id) // Force view refresh when property changes
                     }
                 } else {
@@ -202,6 +231,17 @@ struct KeyframeEditorView: View {
         }
         .id(selectedElement?.id.uuidString ?? "no-element") // Force view refresh when selected element changes
         .onChange(of: selectedElement) { oldValue, newValue in
+            print("KeyframeEditorView DEBUG: selectedElement onChange triggered")
+            print("KeyframeEditorView DEBUG: oldValue = \(oldValue?.displayName ?? "nil") (ID: \(oldValue?.id.uuidString ?? "nil"))")
+            print("KeyframeEditorView DEBUG: newValue = \(newValue?.displayName ?? "nil") (ID: \(newValue?.id.uuidString ?? "nil"))")
+            
+            // CRITICAL FIX: Clear selectedProperty immediately to prevent stale UI state
+            selectedProperty = nil
+            selectedKeyframeTime = nil
+            
+            // Force properties array to refresh by changing the trigger
+            propertyRefreshTrigger = UUID()
+            
             if let newElement = newValue {
                 // Element was selected or changed
                 print("KeyframeEditorView: Element changed to \(newElement.displayName)")
@@ -209,8 +249,6 @@ struct KeyframeEditorView: View {
                 if oldValue?.id != newElement.id {
                     // Different element selected
                     print("KeyframeEditorView: New element selected, setting up tracks")
-                    selectedProperty = nil
-                    selectedKeyframeTime = nil
                     
                     // Setup keyframe tracks for the new element
                     setupTracksForSelectedElement(newElement)
@@ -218,9 +256,15 @@ struct KeyframeEditorView: View {
                     // Force refresh all properties with current element values
                     animationController.updateAnimatedProperties()
                     
-                    // Select the first property by default
-                    if let firstProperty = properties.first {
-                        selectedProperty = firstProperty
+                    // Use DispatchQueue to ensure the properties array has been refreshed before selecting
+                    DispatchQueue.main.async {
+                        // Select the first property by default after properties are refreshed
+                        if let firstProperty = self.properties.first {
+                            print("KeyframeEditorView DEBUG: Auto-selecting first property: \(firstProperty.name)")
+                            self.selectedProperty = firstProperty
+                        } else {
+                            print("KeyframeEditorView DEBUG: No properties available to auto-select")
+                        }
                     }
                 } 
                 // Even if it's the same element, update tracks if properties changed
@@ -230,23 +274,27 @@ struct KeyframeEditorView: View {
                        newElement.rotation != oldElement.rotation ||
                        newElement.color != oldElement.color ||
                        newElement.opacity != oldElement.opacity ||
+                       newElement.fontSize != oldElement.fontSize ||
                        false {
                         print("KeyframeEditorView: Element properties changed, updating tracks")
                         setupTracksForSelectedElement(newElement)
+                    } else {
+                        print("KeyframeEditorView DEBUG: Same element, no property changes detected")
                     }
                 }
             } else {
-                // Element was deselected
+                // Element was deselected - clear UI state but keep tracks for potential re-selection
                 print("KeyframeEditorView: Element deselected")
-                selectedProperty = nil
-                selectedKeyframeTime = nil
+                // selectedProperty and selectedKeyframeTime already cleared above
             }
         }
         .onChange(of: selectedProperty) { oldValue, newValue in
             // Reset keyframe selection when property changes
+            print("KeyframeEditorView DEBUG: selectedProperty changed from \(oldValue?.name ?? "nil") to \(newValue?.name ?? "nil")")
             selectedKeyframeTime = nil
         }
         .onAppear {
+            print("KeyframeEditorView DEBUG: onAppear called")
             // Setup tracks for the initially selected element, if any
             if let element = selectedElement {
                 print("KeyframeEditorView onAppear with element: \(element.displayName)")
@@ -255,6 +303,18 @@ struct KeyframeEditorView: View {
                 // Force the animation controller to update with initial values
                 animationController.seekToTime(0)
                 animationController.updateAnimatedProperties()
+                
+                // Force properties to refresh on initial appear
+                propertyRefreshTrigger = UUID()
+                
+                // Use DispatchQueue to ensure the properties array has been refreshed before selecting
+                DispatchQueue.main.async {
+                    // Select the first property by default if none is selected
+                    if self.selectedProperty == nil, let firstProperty = self.properties.first {
+                        print("KeyframeEditorView DEBUG: onAppear - Auto-selecting first property: \(firstProperty.name)")
+                        self.selectedProperty = firstProperty
+                    }
+                }
             } else {
                 print("KeyframeEditorView onAppear with no element selected")
             }
@@ -304,120 +364,215 @@ struct KeyframeEditorView: View {
     /// Setup keyframe tracks for the selected element
     internal func setupTracksForSelectedElement(_ element: CanvasElement) {
         let idPrefix = element.id.uuidString
+        print("KeyframeEditorView DEBUG: Setting up tracks for element '\(element.displayName)' with ID prefix '\(idPrefix)'")
         
         // Position track
         let positionTrackId = "\(idPrefix)_position"
+        print("KeyframeEditorView DEBUG: Looking for position track with ID: '\(positionTrackId)'")
         if animationController.getTrack(id: positionTrackId) as? KeyframeTrack<CGPoint> == nil {
+            print("KeyframeEditorView DEBUG: Creating new position track")
             let track = animationController.addTrack(id: positionTrackId) { (newPosition: CGPoint) in
                 // Update the element's position when the animation plays
                 guard var updatedElement = self.selectedElement, updatedElement.id == element.id else { return }
                 updatedElement.position = newPosition
                 self.selectedElement = updatedElement
             }
-            // Add initial keyframe at time 0
-            track.add(keyframe: Keyframe(time: 0.0, value: element.position))
+            // Add initial keyframe at time 0 with current element position
+            let success = track.add(keyframe: Keyframe(time: 0.0, value: element.position))
+            print("KeyframeEditorView DEBUG: Added initial position keyframe: \(success), value: \(element.position)")
         } else if let track = animationController.getTrack(id: positionTrackId) as? KeyframeTrack<CGPoint> {
-            // Ensure the initial keyframe exists and is correct
-            if !track.allKeyframes.contains(where: { $0.time == 0.0 }) {
+            print("KeyframeEditorView DEBUG: Position track already exists with \(track.allKeyframes.count) keyframes")
+            // Update the initial keyframe with current element position if it exists
+            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
+                print("KeyframeEditorView DEBUG: Updating existing position keyframe at time 0")
+                track.removeKeyframe(at: 0.0)
+                track.add(keyframe: Keyframe(time: 0.0, value: element.position, easingFunction: existingKeyframe.easingFunction))
+            } else {
+                print("KeyframeEditorView DEBUG: Adding new position keyframe at time 0")
                 track.add(keyframe: Keyframe(time: 0.0, value: element.position))
             }
         }
         
-        // Size track (using width as the animatable property for simplicity)
+        // Size track (using CGSize to match the rest of the system)
         let sizeTrackId = "\(idPrefix)_size"
-        if animationController.getTrack(id: sizeTrackId) as? KeyframeTrack<CGFloat> == nil {
-            let track = animationController.addTrack(id: sizeTrackId) { (newSize: CGFloat) in
+        print("KeyframeEditorView DEBUG: Looking for size track with ID: '\(sizeTrackId)'")
+        if animationController.getTrack(id: sizeTrackId) as? KeyframeTrack<CGSize> == nil {
+            print("KeyframeEditorView DEBUG: Creating new size track")
+            let track = animationController.addTrack(id: sizeTrackId) { (newSize: CGSize) in
                 // Update the element's size when the animation plays
                 guard var updatedElement = self.selectedElement, updatedElement.id == element.id else { return }
                 // If aspect ratio is locked, maintain it
                 if updatedElement.isAspectRatioLocked {
                     let ratio = updatedElement.size.height / updatedElement.size.width
-                    updatedElement.size = CGSize(width: newSize, height: newSize * ratio)
+                    updatedElement.size = CGSize(width: newSize.width, height: newSize.width * ratio)
                 } else {
-                    updatedElement.size.width = newSize
+                    updatedElement.size = newSize
                 }
                 self.selectedElement = updatedElement
             }
-            // Add initial keyframe at time 0
-            track.add(keyframe: Keyframe(time: 0.0, value: element.size.width))
-        } else if let track = animationController.getTrack(id: sizeTrackId) as? KeyframeTrack<CGFloat> {
-            // Ensure the initial keyframe exists and is correct
-            if !track.allKeyframes.contains(where: { $0.time == 0.0 }) {
-                track.add(keyframe: Keyframe(time: 0.0, value: element.size.width))
+            // Add initial keyframe at time 0 with current element size
+            let success = track.add(keyframe: Keyframe(time: 0.0, value: element.size))
+            print("KeyframeEditorView DEBUG: Added initial size keyframe: \(success), value: \(element.size)")
+        } else if let track = animationController.getTrack(id: sizeTrackId) as? KeyframeTrack<CGSize> {
+            print("KeyframeEditorView DEBUG: Size track already exists with \(track.allKeyframes.count) keyframes")
+            // Update the initial keyframe with current element size if it exists
+            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
+                print("KeyframeEditorView DEBUG: Updating existing size keyframe at time 0")
+                track.removeKeyframe(at: 0.0)
+                track.add(keyframe: Keyframe(time: 0.0, value: element.size, easingFunction: existingKeyframe.easingFunction))
+            } else {
+                print("KeyframeEditorView DEBUG: Adding new size keyframe at time 0")
+                track.add(keyframe: Keyframe(time: 0.0, value: element.size))
             }
         }
         
         // Rotation track
         let rotationTrackId = "\(idPrefix)_rotation"
+        print("KeyframeEditorView DEBUG: Looking for rotation track with ID: '\(rotationTrackId)'")
         if animationController.getTrack(id: rotationTrackId) as? KeyframeTrack<Double> == nil {
+            print("KeyframeEditorView DEBUG: Creating new rotation track")
             let track = animationController.addTrack(id: rotationTrackId) { (newRotation: Double) in
                 // Update the element's rotation when the animation plays
                 guard var updatedElement = self.selectedElement, updatedElement.id == element.id else { return }
                 updatedElement.rotation = newRotation
                 self.selectedElement = updatedElement
             }
-            // Add initial keyframe at time 0
-            track.add(keyframe: Keyframe(time: 0.0, value: element.rotation))
+            // Add initial keyframe at time 0 with current element rotation
+            let success = track.add(keyframe: Keyframe(time: 0.0, value: element.rotation))
+            print("KeyframeEditorView DEBUG: Added initial rotation keyframe: \(success), value: \(element.rotation)")
         } else if let track = animationController.getTrack(id: rotationTrackId) as? KeyframeTrack<Double> {
-            // Ensure the initial keyframe exists and is correct
-            if !track.allKeyframes.contains(where: { $0.time == 0.0 }) {
+            print("KeyframeEditorView DEBUG: Rotation track already exists with \(track.allKeyframes.count) keyframes")
+            // Update the initial keyframe with current element rotation if it exists
+            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
+                print("KeyframeEditorView DEBUG: Updating existing rotation keyframe at time 0")
+                track.removeKeyframe(at: 0.0)
+                track.add(keyframe: Keyframe(time: 0.0, value: element.rotation, easingFunction: existingKeyframe.easingFunction))
+            } else {
+                print("KeyframeEditorView DEBUG: Adding new rotation keyframe at time 0")
                 track.add(keyframe: Keyframe(time: 0.0, value: element.rotation))
             }
         }
         
         // Color track
         let colorTrackId = "\(idPrefix)_color"
+        print("KeyframeEditorView DEBUG: Looking for color track with ID: '\(colorTrackId)'")
         if animationController.getTrack(id: colorTrackId) as? KeyframeTrack<Color> == nil {
+            print("KeyframeEditorView DEBUG: Creating new color track")
             let track = animationController.addTrack(id: colorTrackId) { (newColor: Color) in
                 // Update the element's color when the animation plays
                 guard var updatedElement = self.selectedElement, updatedElement.id == element.id else { return }
                 updatedElement.color = newColor
                 self.selectedElement = updatedElement
             }
-            // Add initial keyframe at time 0
-            track.add(keyframe: Keyframe(time: 0.0, value: element.color))
+            // Add initial keyframe at time 0 with current element color
+            let success = track.add(keyframe: Keyframe(time: 0.0, value: element.color))
+            print("KeyframeEditorView DEBUG: Added initial color keyframe: \(success), value: \(element.color)")
         } else if let track = animationController.getTrack(id: colorTrackId) as? KeyframeTrack<Color> {
-            // Ensure the initial keyframe exists and is correct
-            if !track.allKeyframes.contains(where: { $0.time == 0.0 }) {
+            print("KeyframeEditorView DEBUG: Color track already exists with \(track.allKeyframes.count) keyframes")
+            // Update the initial keyframe with current element color if it exists
+            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
+                print("KeyframeEditorView DEBUG: Updating existing color keyframe at time 0")
+                track.removeKeyframe(at: 0.0)
+                track.add(keyframe: Keyframe(time: 0.0, value: element.color, easingFunction: existingKeyframe.easingFunction))
+            } else {
+                print("KeyframeEditorView DEBUG: Adding new color keyframe at time 0")
                 track.add(keyframe: Keyframe(time: 0.0, value: element.color))
             }
         }
         
         // Opacity track
         let opacityTrackId = "\(idPrefix)_opacity"
+        print("KeyframeEditorView DEBUG: Looking for opacity track with ID: '\(opacityTrackId)'")
         if animationController.getTrack(id: opacityTrackId) as? KeyframeTrack<Double> == nil {
+            print("KeyframeEditorView DEBUG: Creating new opacity track")
             let track = animationController.addTrack(id: opacityTrackId) { (newOpacity: Double) in
                 // Update the element's opacity when the animation plays
                 guard var updatedElement = self.selectedElement, updatedElement.id == element.id else { return }
                 updatedElement.opacity = newOpacity
                 self.selectedElement = updatedElement
             }
-            // Add initial keyframe at time 0
-            track.add(keyframe: Keyframe(time: 0.0, value: element.opacity))
+            // Add initial keyframe at time 0 with current element opacity
+            let success = track.add(keyframe: Keyframe(time: 0.0, value: element.opacity))
+            print("KeyframeEditorView DEBUG: Added initial opacity keyframe: \(success), value: \(element.opacity)")
         } else if let track = animationController.getTrack(id: opacityTrackId) as? KeyframeTrack<Double> {
-            // Ensure the initial keyframe exists and is correct
-            if !track.allKeyframes.contains(where: { $0.time == 0.0 }) {
+            print("KeyframeEditorView DEBUG: Opacity track already exists with \(track.allKeyframes.count) keyframes")
+            // Update the initial keyframe with current element opacity if it exists
+            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
+                print("KeyframeEditorView DEBUG: Updating existing opacity keyframe at time 0")
+                track.removeKeyframe(at: 0.0)
+                track.add(keyframe: Keyframe(time: 0.0, value: element.opacity, easingFunction: existingKeyframe.easingFunction))
+            } else {
+                print("KeyframeEditorView DEBUG: Adding new opacity keyframe at time 0")
                 track.add(keyframe: Keyframe(time: 0.0, value: element.opacity))
             }
         }
         
-
+        // Font size track (only for text elements)
+        if element.type == .text {
+            let fontSizeTrackId = "\(idPrefix)_fontSize"
+            if animationController.getTrack(id: fontSizeTrackId) as? KeyframeTrack<CGFloat> == nil {
+                let track = animationController.addTrack(id: fontSizeTrackId) { (newFontSize: CGFloat) in
+                    // Update the element's font size when the animation plays
+                    guard var updatedElement = self.selectedElement, updatedElement.id == element.id else { return }
+                    updatedElement.fontSize = max(8, min(200, newFontSize)) // Constrain between 8pt and 200pt
+                    self.selectedElement = updatedElement
+                }
+                // Add initial keyframe at time 0 with current element font size
+                let success = track.add(keyframe: Keyframe(time: 0.0, value: element.fontSize))
+                print("KeyframeEditorView DEBUG: Added initial font size keyframe: \(success), value: \(element.fontSize)")
+            } else if let track = animationController.getTrack(id: fontSizeTrackId) as? KeyframeTrack<CGFloat> {
+                // Update the initial keyframe with current element font size if it exists
+                if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
+                    print("KeyframeEditorView DEBUG: Updating existing font size keyframe at time 0")
+                    track.removeKeyframe(at: 0.0)
+                    track.add(keyframe: Keyframe(time: 0.0, value: element.fontSize, easingFunction: existingKeyframe.easingFunction))
+                } else {
+                    print("KeyframeEditorView DEBUG: Adding new font size keyframe at time 0")
+                    track.add(keyframe: Keyframe(time: 0.0, value: element.fontSize))
+                }
+            }
+        }
     }
     
-    /// Get the number of keyframes for a property
+    /// Get the number of keyframes for a property (only for current element)
     private func getKeyframeCount(for propertyId: String) -> Int? {
-        if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<CGPoint> {
-            return track.allKeyframes.count
-        } else if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<CGFloat> {
-            return track.allKeyframes.count
-        } else if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<Double> {
-            return track.allKeyframes.count
-        } else if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<Color> {
-            return track.allKeyframes.count
-        } else if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<[CGPoint]> {
-            return track.allKeyframes.count
+        // Ensure the property ID belongs to the currently selected element
+        guard let element = selectedElement,
+              propertyId.hasPrefix(element.id.uuidString) else {
+            print("KeyframeEditorView DEBUG: Property ID '\(propertyId)' does not belong to current element")
+            return nil
         }
-        return nil
+        
+        print("KeyframeEditorView DEBUG: getKeyframeCount called for propertyId: '\(propertyId)'")
+        
+        if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<CGPoint> {
+            let count = track.allKeyframes.count
+            print("KeyframeEditorView DEBUG: Found CGPoint track with \(count) keyframes")
+            return count
+        } else if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<CGFloat> {
+            let count = track.allKeyframes.count
+            print("KeyframeEditorView DEBUG: Found CGFloat track with \(count) keyframes")
+            return count
+        } else if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<CGSize> {
+            let count = track.allKeyframes.count
+            print("KeyframeEditorView DEBUG: Found CGSize track with \(count) keyframes")
+            return count
+        } else if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<Double> {
+            let count = track.allKeyframes.count
+            print("KeyframeEditorView DEBUG: Found Double track with \(count) keyframes")
+            return count
+        } else if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<Color> {
+            let count = track.allKeyframes.count
+            print("KeyframeEditorView DEBUG: Found Color track with \(count) keyframes")
+            return count
+        } else if let track = animationController.getTrack(id: propertyId) as? KeyframeTrack<[CGPoint]> {
+            let count = track.allKeyframes.count
+            print("KeyframeEditorView DEBUG: Found [CGPoint] track with \(count) keyframes")
+            return count
+        } else {
+            print("KeyframeEditorView DEBUG: No track found for propertyId: '\(propertyId)'")
+            return nil
+        }
     }
 }
 

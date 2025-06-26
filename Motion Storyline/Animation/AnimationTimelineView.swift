@@ -77,75 +77,9 @@ struct AnimationTimelineView: View {
         audioMarkerManager?.markers.map { $0.time } ?? []
     }
     
-    // Resize handle component for the timeline
-    private var resizeHandle: some View {
-        ZStack {
-            // Background line/divider
-            Divider()
-            
-            // Visual handle indicator with dynamic styling based on constraints
-            HStack(spacing: 2) {
-                ForEach(0..<3) { _ in
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(handleColor)
-                        .frame(width: 20, height: 3)
-                }
-            }
-            
-            // Invisible hit area for the gesture
-            Color.clear
-                .contentShape(Rectangle())
-                .frame(height: 12) // Larger hit area
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            // Calculate new height based on drag
-                            let proposedHeight = timelineHeight - value.translation.height
-                            
-                            // Use dynamic max height that considers available space
-                            let effectiveMaxHeight = min(400, dynamicMaxHeight)
-                            
-                            // Enforce constraints with dynamic maximum (min: 70, max: dynamic)
-                            timelineHeight = min(effectiveMaxHeight, max(70, proposedHeight))
-                        }
-                )
-                .onHover { isHovering in
-                    // Change cursor to vertical resize cursor when hovering
-                    if isHovering {
-                        NSCursor.resizeUpDown.set()
-                    } else {
-                        NSCursor.arrow.set()
-                    }
-                }
-        }
-        .frame(height: 12)
-        .padding(.vertical, 1)
-    }
-    
-    /// Color for the resize handle that indicates constraint status
-    private var handleColor: Color {
-        let effectiveMaxHeight = min(400, dynamicMaxHeight)
-        
-        // If we're at or near the maximum height, use a warning color
-        if timelineHeight >= effectiveMaxHeight - 5 {
-            return Color.orange
-        }
-        // If we're at the minimum height, use a different indicator
-        else if timelineHeight <= 75 {
-            return Color.blue
-        }
-        // Normal state
-        else {
-            return Color(NSColor.separatorColor)
-        }
-    }
-    
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 4) {
-                // Add resize handle at the top of the timeline
-                resizeHandle
-                
                 // Timeline ruler
                 TimelineRuler(
                     duration: animationController.duration,

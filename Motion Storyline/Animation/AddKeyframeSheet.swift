@@ -14,6 +14,8 @@ struct AddKeyframeSheet: View {
     @State private var newRotationValue: Double = 0
     @State private var newColorValue = Color.blue
     @State private var newOpacityValue: Double = 1.0
+    @State private var newFontSizeValue: CGFloat = 16.0
+    @State private var newScaleValue: CGFloat = 1.0
     @State private var selectedEasing: EasingFunction = .linear
     
     var body: some View {
@@ -129,6 +131,43 @@ struct AddKeyframeSheet: View {
                 }
                 .padding(.horizontal)
                 
+            case .scale:
+                // Handle both scale and fontSize using the same property type
+                if property.name == "Font Size" {
+                    VStack(alignment: .leading) {
+                        Text("Font Size")
+                            .font(.headline)
+                        
+                        HStack {
+                            TextField("Font Size", value: $newFontSizeValue, formatter: NumberFormatter())
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 80)
+                            
+                            Text("pt")
+                                .foregroundColor(.secondary)
+                            
+                            Slider(value: $newFontSizeValue, in: 8...200)
+                                .frame(width: 200)
+                        }
+                    }
+                    .padding(.horizontal)
+                } else {
+                    VStack(alignment: .leading) {
+                        Text("Scale")
+                            .font(.headline)
+                        
+                        HStack {
+                            TextField("Scale", value: $newScaleValue, formatter: NumberFormatter())
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 80)
+                            
+                            Slider(value: $newScaleValue, in: 0.1...5.0)
+                                .frame(width: 200)
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+                
             default:
                 Text("Unsupported property type")
                     .foregroundColor(.secondary)
@@ -227,6 +266,24 @@ struct AddKeyframeSheet: View {
                 newOpacityValue = element.opacity
             }
             
+        case .scale:
+            // Handle both scale and fontSize
+            if property.name == "Font Size" {
+                // Try to get value from existing track or use element's current font size
+                if let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGFloat>? {
+                    newFontSizeValue = track.getValue(at: animationController.currentTime) ?? element.fontSize
+                } else {
+                    newFontSizeValue = element.fontSize
+                }
+            } else {
+                // Try to get value from existing track or use element's current scale
+                if let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGFloat>? {
+                    newScaleValue = track.getValue(at: animationController.currentTime) ?? element.scale
+                } else {
+                    newScaleValue = element.scale
+                }
+            }
+            
         default:
             break
         }
@@ -309,6 +366,40 @@ struct AddKeyframeSheet: View {
             // Add the keyframe
             let keyframe = Keyframe(time: newKeyframeTime, value: newOpacityValue, easingFunction: selectedEasing)
             track.add(keyframe: keyframe)
+            
+        case .scale:
+            // Handle both scale and fontSize
+            if property.name == "Font Size" {
+                // Get or create the track
+                let track: KeyframeTrack<CGFloat>
+                if let existingTrack = animationController.getTrack(id: property.id) as KeyframeTrack<CGFloat>? {
+                    track = existingTrack
+                } else {
+                    track = animationController.addTrack(id: property.id) { (newFontSize: CGFloat) in
+                        // This will be handled by the setupTracksForSelectedElement function in KeyframeEditorView
+                    }
+                }
+                
+                // Add the keyframe with constrained font size
+                let constrainedFontSize = max(8, min(200, newFontSizeValue))
+                let keyframe = Keyframe(time: newKeyframeTime, value: constrainedFontSize, easingFunction: selectedEasing)
+                track.add(keyframe: keyframe)
+            } else {
+                // Get or create the track
+                let track: KeyframeTrack<CGFloat>
+                if let existingTrack = animationController.getTrack(id: property.id) as KeyframeTrack<CGFloat>? {
+                    track = existingTrack
+                } else {
+                    track = animationController.addTrack(id: property.id) { (newScale: CGFloat) in
+                        // This will be handled by the setupTracksForSelectedElement function in KeyframeEditorView
+                    }
+                }
+                
+                // Add the keyframe with constrained scale
+                let constrainedScale = max(0.1, min(5.0, newScaleValue))
+                let keyframe = Keyframe(time: newKeyframeTime, value: constrainedScale, easingFunction: selectedEasing)
+                track.add(keyframe: keyframe)
+            }
             
         default:
             break

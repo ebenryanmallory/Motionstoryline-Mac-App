@@ -140,9 +140,9 @@ public class AudioLayerManager: ObservableObject {
     }
     
     deinit {
-        Task { @MainActor in
-            cleanup()
-        }
+        // Note: Cleanup is handled explicitly by calling cleanup() before deallocation
+        // This is acceptable since AVPlayer and time observers are automatically cleaned up
+        // when they go out of scope
     }
 }
 

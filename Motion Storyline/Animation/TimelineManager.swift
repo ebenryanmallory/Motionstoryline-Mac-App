@@ -85,18 +85,7 @@ class TimelineManager: ObservableObject {
         NSHapticFeedbackManager.defaultPerformer.perform(.levelChange, performanceTime: .default)
     }
     
-    /// Clears all keyframe data for a specific element
-    func clearPointData(for elementId: UUID) {
-        let elementIdStr = elementId.uuidString
-        
-        // Get all tracks related to this element
-        let allTracks = animationController.getAllTracks()
-        for trackId in allTracks {
-            if trackId.starts(with: elementIdStr) {
-                animationController.removeTrack(id: trackId)
-            }
-        }
-    }
+
     
     /// Get all keyframe times from all tracks in the animation controller
     func getAllKeyframeTimes() -> [Double] {

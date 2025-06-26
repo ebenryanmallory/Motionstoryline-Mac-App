@@ -388,6 +388,11 @@ struct TimelineView: View {
     @State private var availableHeight: CGFloat = 0
     @State private var dynamicMaxHeight: CGFloat = 400
     
+    // Track drag state to prevent conflicts with dynamic constraint updates
+    @State private var isDragging: Bool = false
+    @State private var dragStartHeight: CGFloat = 0
+    @State private var dragConstraints: (min: CGFloat, max: CGFloat) = (0, 0)
+    
     // Height calculation constants
     private let resizeHandleHeight: CGFloat = 14 // 12 + 2 for padding
     private let rulerHeight: CGFloat = 30
@@ -446,47 +451,70 @@ struct TimelineView: View {
                         .frame(width: 20, height: 3)
                 }
             }
-            
-            // Invisible hit area for the gesture
-            Color.clear
-                .contentShape(Rectangle())
-                .frame(height: 12) // Larger hit area
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            // Calculate new height based on drag
-                            let proposedHeight = timelineHeight - value.translation.height
-                            
-                            // Use dynamic max height that considers available space
-                            let effectiveMaxHeight = min(400, dynamicMaxHeight)
-                            
-                            // Enforce constraints with dynamic maximum (min: 70, max: dynamic)
-                            timelineHeight = min(effectiveMaxHeight, max(70, proposedHeight))
-                        }
-                )
-                .onHover { isHovering in
-                    // Change cursor to vertical resize cursor when hovering
-                    if isHovering {
-                        NSCursor.resizeUpDown.set()
-                    } else {
-                        NSCursor.arrow.set()
-                    }
-                }
         }
         .frame(height: 12)
         .padding(.vertical, 1)
+        .contentShape(Rectangle()) // Make the entire area draggable
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { value in
+                    // Set dragging state and capture constraints at the start of drag
+                    if !isDragging {
+                        isDragging = true
+                        dragStartHeight = timelineHeight
+                        
+                        // Capture the constraints at the start of the drag to prevent snapping
+                        let effectiveMaxHeight = min(400, dynamicMaxHeight)
+                        let effectiveMinHeight: CGFloat = 90  // Increased to match TimelineViewPanel
+                        dragConstraints = (min: effectiveMinHeight, max: effectiveMaxHeight)
+                        
+                        print("TimelineView: Drag started - startHeight: \(dragStartHeight), constraints: min=\(dragConstraints.min), max=\(dragConstraints.max)")
+                    }
+                    
+                    // Calculate new height based on drag from the original start height
+                    let proposedHeight = dragStartHeight + value.translation.height
+                    
+                    // Use the captured constraints from the start of the drag
+                    let newHeight = min(dragConstraints.max, max(dragConstraints.min, proposedHeight))
+                    timelineHeight = newHeight
+                }
+                .onEnded { value in
+                    // Calculate final height and apply constraints one more time
+                    let finalHeight = dragStartHeight + value.translation.height
+                    let constrainedHeight = min(dragConstraints.max, max(dragConstraints.min, finalHeight))
+                    timelineHeight = constrainedHeight
+                    
+                    print("TimelineView: Drag ended - finalHeight: \(constrainedHeight)")
+                    
+                    // Clear dragging state
+                    isDragging = false
+                    dragStartHeight = 0
+                    dragConstraints = (0, 0)
+                }
+        )
+        .onHover { isHovering in
+            // Change cursor to vertical resize cursor when hovering
+            if isHovering {
+                NSCursor.resizeUpDown.set()
+            } else {
+                NSCursor.arrow.set()
+            }
+        }
     }
     
     /// Color for the resize handle that indicates constraint status
     private var handleColor: Color {
         let effectiveMaxHeight = min(400, dynamicMaxHeight)
         
+        // Use larger thresholds to reduce flickering and make transitions smoother
+        let threshold: CGFloat = 10
+        
         // If we're at or near the maximum height, use a warning color
-        if timelineHeight >= effectiveMaxHeight - 5 {
+        if timelineHeight >= effectiveMaxHeight - threshold {
             return Color.orange
         }
         // If we're at the minimum height, use a different indicator
-        else if timelineHeight <= 75 {
+        else if timelineHeight <= 90 + threshold {
             return Color.blue
         }
         // Normal state
@@ -667,13 +695,16 @@ struct TimelineView: View {
         // Calculate the maximum height that still leaves space for resize handles to be accessible
         // We need to account for: resize handle + ruler + safety margin
         let reservedSpace = resizeHandleHeight + rulerHeight + safetyMargin
-        let calculatedMaxHeight = max(70, availableHeight - reservedSpace)
+        let calculatedMaxHeight = max(90, availableHeight - reservedSpace)  // Updated to match new minimum
         
         // Use the smaller of our absolute max (400) and the calculated max
         dynamicMaxHeight = min(400, calculatedMaxHeight)
         
-        // If current timeline height exceeds the new dynamic max, adjust it
-        if timelineHeight > dynamicMaxHeight {
+        // Ensure we have a reasonable minimum dynamic max height - allow much more expansion
+        dynamicMaxHeight = max(dynamicMaxHeight, 90 + 200)  // Match TimelineViewPanel approach
+        
+        // Only adjust height if we're not currently dragging and the height exceeds the new dynamic max
+        if !isDragging && timelineHeight > dynamicMaxHeight {
             timelineHeight = dynamicMaxHeight
         }
     }

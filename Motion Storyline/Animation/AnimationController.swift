@@ -549,6 +549,10 @@ public class AnimationController: ObservableObject {
                 if let value = colorTrack.getValue(at: currentTime) {
                     callback(value)
                 }
+            } else if let sizeTrack = track as? KeyframeTrack<CGSize> {
+                if let value = sizeTrack.getValue(at: currentTime) {
+                    callback(value)
+                }
             }
         }
     }
@@ -630,6 +634,14 @@ public class AnimationController: ObservableObject {
         propertyUpdateCallbacks.removeValue(forKey: id)
     }
 
+    /// Clear all tracks from the animation controller
+    public func clearAllTracks() {
+        let trackCount = keyframeTracks.count
+        keyframeTracks.removeAll()
+        propertyUpdateCallbacks.removeAll()
+        print("AnimationController DEBUG: Cleared all \(trackCount) tracks")
+    }
+
     /// Get all tracks with their IDs and keyframes
     public func getAllTracksWithKeyframes() -> [(id: String, keyframes: [KeyframeProtocol])] {
         var result: [(id: String, keyframes: [KeyframeProtocol])] = []
@@ -643,6 +655,8 @@ public class AnimationController: ObservableObject {
                 result.append((id: id, keyframes: pointTrack.allKeyframes))
             } else if let colorTrack = track as? KeyframeTrack<Color> {
                 result.append((id: id, keyframes: colorTrack.allKeyframes))
+            } else if let sizeTrack = track as? KeyframeTrack<CGSize> {
+                result.append((id: id, keyframes: sizeTrack.allKeyframes))
             } else if let pathTrack = track as? KeyframeTrack<[CGPoint]> {
                 result.append((id: id, keyframes: pathTrack.allKeyframes))
             }
@@ -668,6 +682,8 @@ public class AnimationController: ObservableObject {
             } else if let track = getTrack(id: trackId) as? KeyframeTrack<Double> {
                 times.formUnion(track.allKeyframes.map { $0.time })
             } else if let track = getTrack(id: trackId) as? KeyframeTrack<Color> {
+                times.formUnion(track.allKeyframes.map { $0.time })
+            } else if let track = getTrack(id: trackId) as? KeyframeTrack<CGSize> {
                 times.formUnion(track.allKeyframes.map { $0.time })
             } else if let track = getTrack(id: trackId) as? KeyframeTrack<[CGPoint]> {
                 times.formUnion(track.allKeyframes.map { $0.time })
@@ -713,6 +729,8 @@ public class AnimationController: ObservableObject {
             return pointTrack.removeKeyframe(at: time)
         } else if let colorTrack = track as? KeyframeTrack<Color> {
             return colorTrack.removeKeyframe(at: time)
+        } else if let sizeTrack = track as? KeyframeTrack<CGSize> {
+            return sizeTrack.removeKeyframe(at: time)
         }
         
         return false
