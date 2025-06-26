@@ -60,94 +60,109 @@ extension DesignCanvas {
 
     func openProject(url: URL) {
         print("Attempting to open project from URL: \(url.path)")
-        guard let projectData = try? documentManager.loadProject(from: url) else {
-            print("Failed to load project from URL: \(url.path)")
+        do {
+            guard let loadedTuple = try documentManager.loadProject(from: url) else {
+                print("Failed to load project from URL: \(url.path)")
+                // Optionally: Show an error alert to the user
+                let alert = NSAlert()
+                alert.messageText = "Error Opening Project"
+                alert.informativeText = "Could not open the project file at \(url.path). It might be corrupted or in an incompatible format."
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+                return
+            }
+
+            // Construct ProjectData from the tuple for use with applyProjectData
+            let projectDataInstance = ProjectData(
+                elements: loadedTuple.elements,
+                tracks: loadedTuple.tracksData,
+                duration: loadedTuple.duration,
+                canvasWidth: loadedTuple.canvasWidth,
+                canvasHeight: loadedTuple.canvasHeight,
+                mediaAssets: loadedTuple.mediaAssets
+            )
+
+            print("Project loaded successfully. Applying data...")
+            self.applyProjectData(projectData: projectDataInstance)
+            
+            // Update project name in AppState
+            if self.appState.selectedProject != nil {
+                self.appState.selectedProject?.name = loadedTuple.projectName
+            } else {
+                print("Warning: No project currently selected in AppState. Project name from file not set.")
+            }
+
+            // Clear undo/redo history for the newly loaded project
+            self.undoRedoManager.clearHistory()
+            print("Project loaded and applied successfully. Undo/Redo history cleared.")
+            
+        } catch {
+            print("Error loading project from URL: \(error.localizedDescription)")
             // Optionally: Show an error alert to the user
             let alert = NSAlert()
             alert.messageText = "Error Opening Project"
-            alert.informativeText = "Could not open the project file at \(url.path). It might be corrupted or in an incompatible format."
+            alert.informativeText = "Could not open the project file at \(url.path). Error: \(error.localizedDescription)"
             alert.addButton(withTitle: "OK")
             alert.runModal()
-            return
         }
-
-        print("Project loaded successfully. Applying data...")
-        isProgrammaticChange = true // Prevent marking as changed during state restoration
-
-        // Apply loaded data
-        self.canvasElements = projectData.elements
-        self.canvasWidth = projectData.canvasWidth
-        self.canvasHeight = projectData.canvasHeight
-        
-        // Update the current project with loaded media assets
-        if self.appState.selectedProject != nil {
-            self.appState.selectedProject?.mediaAssets = projectData.mediaAssets
-        }
-        
-        // Rebuild AnimationController state
-        self.animationController.reset()
-        self.animationController.setup(duration: projectData.duration)
-        // TODO: Reconstruct animation tracks and keyframes from projectData.tracksData
-        // This requires mapping trackData.propertyName and trackData.valueType to actual types
-        // and correctly setting up the updateCallback for each track.
-
-        // Configure DocumentManager with the newly loaded state and URL
-        // Note: documentManager.currentProjectURL is already set by loadProject(from:)
-        configureDocumentManager()
-
-        // Update AppState
-        if let currentURL = documentManager.currentProjectURL {
-            appState.currentProjectName = currentURL.deletingPathExtension().lastPathComponent
-            print("Project name set to: \(appState.currentProjectName)")
-        }
-        appState.currentProjectURLToLoad = nil // Clear the request to load this URL
-
-        // Reset UI states
-        self.selectedElementId = nil
-        self.zoom = 1.0
-        self.viewportOffset = .zero
-        self.appState.currentTimelineScale = 1.0 // Reset timeline zoom
-        self.appState.currentTimelineOffset = 0.0 // Reset timeline offset
-
-        self.undoRedoManager.clearHistory() // Clear undo/redo history for the newly loaded project
-        self.documentManager.hasUnsavedChanges = false // A freshly loaded project has no unsaved changes
-
-        self.isProgrammaticChange = false // Reset programmatic change flag
-        print("Project data applied and UI reset for loaded project.")
     }
 
     // MARK: - Project Save Operations
 
-    func handleSaveProject() {
-        print("Handling Save Project action...")
+    func handleSaveWorkingFile() {
+        print("Handling Save Working File action...")
         self.configureDocumentManager() // Ensure DocumentManager has the latest canvas state
 
-        if self.documentManager.saveProject() {
-            if let currentURL = self.documentManager.currentProjectURL {
-                self.appState.currentProjectName = currentURL.deletingPathExtension().lastPathComponent
-                print("Project saved successfully. New name: \(self.appState.currentProjectName)")
+        if self.documentManager.saveWorkingFile() {
+            if let projectURL = self.documentManager.projectURL {
+                self.appState.currentProjectName = projectURL.deletingPathExtension().lastPathComponent
+                print("Working file saved successfully. Name: \(self.appState.currentProjectName)")
             }
             self.showSaveSuccessNotification()
         } else {
-            print("Save project failed.")
+            print("Save working file failed.")
             // Optionally: Show an error alert to the user
         }
     }
 
-    func handleSaveProjectAs() {
-        print("Handling Save Project As action...")
+    func handleExportProjectAs() {
+        print("Handling Export Project As action...")
         self.configureDocumentManager() // Ensure DocumentManager has the latest canvas state
 
-        if self.documentManager.saveProjectAs() {
-            if let currentURL = self.documentManager.currentProjectURL {
-                self.appState.currentProjectName = currentURL.deletingPathExtension().lastPathComponent
-                print("Project saved as successfully. New name: \(self.appState.currentProjectName)")
+        if self.documentManager.exportProjectAs() {
+            if let exportURL = self.documentManager.projectURL {
+                print("Project exported successfully to: \(exportURL.path)")
             }
-            self.showSaveSuccessNotification()
+            self.showExportSuccessNotification()
         } else {
-            print("Save project as failed.")
+            print("Export project as failed.")
             // Optionally: Show an error alert to the user
         }
+    }
+    
+    func handleExportToCurrentLocation() {
+        print("Handling Export to Current Location action...")
+        self.configureDocumentManager() // Ensure DocumentManager has the latest canvas state
+        
+        if self.documentManager.exportToFile() {
+            if let exportURL = self.documentManager.projectURL {
+                print("Project exported successfully to: \(exportURL.path)")
+            }
+            self.showExportSuccessNotification()
+        } else {
+            print("Export to current location failed - no export location set.")
+            // Optionally: Show an error alert or fall back to Export As
+        }
+    }
+    
+    // Legacy method for backward compatibility
+    func handleSaveProject() {
+        handleSaveWorkingFile()
+    }
+    
+    // Legacy method for backward compatibility  
+    func handleSaveProjectAs() {
+        handleExportProjectAs()
     }
     
     // MARK: - Async Save Helper
@@ -155,5 +170,13 @@ extension DesignCanvas {
     @MainActor
     internal func saveProjectAsync() async {
         handleSaveProject()
+    }
+    
+    // MARK: - Notification Helpers
+    
+    private func showExportSuccessNotification() {
+        // Provide haptic feedback for successful export
+        NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
+        print("Export operation completed successfully")
     }
 }

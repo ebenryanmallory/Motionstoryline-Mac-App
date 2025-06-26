@@ -42,8 +42,9 @@ struct CanvasElementView: View {
                         .contentShape(Ellipse())
                 case .text:
                     Text(element.text)
+                        .font(.system(size: element.fontSize))
                         .foregroundColor(element.color)
-                        .frame(width: element.size.width, height: element.size.height)
+                        .frame(width: element.size.width, height: element.size.height, alignment: textFrameAlignment(for: element.textAlignment))
                         .multilineTextAlignment(element.textAlignment)
                         .opacity(element.opacity)
                         .contentShape(Rectangle())
@@ -154,6 +155,18 @@ struct CanvasElementView: View {
             if let onTap = onTap {
                 onTap(element)
             }
+        }
+    }
+    
+    // Helper function to convert TextAlignment to Alignment for frame positioning
+    private func textFrameAlignment(for textAlignment: TextAlignment) -> Alignment {
+        switch textAlignment {
+        case .leading:
+            return .leading
+        case .center:
+            return .center
+        case .trailing:
+            return .trailing
         }
     }
 }

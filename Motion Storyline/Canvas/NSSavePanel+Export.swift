@@ -29,7 +29,7 @@ extension NSSavePanel {
         case .gif:
             savePanel.allowedContentTypes = [UTType.gif]
             savePanel.nameFieldStringValue = defaultURL?.lastPathComponent ?? "Motion_Export.gif"
-        case .imageSequence(let format):
+        case .imageSequence(_):
             // For image sequences, we're selecting a directory
             savePanel.allowedContentTypes = []
             savePanel.directoryURL = defaultURL?.deletingLastPathComponent() ?? FileManager.default.homeDirectoryForCurrentUser

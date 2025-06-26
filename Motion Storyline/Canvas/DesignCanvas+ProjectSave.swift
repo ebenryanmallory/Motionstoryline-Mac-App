@@ -28,8 +28,8 @@ extension DesignCanvas {
             )
             
             // Save to the selected URL
-            documentManager.currentProjectURL = url
-            let success = documentManager.saveProject()
+            documentManager.projectURL = url
+            let success = documentManager.exportProjectAs()
             
             // Update project name in app state
             if success {

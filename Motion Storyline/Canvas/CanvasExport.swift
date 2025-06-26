@@ -109,11 +109,21 @@ class CanvasExportRenderer {
             throw NSError(domain: "MotionStoryline", code: 103, userInfo: [NSLocalizedDescriptionKey: "Failed to create asset writer"])
         }
         
-        // Configure video settings
+        // Configure video settings with proper color space information
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: configuration.width,
-            AVVideoHeightKey: configuration.height
+            AVVideoHeightKey: configuration.height,
+            AVVideoColorPropertiesKey: [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+            ],
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: 5000000,
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264BaselineAutoLevel,
+                AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCAVLC
+            ]
         ]
         
         // Create a writer input
@@ -124,7 +134,9 @@ class CanvasExportRenderer {
         let attributes: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB,
             kCVPixelBufferWidthKey as String: configuration.width,
-            kCVPixelBufferHeightKey as String: configuration.height
+            kCVPixelBufferHeightKey as String: configuration.height,
+            kCVPixelBufferCGImageCompatibilityKey as String: true,
+            kCVPixelBufferCGBitmapContextCompatibilityKey as String: true
         ]
         
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
@@ -143,8 +155,8 @@ class CanvasExportRenderer {
         assetWriter.startWriting()
         assetWriter.startSession(atSourceTime: .zero)
         
-        // Bitmap info for context creation
-        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        // Bitmap info for context creation - match CanvasRenderer exactly
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
         
         // Scale factor for positioning elements
         let scaleFactor = min(
@@ -207,7 +219,7 @@ class CanvasExportRenderer {
                         height: configuration.height,
                         bitsPerComponent: 8,
                         bytesPerRow: configuration.width * 4,
-                        space: CGColorSpaceCreateDeviceRGB(),
+                        space: CGColorSpace(name: CGColorSpace.sRGB)!,
                         bitmapInfo: bitmapInfo.rawValue
                     ) else {
                         continue
@@ -285,8 +297,8 @@ class CanvasExportRenderer {
                             let attributedString = NSAttributedString(
                                 string: element.text,
                                 attributes: [
-                                    // Use a size relative to the element's height for better proportional scaling
-                                    .font: NSFont.systemFont(ofSize: min(rect.height * 0.7, 36)),
+                                    // Use the element's fontSize property for consistent rendering
+                                    .font: NSFont.systemFont(ofSize: element.fontSize),
                                     // Ensure consistent color conversion
                                     .foregroundColor: {
                                         // First create NSColor from SwiftUI Color
@@ -389,7 +401,7 @@ class CanvasExportRenderer {
                                 height: configuration.height,
                                 bitsPerComponent: 8,
                                 bytesPerRow: bytesPerRow,
-                                space: CGColorSpaceCreateDeviceRGB(),
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                 bitmapInfo: bitmapInfo.rawValue
                             )
                             
@@ -532,7 +544,7 @@ class CanvasExportRenderer {
                 height: height,
                 bitsPerComponent: 8,
                 bytesPerRow: bytesPerRow,
-                space: CGColorSpaceCreateDeviceRGB(),
+                space: CGColorSpace(name: CGColorSpace.sRGB)!,
                 bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
             )
             

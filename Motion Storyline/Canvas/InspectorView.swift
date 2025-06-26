@@ -27,7 +27,7 @@ struct NumericStepper: View {
         HStack(spacing: 4) {
             // Label
             Text(label)
-                .frame(width: 16, alignment: .leading)
+                .frame(minWidth: 35, alignment: .leading)
                 .font(.system(size: 12))
             
             // TextField for direct input
@@ -197,7 +197,7 @@ struct PercentageStepper: View {
         HStack(spacing: 4) {
             // Label
             Text(label)
-                .frame(width: 16, alignment: .leading)
+                .frame(minWidth: 35, alignment: .leading)
                 .font(.system(size: 12))
             
             // TextField for direct input
@@ -351,6 +351,10 @@ struct InspectorView: View {
         .frame(minWidth: 220, idealWidth: inspectorWidth, maxWidth: 300)
         .compositingGroup() // Ensures the view is treated as a single unit
         .overlay(resizeHandle, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("inspector-view")
+        .accessibilityLabel("Properties Inspector")
+        .accessibilityHint("Adjust properties of the selected canvas element. Current width: \(Int(inspectorWidth)) pixels")
     }
     
     // MARK: - Header
@@ -359,6 +363,8 @@ struct InspectorView: View {
             Text("Inspector")
                 .font(.headline)
                 .padding()
+                .accessibilityIdentifier("inspector-title")
+                .accessibilityLabel("Inspector Panel")
             
             Spacer()
             
@@ -369,8 +375,14 @@ struct InspectorView: View {
             }
             .buttonStyle(.plain)
             .padding(.trailing)
+            .accessibilityIdentifier("inspector-close-button")
+            .accessibilityLabel("Close Inspector")
+            .accessibilityHint("Close the properties inspector panel")
         }
         .background(Color(NSColor.controlBackgroundColor))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("inspector-header")
+        .accessibilityLabel("Inspector Header")
     }
     
     // MARK: - Resize Handle
@@ -380,7 +392,7 @@ struct InspectorView: View {
             .frame(width: 5)
             .contentShape(Rectangle())
             .gesture(
-                DragGesture()
+                DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         // Adjust width based on drag
                         let newWidth = inspectorWidth - value.translation.width
@@ -394,6 +406,9 @@ struct InspectorView: View {
                     NSCursor.arrow.set()
                 }
             }
+            .accessibilityIdentifier("inspector-resize-handle")
+            .accessibilityLabel("Inspector Resize Handle")
+            .accessibilityHint("Drag to adjust inspector panel width")
     }
     
     // MARK: - Main Content
@@ -427,6 +442,10 @@ struct InspectorView: View {
             }
             .padding(.bottom, 20)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("inspector-content")
+        .accessibilityLabel("Element Properties")
+        .accessibilityHint("Scroll to view and edit all properties of the selected element")
     }
     
     // MARK: - Element Info Section
@@ -480,6 +499,8 @@ struct InspectorView: View {
             )
             
             textAlignmentControls(for: element)
+            
+            textFontSizeControls(for: element)
         }
     }
     
@@ -538,6 +559,32 @@ struct InspectorView: View {
                     .stroke(Color.gray.opacity(0.2), lineWidth: 1)
             )
         }
+    }
+    
+    // MARK: - Text Font Size Controls
+    @ViewBuilder
+    private func textFontSizeControls(for element: CanvasElement) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Font Size")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+            
+            NumericStepper(
+                value: Binding(
+                    get: { element.fontSize },
+                    set: { newValue in
+                        if var updatedElement = selectedElement {
+                            updatedElement.fontSize = max(8, min(200, newValue)) // Constrain between 8pt and 200pt
+                            selectedElement = updatedElement
+                        }
+                    }
+                ),
+                label: "Size:",
+                range: 8...200,
+                step: 1
+            )
+        }
+        .frame(minHeight: 50) // Prevent vertical collapsing
     }
     
     // MARK: - Position Controls

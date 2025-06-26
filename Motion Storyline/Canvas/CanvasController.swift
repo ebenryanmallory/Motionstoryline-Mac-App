@@ -28,6 +28,7 @@ class CanvasController: ObservableObject {
             size: CGSize(width: 200, height: 60),
             color: .black,
             text: "New Text",
+            fontSize: 16.0,
             displayName: "Text Element"
         )
         canvasElements.append(newText)
@@ -68,8 +69,16 @@ class CanvasController: ObservableObject {
                     self.canvasElements[index].position = newPosition
                 }
             }
-            // Add initial keyframe at time 0
+            // Add initial keyframe at time 0 with current element position
             track.add(keyframe: Keyframe(time: 0.0, value: element.position))
+        } else if let track = animationController.getTrack(id: positionTrackId) as? KeyframeTrack<CGPoint> {
+            // Update the initial keyframe with current element position if it exists
+            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
+                track.removeKeyframe(at: 0.0)
+                track.add(keyframe: Keyframe(time: 0.0, value: element.position, easingFunction: existingKeyframe.easingFunction))
+            } else {
+                track.add(keyframe: Keyframe(time: 0.0, value: element.position))
+            }
         }
         
         // Size track (using width as the animatable property for simplicity)
@@ -87,8 +96,16 @@ class CanvasController: ObservableObject {
                     }
                 }
             }
-            // Add initial keyframe at time 0
+            // Add initial keyframe at time 0 with current element size
             track.add(keyframe: Keyframe(time: 0.0, value: element.size))
+        } else if let track = animationController.getTrack(id: sizeTrackId) as? KeyframeTrack<CGSize> {
+            // Update the initial keyframe with current element size if it exists
+            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
+                track.removeKeyframe(at: 0.0)
+                track.add(keyframe: Keyframe(time: 0.0, value: element.size, easingFunction: existingKeyframe.easingFunction))
+            } else {
+                track.add(keyframe: Keyframe(time: 0.0, value: element.size))
+            }
         }
         
         // Rotation track
@@ -100,8 +117,16 @@ class CanvasController: ObservableObject {
                     self.canvasElements[index].rotation = newRotation
                 }
             }
-            // Add initial keyframe at time 0
+            // Add initial keyframe at time 0 with current element rotation
             track.add(keyframe: Keyframe(time: 0.0, value: element.rotation))
+        } else if let track = animationController.getTrack(id: rotationTrackId) as? KeyframeTrack<Double> {
+            // Update the initial keyframe with current element rotation if it exists
+            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
+                track.removeKeyframe(at: 0.0)
+                track.add(keyframe: Keyframe(time: 0.0, value: element.rotation, easingFunction: existingKeyframe.easingFunction))
+            } else {
+                track.add(keyframe: Keyframe(time: 0.0, value: element.rotation))
+            }
         }
         
         // Color track
@@ -113,8 +138,16 @@ class CanvasController: ObservableObject {
                     self.canvasElements[index].color = newColor
                 }
             }
-            // Add initial keyframe at time 0
+            // Add initial keyframe at time 0 with current element color
             track.add(keyframe: Keyframe(time: 0.0, value: element.color))
+        } else if let track = animationController.getTrack(id: colorTrackId) as? KeyframeTrack<Color> {
+            // Update the initial keyframe with current element color if it exists
+            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
+                track.removeKeyframe(at: 0.0)
+                track.add(keyframe: Keyframe(time: 0.0, value: element.color, easingFunction: existingKeyframe.easingFunction))
+            } else {
+                track.add(keyframe: Keyframe(time: 0.0, value: element.color))
+            }
         }
         
         // Opacity track
@@ -126,11 +159,17 @@ class CanvasController: ObservableObject {
                     self.canvasElements[index].opacity = newOpacity
                 }
             }
-            // Add initial keyframe at time 0
+            // Add initial keyframe at time 0 with current element opacity
             track.add(keyframe: Keyframe(time: 0.0, value: element.opacity))
+        } else if let track = animationController.getTrack(id: opacityTrackId) as? KeyframeTrack<Double> {
+            // Update the initial keyframe with current element opacity if it exists
+            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
+                track.removeKeyframe(at: 0.0)
+                track.add(keyframe: Keyframe(time: 0.0, value: element.opacity, easingFunction: existingKeyframe.easingFunction))
+            } else {
+                track.add(keyframe: Keyframe(time: 0.0, value: element.opacity))
+            }
         }
-        
-
     }
     
     /// Internal method to handle the actual export process

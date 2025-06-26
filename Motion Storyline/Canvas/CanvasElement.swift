@@ -46,6 +46,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
     var color: Color = Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0) // Default to explicit sRGB blue
     var text: String = "Text"
     var textAlignment: TextAlignment = .leading
+    var fontSize: CGFloat = 16.0 // Default font size
     var displayName: String
     var isAspectRatioLocked: Bool = true // Default to locked aspect ratio
 
@@ -67,6 +68,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
         color: Color = Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), // Default to explicit sRGB blue
         text: String = "Text",
         textAlignment: TextAlignment = .leading,
+        fontSize: CGFloat = 16.0,
         displayName: String,
         isAspectRatioLocked: Bool = true,
 
@@ -85,6 +87,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
         self.color = color
         self.text = text
         self.textAlignment = textAlignment
+        self.fontSize = fontSize
         self.displayName = displayName
         self.isAspectRatioLocked = isAspectRatioLocked
 
@@ -125,7 +128,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, type, position, size, rotation, opacity, scale, color, text, textAlignment, displayName, isAspectRatioLocked, assetURL // Added scale
+        case id, type, position, size, rotation, opacity, scale, color, text, textAlignment, fontSize, displayName, isAspectRatioLocked, assetURL // Added scale and fontSize
     }
     
     // Custom encoder to handle SwiftUI types
@@ -166,6 +169,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
         
         try container.encode(text, forKey: .text)
         try container.encode(encodeTextAlignment(textAlignment), forKey: .textAlignment)
+        try container.encode(fontSize, forKey: .fontSize)
         try container.encode(displayName, forKey: .displayName)
         try container.encode(isAspectRatioLocked, forKey: .isAspectRatioLocked)
 
@@ -222,6 +226,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
         
         self.text = try container.decode(String.self, forKey: .text)
         self.textAlignment = try Self.decodeTextAlignment(from: container.decode(String.self, forKey: .textAlignment))
+        self.fontSize = try container.decodeIfPresent(CGFloat.self, forKey: .fontSize) ?? 16.0
         self.displayName = try container.decode(String.self, forKey: .displayName)
         self.isAspectRatioLocked = try container.decode(Bool.self, forKey: .isAspectRatioLocked)
 
@@ -316,7 +321,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
         )
     }
     
-    static func text(at position: CGPoint, content: String = "Text", scale: CGFloat = 1.0) -> CanvasElement {
+    static func text(at position: CGPoint, content: String = "Text", fontSize: CGFloat = 16.0, scale: CGFloat = 1.0) -> CanvasElement {
         CanvasElement(
             type: .text,
             position: position,
@@ -325,6 +330,7 @@ public struct CanvasElement: Identifiable, Equatable, Codable, Sendable {
             color: Color(red: 0.1, green: 0.1, blue: 0.1, opacity: 1.0), // Explicit sRGB dark gray
             text: content,
             textAlignment: .leading,
+            fontSize: fontSize,
             displayName: "Text"
         )
     }
