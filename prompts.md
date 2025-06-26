@@ -43,6 +43,31 @@ xcodebuild test -scheme "Motion Storyline" -destination "platform=macOS" -only-t
 xcodebuild test -scheme "Motion Storyline" -destination "platform=macOS" -only-testing:Motion\ StorylineUITests/Motion_StorylineUITests/testLaunchPerformance
 ```
 
+## build dev
+
+When the user sends "@prompts.md build dev", Cursor should:
+
+1. Build a complete release package to the dist folder by running:
+```bash
+./Scripts/build_dev.sh
+```
+
+This command will:
+- Extract the app from an existing archive (if available)
+- Create a professional DMG installer in the dist/ folder
+- Include the app, Applications symlink, and README
+- Verify the DMG integrity
+- Open Finder to show the completed build
+
+If no archive exists yet, first run:
+```bash
+./Scripts/build_release.sh
+```
+
+This will create the archive (may fail at export due to missing certificates), then run build_dev.sh to complete the process.
+
+The build dev command creates a complete development distribution package suitable for development and testing, with all files properly organized in the dist/ folder as intended by the build scripts.
+
 ## todo
 
 When the user sends "@prompts.md todo", Cursor should:
