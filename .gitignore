@@ -81,6 +81,21 @@ iOSInjectionProject/
 DerivedData/
 build/
 
+# Distribution artifacts
+dist/
+
+# DMG Creation artifacts
+*.dmg
+*.xcarchive
+ExportOptions.plist
+Scripts/assets/dmg-background.png
+Scripts/assets/dmg-icon.icns
+
+# Notarization credentials (never commit these!)
+.notarization-profile
+*.p12
+*.certSigningRequest
+
 # Configuration files with sensitive data
 Config.plist
 
@@ -94,3 +109,4 @@ fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output 
+
