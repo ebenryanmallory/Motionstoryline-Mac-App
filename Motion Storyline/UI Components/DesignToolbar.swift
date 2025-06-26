@@ -17,39 +17,18 @@ public struct DesignToolbar: View {
         HStack {
             // Tools
             HStack(spacing: 2) {
-                ForEach([
-                    (DesignTool.select, "arrow.up.left.and.arrow.down.right", "Select & Move"),
-                    (DesignTool.text, "text.cursor", "Text"),
-                    (DesignTool.rectangle, "rectangle", "Rectangle"),
-                    (DesignTool.ellipse, "circle", "Ellipse")
-                ], id: \.0) { tool, icon, label in
-                    Button(action: {
-                        selectedTool = tool
-                    }) {
-                        VStack(spacing: 2) {
-                            Image(systemName: icon)
-                                .font(.system(size: 16))
-                                .frame(width: 32, height: 32)
-                            
-                            Text(label)
-                                .font(.caption2)
-                                .fixedSize()
-                        }
-                        .frame(minWidth: 64, minHeight: 54)
-                        .padding(.vertical, 4)
-                        .padding(.horizontal, 8)
-                        .foregroundColor(selectedTool == tool ? .white : .primary)
-                        .background(selectedTool == tool ? Color.blue : Color.clear)
-                        .contentShape(Rectangle())
-                        .cornerRadius(4)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .help(toolHelp(for: tool))
-                }
+                toolButton(for: .select, icon: "arrow.up.left.and.arrow.down.right", label: "Select & Move")
+                toolButton(for: .text, icon: "text.cursor", label: "Text")
+                toolButton(for: .rectangle, icon: "rectangle", label: "Rectangle")
+                toolButton(for: .ellipse, icon: "circle", label: "Ellipse")
             }
             .padding(4)
             .background(Color(NSColor.controlBackgroundColor).opacity(0.7))
             .cornerRadius(6)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("tool-selection-group")
+            .accessibilityLabel("Design Tool Selection")
+            .accessibilityHint("Choose a tool for creating or editing canvas elements")
             
             // Status bar
             if selectedTool == .select {
@@ -57,12 +36,16 @@ public struct DesignToolbar: View {
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 8)
+                    .accessibilityIdentifier("tool-status-text")
+                    .accessibilityLabel("Tool status: Click to select and move elements")
             } else {
                 HStack(spacing: 4) {
                     Text(toolStatusText)
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .padding(.horizontal, 8)
+                        .accessibilityIdentifier("tool-status-text")
+                        .accessibilityLabel("Tool status: \(toolStatusText)")
                 }
             }
             
@@ -72,6 +55,41 @@ public struct DesignToolbar: View {
         .padding(.vertical, 6)
         .background(Color(NSColor.controlBackgroundColor))
         .border(Color.gray.opacity(0.2), width: 0.5)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("design-toolbar-container")
+        .accessibilityLabel("Design Toolbar")
+        .accessibilityHint("Contains design tools and status information")
+    }
+    
+    // Helper to create tool buttons
+    private func toolButton(for tool: DesignTool, icon: String, label: String) -> some View {
+        Button(action: {
+            selectedTool = tool
+        }) {
+            VStack(spacing: 2) {
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                    .frame(width: 32, height: 32)
+                
+                Text(label)
+                    .font(.caption2)
+                    .fixedSize()
+            }
+            .frame(minWidth: 64, minHeight: 54)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .foregroundColor(selectedTool == tool ? .white : .primary)
+            .background(selectedTool == tool ? Color.blue : Color.clear)
+            .contentShape(Rectangle())
+            .cornerRadius(4)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .help(toolHelp(for: tool))
+        .accessibilityIdentifier("tool-\(label.lowercased().replacingOccurrences(of: " ", with: "-").replacingOccurrences(of: "&", with: "and"))")
+        .accessibilityLabel(label)
+        .accessibilityHint(toolHelp(for: tool))
+        .accessibilityValue(selectedTool == tool ? "Selected" : "Not selected")
+        .accessibilityAddTraits(selectedTool == tool ? [.isSelected] : [])
     }
     
     // Helper to show status text based on selected tool

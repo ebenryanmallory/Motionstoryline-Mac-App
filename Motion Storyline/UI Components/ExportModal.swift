@@ -78,19 +78,29 @@ struct ExportModal: View {
             HStack {
                 Text("Export Project")
                     .font(.headline)
+                    .accessibilityIdentifier("export-modal-title")
+                    .accessibilityLabel("Export Project")
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 Button(action: onDismiss) {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("export-modal-close")
+                .accessibilityLabel("Close Export Dialog")
+                .accessibilityHint("Closes the export dialog without exporting")
             }
+            .accessibilityElement(children: .contain)
             
             // Format selection
             VStack(alignment: .leading, spacing: 8) {
                 Text("Export Format")
                     .font(.subheadline)
                     .fontWeight(.medium)
+                    .accessibilityIdentifier("export-format-label")
+                    .accessibilityLabel("Export Format Selection")
+                    .accessibilityAddTraits(.isHeader)
                 
                 Picker("Format", selection: $selectedFormat) {
                     Text("MP4 Video").tag(ExportFormat.video)
@@ -100,6 +110,9 @@ struct ExportModal: View {
                     // Text("Project File").tag(ExportFormat.projectFile)
                 }
                 .pickerStyle(.segmented)
+                .accessibilityIdentifier("export-format-picker")
+                .accessibilityLabel("Select Export Format")
+                .accessibilityHint("Choose the file format for your export: video, animated GIF, or image sequence")
             }
             
             // Format-specific options
@@ -109,13 +122,23 @@ struct ExportModal: View {
                     Text("Resolution")
                         .font(.subheadline)
                         .fontWeight(.medium)
+                        .accessibilityIdentifier("resolution-label")
+                        .accessibilityLabel("Resolution Settings")
+                        .accessibilityAddTraits(.isHeader)
                     
                     HStack {
                         TextField("Width", text: $exportWidth)
                             .frame(width: 80)
+                            .accessibilityIdentifier("export-width-field")
+                            .accessibilityLabel("Export Width")
+                            .accessibilityHint("Enter the width in pixels for the exported video")
                         Text("×")
+                            .accessibilityHidden(true) // Decorative
                         TextField("Height", text: $exportHeight)
                             .frame(width: 80)
+                            .accessibilityIdentifier("export-height-field")
+                            .accessibilityLabel("Export Height")
+                            .accessibilityHint("Enter the height in pixels for the exported video")
                         
                         Spacer()
                         
@@ -125,18 +148,27 @@ struct ExportModal: View {
                             exportHeight = "720"
                         }
                         .buttonStyle(.borderless)
+                        .accessibilityIdentifier("hd-preset-button")
+                        .accessibilityLabel("HD Preset")
+                        .accessibilityHint("Sets resolution to 1280 by 720 pixels")
                         
                         Button("Full HD") {
                             exportWidth = "1920"
                             exportHeight = "1080"
                         }
                         .buttonStyle(.borderless)
+                        .accessibilityIdentifier("fullhd-preset-button")
+                        .accessibilityLabel("Full HD Preset")
+                        .accessibilityHint("Sets resolution to 1920 by 1080 pixels")
                         
                         Button("4K") {
                             exportWidth = "3840"
                             exportHeight = "2160"
                         }
                         .buttonStyle(.borderless)
+                        .accessibilityIdentifier("4k-preset-button")
+                        .accessibilityLabel("4K Preset")
+                        .accessibilityHint("Sets resolution to 3840 by 2160 pixels")
                     }
                 }
                 
@@ -145,11 +177,18 @@ struct ExportModal: View {
                     Text("Frame Rate")
                         .font(.subheadline)
                         .fontWeight(.medium)
+                        .accessibilityIdentifier("framerate-label")
+                        .accessibilityLabel("Frame Rate Settings")
+                        .accessibilityAddTraits(.isHeader)
                     
                     HStack {
                         TextField("FPS", text: $frameRate)
                             .frame(width: 80)
+                            .accessibilityIdentifier("framerate-field")
+                            .accessibilityLabel("Frame Rate")
+                            .accessibilityHint("Enter the frame rate in frames per second")
                         Text("fps")
+                            .accessibilityHidden(true) // Label is already in the hint
                         
                         Spacer()
                         
@@ -158,16 +197,25 @@ struct ExportModal: View {
                             frameRate = "24"
                         }
                         .buttonStyle(.borderless)
+                        .accessibilityIdentifier("24fps-preset-button")
+                        .accessibilityLabel("24 FPS Preset")
+                        .accessibilityHint("Sets frame rate to 24 frames per second")
                         
                         Button("30") {
                             frameRate = "30"
                         }
                         .buttonStyle(.borderless)
+                        .accessibilityIdentifier("30fps-preset-button")
+                        .accessibilityLabel("30 FPS Preset")
+                        .accessibilityHint("Sets frame rate to 30 frames per second")
                         
                         Button("60") {
                             frameRate = "60"
                         }
                         .buttonStyle(.borderless)
+                        .accessibilityIdentifier("60fps-preset-button")
+                        .accessibilityLabel("60 FPS Preset")
+                        .accessibilityHint("Sets frame rate to 60 frames per second")
                     }
                 }
                 // Number of frames settings
@@ -175,18 +223,39 @@ struct ExportModal: View {
                     Text("Number of Frames")
                         .font(.subheadline)
                         .fontWeight(.medium)
+                        .accessibilityIdentifier("frames-label")
+                        .accessibilityLabel("Number of Frames Settings")
+                        .accessibilityAddTraits(.isHeader)
                     HStack {
                         TextField("Frames", text: $numberOfFrames)
                             .frame(width: 80)
+                            .accessibilityIdentifier("frames-field")
+                            .accessibilityLabel("Number of Frames")
+                            .accessibilityHint("Enter the total number of frames for the export")
                         Text("frames")
+                            .accessibilityHidden(true) // Label is already in the hint
                         Spacer()
-                        Button("300") { numberOfFrames = "300" }.buttonStyle(.borderless)
-                        Button("150") { numberOfFrames = "150" }.buttonStyle(.borderless)
-                        Button("600") { numberOfFrames = "600" }.buttonStyle(.borderless)
+                        Button("300") { numberOfFrames = "300" }
+                            .buttonStyle(.borderless)
+                            .accessibilityIdentifier("300frames-preset-button")
+                            .accessibilityLabel("300 Frames Preset")
+                            .accessibilityHint("Sets the number of frames to 300")
+                        Button("150") { numberOfFrames = "150" }
+                            .buttonStyle(.borderless)
+                            .accessibilityIdentifier("150frames-preset-button")
+                            .accessibilityLabel("150 Frames Preset")
+                            .accessibilityHint("Sets the number of frames to 150")
+                        Button("600") { numberOfFrames = "600" }
+                            .buttonStyle(.borderless)
+                            .accessibilityIdentifier("600frames-preset-button")
+                            .accessibilityLabel("600 Frames Preset")
+                            .accessibilityHint("Sets the number of frames to 600")
                     }
                     Text("Duration: \(String(format: "%.2f", calculatedDuration)) seconds @ \(frameRate) fps")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                        .accessibilityIdentifier("duration-info")
+                        .accessibilityLabel("Calculated duration: \(String(format: "%.2f", calculatedDuration)) seconds at \(frameRate) frames per second")
                 }
                 
                 // Format-specific settings
@@ -196,6 +265,9 @@ struct ExportModal: View {
                         Text("Video Format")
                             .font(.subheadline)
                             .fontWeight(.medium)
+                            .accessibilityIdentifier("video-format-label")
+                            .accessibilityLabel("Video Format Settings")
+                            .accessibilityAddTraits(.isHeader)
                         
                         Picker("Video Format", selection: $selectedProResProfile) {
                             Text("Standard MP4").tag(nil as VideoExporter.ProResProfile?)
@@ -208,32 +280,52 @@ struct ExportModal: View {
                             Text("ProRes 4444 XQ").tag(VideoExporter.ProResProfile.proRes4444XQ as VideoExporter.ProResProfile?)
                         }
                         .pickerStyle(.menu)
+                        .accessibilityIdentifier("video-format-picker")
+                        .accessibilityLabel("Select Video Format")
+                        .accessibilityHint("Choose between standard MP4 or ProRes formats for different quality and compatibility needs")
                         
                         Toggle("Include Audio", isOn: $includeAudio)
+                            .accessibilityIdentifier("include-audio-toggle")
+                            .accessibilityLabel("Include Audio in Export")
+                            .accessibilityHint("When enabled, audio tracks will be included in the exported video")
                     }
                 case .gif:
                     Text("GIF exports are optimized for web sharing")
                         .font(.caption)
                         .foregroundColor(.secondary)
+                        .accessibilityIdentifier("gif-format-info")
+                        .accessibilityLabel("GIF format information: GIF exports are optimized for web sharing")
                     
                 case .imageSequence:
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Image Format")
                             .font(.subheadline)
                             .fontWeight(.medium)
+                            .accessibilityIdentifier("image-format-label")
+                            .accessibilityLabel("Image Format Settings")
+                            .accessibilityAddTraits(.isHeader)
                         
                         Picker("Image Format", selection: $selectedImageFormat) {
                             Text("PNG (Lossless)").tag(ImageFormat.png)
                             Text("JPEG (Smaller files)").tag(ImageFormat.jpeg)
                         }
                         .pickerStyle(.radioGroup)
+                        .accessibilityIdentifier("image-format-picker")
+                        .accessibilityLabel("Select Image Format")
+                        .accessibilityHint("Choose between PNG for lossless quality or JPEG for smaller file sizes")
                         
                         if selectedImageFormat == .jpeg {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("JPEG Quality: \(Int(jpegQuality * 100))%")
                                     .font(.caption)
+                                    .accessibilityIdentifier("jpeg-quality-label")
+                                    .accessibilityLabel("JPEG Quality: \(Int(jpegQuality * 100)) percent")
                                 
                                 Slider(value: $jpegQuality, in: 0.1...1.0)
+                                    .accessibilityIdentifier("jpeg-quality-slider")
+                                    .accessibilityLabel("JPEG Quality Slider")
+                                    .accessibilityHint("Adjust the quality of JPEG images from 10% to 100%")
+                                    .accessibilityValue("\(Int(jpegQuality * 100)) percent")
                             }
                         }
                     }
@@ -258,10 +350,16 @@ struct ExportModal: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(invalidExportSettings)
+            .accessibilityIdentifier("export-modal-start-button")
+            .accessibilityLabel("Start Export")
+            .accessibilityHint(invalidExportSettings ? "Export is disabled due to invalid settings" : "Begins exporting your project with the configured settings")
             }
         } // End ScrollView
         .padding()
         .frame(width: 480)
+        .accessibilityIdentifier("export-modal")
+        .accessibilityLabel("Export Modal")
+        .accessibilityHint("Configure detailed export settings for your project")
         .sheet(item: $exportConfiguration) { config in
             // Call the closures to get the latest data
             let currentAnimationController = getAnimationController()

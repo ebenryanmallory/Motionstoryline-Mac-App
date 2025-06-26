@@ -3,6 +3,7 @@ import Clerk
 
 struct UserProfileView: View {
     @EnvironmentObject private var authManager: AuthenticationManager
+    @Environment(\.dismiss) private var dismiss
     @State private var isEditingProfile = false
     @State private var firstName = ""
     @State private var lastName = ""
@@ -18,7 +19,7 @@ struct UserProfileView: View {
                 Spacer()
                 
                 Button("Done") {
-                    // Close profile view
+                    dismiss()
                 }
                 .buttonStyle(.borderedProminent)
             }

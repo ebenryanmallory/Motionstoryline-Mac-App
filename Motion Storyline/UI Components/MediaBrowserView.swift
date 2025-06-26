@@ -41,19 +41,11 @@ public struct MediaBrowserView: View {
             HStack {
                 Text("Media Browser")
                     .font(.headline)
+                    .accessibilityIdentifier("media-browser-title")
+                    .accessibilityLabel("Media Browser")
+                    .accessibilityAddTraits(.isHeader)
                 
                 Spacer()
-                
-                // Close button
-                Button(action: {
-                    dismiss()
-                }) {
-                    Image(systemName: "xmark.circle")
-                        .font(.title3)
-                }
-                .buttonStyle(.borderless)
-                .keyboardShortcut(.escape)
-                .padding(.trailing, 8)
                 
                 // Filter and sort controls
                 HStack(spacing: 8) {
@@ -62,6 +54,9 @@ public struct MediaBrowserView: View {
                         Image(systemName: "magnifyingglass")
                             .foregroundColor(.secondary)
                         TextField("Search media...", text: $searchText)
+                            .accessibilityIdentifier("media-search-field")
+                            .accessibilityLabel("Search media files")
+                            .accessibilityHint("Type to filter media assets by name")
                     }
                     .padding(4)
                     .background(Color(NSColor.controlBackgroundColor))
@@ -77,6 +72,9 @@ public struct MediaBrowserView: View {
                     }
                     .pickerStyle(.menu)
                     .frame(width: 80)
+                    .accessibilityIdentifier("media-type-filter")
+                    .accessibilityLabel("Filter by media type")
+                    .accessibilityHint("Select a media type to filter the list, or choose All to show all media")
                     
                     // Sort order
                     Picker("", selection: $sortOrder) {
@@ -85,14 +83,34 @@ public struct MediaBrowserView: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    .frame(width: 120)
+                    .frame(width: 100)
+                    .accessibilityIdentifier("media-sort-order")
+                    .accessibilityLabel("Sort media files")
+                    .accessibilityHint("Choose how to sort the media list: by date, name, duration, or type")
                     
                     // Import button
                     Button(action: { isShowingImportSheet = true }) {
                         Label("Import", systemImage: "plus")
                     }
                     .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("media-import-button")
+                    .accessibilityLabel("Import Media")
+                    .accessibilityHint("Opens the media import dialog to add new video, audio, or image files to your project")
                 }
+                
+                // Close button
+                Button(action: {
+                    dismiss()
+                }) {
+                    Image(systemName: "xmark.circle")
+                        .font(.title3)
+                }
+                .buttonStyle(.borderless)
+                .keyboardShortcut(.escape)
+                .padding(.leading, 8)
+                .accessibilityIdentifier("media-browser-close")
+                .accessibilityLabel("Close Media Browser")
+                .accessibilityHint("Closes the media browser and returns to the main editor")
             }
             .padding(.horizontal)
             .padding(.vertical, 8)
@@ -163,6 +181,10 @@ public struct MediaBrowserView: View {
                     selectedAsset = asset
                     setupPreviewPlayer(for: asset)
                 }
+                .accessibilityIdentifier("media-asset-\(asset.id)")
+                .accessibilityLabel("\(asset.name), \(asset.type.rawValue)")
+                .accessibilityHint("Double tap to select and preview this \(asset.type.rawValue) file")
+                .accessibilityAddTraits(.isButton)
                 .contextMenu {
                     Button(action: {
                         selectedAsset = asset
@@ -170,6 +192,8 @@ public struct MediaBrowserView: View {
                     }) {
                         Label("Delete", systemImage: "trash")
                     }
+                    .accessibilityLabel("Delete \(asset.name)")
+                    .accessibilityHint("Permanently removes this media file from the project")
                     
                     if asset.type == .video || asset.type == .image {
                         Divider()
@@ -194,6 +218,8 @@ public struct MediaBrowserView: View {
                         }) {
                             Label("Add to Canvas", systemImage: "plus.square.on.square")
                         }
+                        .accessibilityLabel("Add \(asset.name) to Canvas")
+                        .accessibilityHint("Adds this \(asset.type.rawValue) as a new element on the design canvas")
                     } else if asset.type == .audio {
                         Divider()
                         Button(action: {
@@ -205,11 +231,16 @@ public struct MediaBrowserView: View {
                         }) {
                             Label("Add to Timeline", systemImage: "timeline.selection")
                         }
+                        .accessibilityLabel("Add \(asset.name) to Timeline")
+                        .accessibilityHint("Adds this audio track to the timeline for animation synchronization")
                     }
                 }
         }
         .listStyle(.bordered(alternatesRowBackgrounds: true))
         .frame(width: width)
+        .accessibilityIdentifier("media-assets-list")
+        .accessibilityLabel("Media Assets List")
+        .accessibilityHint("List of imported media files. Select an item to preview it.")
     }
     
     private func mediaPreviewView(asset: MediaAsset, width: CGFloat) -> some View {
@@ -219,6 +250,9 @@ public struct MediaBrowserView: View {
                 Text(asset.name)
                     .font(.headline)
                     .lineLimit(1)
+                    .accessibilityIdentifier("media-preview-title")
+                    .accessibilityLabel("Now previewing: \(asset.name)")
+                    .accessibilityAddTraits(.isHeader)
                 
                 Spacer()
                 
@@ -228,6 +262,9 @@ public struct MediaBrowserView: View {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.borderless)
+                .accessibilityIdentifier("media-preview-delete")
+                .accessibilityLabel("Delete \(asset.name)")
+                .accessibilityHint("Permanently removes this media file from the project")
             }
             .padding()
             .background(Color(NSColor.controlBackgroundColor))
@@ -277,6 +314,9 @@ public struct MediaBrowserView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .stroke(Color.gray.opacity(0.3), lineWidth: 1)
                 )
+                .accessibilityIdentifier("video-preview-player")
+                .accessibilityLabel("Video preview")
+                .accessibilityHint("Video player showing the selected video file")
             
             // Video controls
             HStack {
@@ -292,6 +332,9 @@ public struct MediaBrowserView: View {
                         .font(.title2)
                 }
                 .buttonStyle(.borderless)
+                .accessibilityIdentifier("video-play-pause")
+                .accessibilityLabel(isPreviewPlaying ? "Pause video" : "Play video")
+                .accessibilityHint("Controls video playback")
                 
                 Button(action: {
                     player.seek(to: .zero)
@@ -300,6 +343,9 @@ public struct MediaBrowserView: View {
                         .font(.title2)
                 }
                 .buttonStyle(.borderless)
+                .accessibilityIdentifier("video-restart")
+                .accessibilityLabel("Restart video")
+                .accessibilityHint("Seeks to the beginning of the video")
             }
             .padding(.top, 8)
         }
@@ -317,6 +363,9 @@ public struct MediaBrowserView: View {
                     .font(.system(size: 48))
                     .foregroundColor(.gray)
             }
+            .accessibilityIdentifier("audio-preview-waveform")
+            .accessibilityLabel("Audio waveform visualization")
+            .accessibilityHint("Visual representation of the audio file")
             
             // Audio controls
             HStack {
@@ -332,6 +381,9 @@ public struct MediaBrowserView: View {
                         .font(.title2)
                 }
                 .buttonStyle(.borderless)
+                .accessibilityIdentifier("audio-play-pause")
+                .accessibilityLabel(isPreviewPlaying ? "Pause audio" : "Play audio")
+                .accessibilityHint("Controls audio playback")
                 
                 Button(action: {
                     player.seek(to: .zero)
@@ -340,6 +392,9 @@ public struct MediaBrowserView: View {
                         .font(.title2)
                 }
                 .buttonStyle(.borderless)
+                .accessibilityIdentifier("audio-restart")
+                .accessibilityLabel("Restart audio")
+                .accessibilityHint("Seeks to the beginning of the audio")
             }
             .padding(.top, 8)
         }
@@ -350,21 +405,26 @@ public struct MediaBrowserView: View {
             switch phase {
             case .empty:
                 ProgressView()
+                    .accessibilityLabel("Loading image")
             case .success(let image):
                 image
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .cornerRadius(8)
+                    .accessibilityLabel("Image preview")
             case .failure:
                 Image(systemName: "photo")
                     .font(.system(size: 48))
                     .foregroundColor(.gray)
+                    .accessibilityLabel("Failed to load image")
             @unknown default:
                 EmptyView()
             }
         }
         .aspectRatio(contentMode: .fit)
         .frame(maxHeight: 300)
+        .accessibilityIdentifier("image-preview")
+        .accessibilityHint("Preview of the selected image file")
     }
     
     private func loadingPreview() -> some View {
@@ -385,6 +445,8 @@ public struct MediaBrowserView: View {
                 Text(asset.type.rawValue.capitalized)
                     .foregroundColor(.secondary)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Media Type: \(asset.type.rawValue.capitalized)")
             
             if let duration = asset.duration {
                 HStack {
@@ -393,6 +455,8 @@ public struct MediaBrowserView: View {
                     Text(formatDuration(duration))
                         .foregroundColor(.secondary)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Duration: \(formatDuration(duration))")
             }
             
             HStack {
@@ -401,6 +465,8 @@ public struct MediaBrowserView: View {
                 Text(formatDate(asset.dateAdded))
                     .foregroundColor(.secondary)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Added: \(formatDate(asset.dateAdded))")
             
             HStack {
                 Text("Location:")
@@ -409,11 +475,16 @@ public struct MediaBrowserView: View {
                     .foregroundColor(.secondary)
                     .lineLimit(1)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Location: \(asset.url.lastPathComponent)")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
         .background(Color(NSColor.textBackgroundColor))
         .cornerRadius(8)
+        .accessibilityIdentifier("media-details")
+        .accessibilityLabel("Media file details")
+        .accessibilityHint("Information about the selected media file")
     }
     
     // MARK: - Helper Methods
@@ -511,6 +582,7 @@ struct MediaAssetRow: View {
                 .font(.title2)
                 .foregroundColor(iconColor(for: asset.type))
                 .frame(width: 24)
+                .accessibilityHidden(true) // Icon is decorative, info is in text
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(asset.name)
@@ -529,6 +601,21 @@ struct MediaAssetRow: View {
         }
         .padding(.vertical, 4)
         .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilityDescription)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+    
+    // Accessibility description
+    private var accessibilityDescription: String {
+        var description = "\(asset.name), \(asset.type.rawValue)"
+        if let duration = asset.duration {
+            description += ", duration \(formatDuration(duration))"
+        }
+        if isSelected {
+            description += ", selected"
+        }
+        return description
     }
     
     // Helper methods

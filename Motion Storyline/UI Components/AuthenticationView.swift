@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AuthenticationView: View {
     @StateObject private var authManager = AuthenticationManager()
+    @Environment(\.dismiss) private var dismiss
     @State private var authMode: AuthMode = .signIn
     @State private var email: String = ""
     @State private var password: String = ""
@@ -21,14 +22,12 @@ struct AuthenticationView: View {
     }
     
     var body: some View {
-        GeometryReader { geometry in
-            HStack(spacing: 0) {
-                // Left side - Branding/Welcome
-                VStack(spacing: 24) {
-                    Spacer()
-                    
-                    // Logo/Brand
-                    VStack(spacing: 16) {
+        ScrollView {
+            VStack(spacing: 0) {
+                // Header with close button
+                HStack {
+                    // Logo/Brand section
+                    HStack(spacing: 12) {
                         Circle()
                             .fill(
                                 LinearGradient(
@@ -37,95 +36,107 @@ struct AuthenticationView: View {
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 80, height: 80)
+                            .frame(width: 40, height: 40)
                             .overlay(
                                 Image(systemName: "play.circle.fill")
-                                    .font(.system(size: 40))
+                                    .font(.system(size: 20))
                                     .foregroundColor(.white)
                             )
                         
-                        Text("Motion Storyline")
-                            .font(.largeTitle)
-                            .fontWeight(.bold)
-                            .foregroundColor(.white)
-                        
-                        Text("Create stunning animations with ease")
-                            .font(.title3)
-                            .foregroundColor(.white.opacity(0.8))
-                            .multilineTextAlignment(.center)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Motion Storyline")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            
+                            Text("Create stunning animations with ease")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                     
                     Spacer()
                     
-                    // Features
-                    VStack(alignment: .leading, spacing: 16) {
-                        FeatureRow(icon: "wand.and.rays", text: "Intuitive animation tools")
-                        FeatureRow(icon: "square.and.arrow.up", text: "Export to multiple formats")
-                        FeatureRow(icon: "icloud", text: "Cloud sync across devices")
-                        FeatureRow(icon: "person.2", text: "Collaborate with your team")
+                    // Close button
+                    Button(action: {
+                        dismiss()
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .padding(8)
+                            .background(Color.gray.opacity(0.1))
+                            .clipShape(Circle())
                     }
-                    .padding(.horizontal, 40)
-                    
-                    Spacer()
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
                 }
-                .frame(width: geometry.size.width * 0.4)
+                .padding(.horizontal, 32)
+                .padding(.top, 24)
+                .padding(.bottom, 16)
+                
+                // Features banner
+                HStack(spacing: 24) {
+                    FeatureRow(icon: "wand.and.rays", text: "Intuitive tools")
+                    FeatureRow(icon: "square.and.arrow.up", text: "Export formats")
+                    FeatureRow(icon: "icloud", text: "Cloud sync")
+                    FeatureRow(icon: "person.2", text: "Collaborate")
+                }
+                .padding(.horizontal, 32)
+                .padding(.vertical, 16)
                 .background(
                     LinearGradient(
-                        colors: [.blue, .purple, .pink],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        colors: [.blue.opacity(0.1), .purple.opacity(0.1)],
+                        startPoint: .leading,
+                        endPoint: .trailing
                     )
                 )
                 
-                // Right side - Authentication Form
-                VStack(spacing: 0) {
-                    ScrollView {
-                        VStack(spacing: 32) {
-                            Spacer(minLength: 60)
-                            
-                            // Header
-                            VStack(spacing: 8) {
-                                Text(authMode == .signIn ? "Welcome back" : authMode == .signUp ? "Create account" : "Reset password")
-                                    .font(.largeTitle)
-                                    .fontWeight(.bold)
-                                
-                                Text(authMode == .signIn ? "Sign in to your account" : authMode == .signUp ? "Get started with Motion Storyline" : "Enter your email to reset your password")
-                                    .font(.body)
-                                    .foregroundColor(.secondary)
-                            }
-                            
-                            // Error message
-                            if let errorMessage = authManager.errorMessage {
-                                HStack {
-                                    Image(systemName: "exclamationmark.triangle.fill")
-                                        .foregroundColor(.red)
-                                    Text(errorMessage)
-                                        .font(.caption)
-                                        .foregroundColor(.red)
-                                }
-                                .padding()
-                                .background(Color.red.opacity(0.1))
-                                .cornerRadius(8)
-                            }
-                            
-                            // Main form
-                            if showingVerification {
-                                verificationForm
-                            } else if showingPasswordReset {
-                                passwordResetForm
-                            } else {
-                                mainAuthForm
-                            }
-                            
-                            Spacer(minLength: 60)
+                // Main content
+                VStack(spacing: 32) {
+                    // Header
+                    VStack(spacing: 8) {
+                        Text(authMode == .signIn ? "Welcome back" : authMode == .signUp ? "Create account" : "Reset password")
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                        
+                        Text(authMode == .signIn ? "Sign in to your account" : authMode == .signUp ? "Get started with Motion Storyline" : "Enter your email to reset your password")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.top, 24)
+                    
+                    // Error message
+                    if let errorMessage = authManager.errorMessage {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.red)
+                            Text(errorMessage)
+                                .font(.caption)
+                                .foregroundColor(.red)
                         }
-                        .padding(.horizontal, 40)
+                        .padding()
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                    
+                    // Main form
+                    if showingVerification {
+                        verificationForm
+                    } else if showingPasswordReset {
+                        passwordResetForm
+                    } else {
+                        mainAuthForm
                     }
                 }
-                .frame(width: geometry.size.width * 0.6)
-                .background(Color(NSColor.windowBackgroundColor))
+                .padding(.horizontal, 32)
+                .padding(.bottom, 32)
             }
         }
+        .frame(width: 600, height: 700)
+        .background(Color(NSColor.windowBackgroundColor))
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.1), radius: 20, x: 0, y: 10)
     }
     
     // MARK: - Main Authentication Form
@@ -471,18 +482,19 @@ struct FeatureRow: View {
     let text: String
     
     var body: some View {
-        HStack(spacing: 12) {
+        VStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 16))
-                .foregroundColor(.white)
-                .frame(width: 20)
+                .foregroundColor(.blue)
+                .frame(width: 20, height: 20)
             
             Text(text)
-                .font(.body)
-                .foregroundColor(.white.opacity(0.9))
-            
-            Spacer()
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
         }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -503,5 +515,63 @@ struct CustomTextFieldStyle: TextFieldStyle {
 
 #Preview {
     AuthenticationView()
-        .frame(width: 1000, height: 700)
+}
+
+// MARK: - Authentication Unavailable View
+
+struct AuthenticationUnavailableView: View {
+    @EnvironmentObject private var authManager: AuthenticationManager
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            Spacer()
+            
+            // Icon
+            Image(systemName: "wifi.exclamationmark")
+                .font(.system(size: 64))
+                .foregroundColor(.orange)
+            
+            // Title
+            Text("Authentication Service Unavailable")
+                .font(.title)
+                .fontWeight(.semibold)
+            
+            // Description
+            Text("We're having trouble connecting to our authentication service. You can continue using the app without signing in, or try again later.")
+                .font(.body)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+            
+            // Error message if available
+            if let errorMessage = authManager.errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 40)
+                    .multilineTextAlignment(.center)
+            }
+            
+            // Action buttons
+            VStack(spacing: 12) {
+                Button("Continue Without Signing In") {
+                    authManager.continueWithoutAuthentication()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                
+                Button("Try Again") {
+                    Task {
+                        await authManager.retryAuthentication()
+                    }
+                }
+                .buttonStyle(.bordered)
+                .disabled(authManager.isLoading)
+            }
+            
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
 } 

@@ -25,9 +25,14 @@ public struct ExportOptionsSheet: View {
                 VStack(alignment: .leading) {
                     Text("Export Project")
                         .font(.headline)
+                        .accessibilityIdentifier("export-options-title")
+                        .accessibilityLabel("Export Project")
+                        .accessibilityAddTraits(.isHeader)
                     Text(projectName)
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+                        .accessibilityIdentifier("export-project-name")
+                        .accessibilityLabel("Project name: \(projectName)")
                 }
                 
                 Spacer()
@@ -37,12 +42,17 @@ public struct ExportOptionsSheet: View {
                         onClose()
                     }
                     .buttonStyle(.borderless)
+                    .accessibilityIdentifier("export-cancel-button")
+                    .accessibilityLabel("Cancel Export")
+                    .accessibilityHint("Closes the export dialog without exporting")
                 }
             }
             .padding()
+            .accessibilityElement(children: .contain)
             
             // Divider
             Divider()
+                .accessibilityHidden(true) // Dividers are decorative
             
             // Content
             VStack {
@@ -69,9 +79,15 @@ public struct ExportOptionsSheet: View {
                                 }
                             }
                         )
+                        .accessibilityIdentifier("export-progress-view")
+                        .accessibilityLabel("Export Progress")
+                        .accessibilityHint("Shows the current export progress and status")
                     } else {
                         Text("Invalid export configuration")
                             .foregroundColor(.red)
+                            .accessibilityIdentifier("export-error-message")
+                            .accessibilityLabel("Export Error: Invalid export configuration")
+                            .accessibilityAddTraits(.isStaticText)
                     }
                 }
             }
@@ -79,6 +95,9 @@ public struct ExportOptionsSheet: View {
         }
         .frame(width: 450)
         .background(Color(NSColor.windowBackgroundColor))
+        .accessibilityIdentifier("export-options-sheet")
+        .accessibilityLabel("Export Options")
+        .accessibilityHint("Configure export settings for your project")
     }
     
     /// Platform selection view
@@ -94,6 +113,9 @@ public struct ExportOptionsSheet: View {
                     Text("Platform")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+                        .accessibilityIdentifier("platform-selection-label")
+                        .accessibilityLabel("Platform Selection")
+                        .accessibilityAddTraits(.isHeader)
                     
                     Picker("Platform", selection: $selectedPlatform) {
                         ForEach(SocialMediaPlatform.allCases) { platform in
@@ -101,11 +123,16 @@ public struct ExportOptionsSheet: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .accessibilityIdentifier("platform-picker")
+                    .accessibilityLabel("Select Platform")
+                    .accessibilityHint("Choose the social media platform for optimized export settings")
                     
                     Text(selectedPlatform.formatDescription)
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("platform-description")
+                        .accessibilityLabel("Platform description: \(selectedPlatform.formatDescription)")
                 }
                 
                 // Aspect ratio selection
@@ -113,6 +140,9 @@ public struct ExportOptionsSheet: View {
                     Text("Aspect Ratio")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
+                        .accessibilityIdentifier("aspect-ratio-label")
+                        .accessibilityLabel("Aspect Ratio Selection")
+                        .accessibilityAddTraits(.isHeader)
                     
                     Picker("Aspect Ratio", selection: $selectedAspectRatio) {
                         ForEach(AspectRatio.allCases) { aspectRatio in
@@ -120,11 +150,16 @@ public struct ExportOptionsSheet: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .accessibilityIdentifier("aspect-ratio-picker")
+                    .accessibilityLabel("Select Aspect Ratio")
+                    .accessibilityHint("Choose the aspect ratio for your export")
                     
                     Text(selectedAspectRatio.description)
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("aspect-ratio-description")
+                        .accessibilityLabel("Aspect ratio description: \(selectedAspectRatio.description)")
                 }
                 
                 // Resolution info
@@ -137,6 +172,8 @@ public struct ExportOptionsSheet: View {
                         Text("\(dimensions.width) × \(dimensions.height)")
                             .bold()
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Resolution: \(dimensions.width) by \(dimensions.height) pixels")
                     
                     HStack {
                         Text("Frame Rate:")
@@ -144,6 +181,8 @@ public struct ExportOptionsSheet: View {
                         Text("\(Int(selectedPlatform.recommendedFrameRate)) fps")
                             .bold()
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Frame Rate: \(Int(selectedPlatform.recommendedFrameRate)) frames per second")
                     
                     HStack {
                         Text("Bitrate:")
@@ -151,7 +190,12 @@ public struct ExportOptionsSheet: View {
                         Text("\(selectedPlatform.recommendedBitrate / 1_000_000) Mbps")
                             .bold()
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Bitrate: \(selectedPlatform.recommendedBitrate / 1_000_000) megabits per second")
                 }
+                .accessibilityIdentifier("export-settings-info")
+                .accessibilityLabel("Export Settings Information")
+                .accessibilityHint("Shows the recommended settings for the selected platform and aspect ratio")
                 .padding(.top, 8)
                 
                 Spacer()
@@ -165,6 +209,9 @@ public struct ExportOptionsSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .accessibilityIdentifier("export-start-button")
+                .accessibilityLabel("Start Export")
+                .accessibilityHint("Begins exporting your project with the selected settings")
             }
         }
         
