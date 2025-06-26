@@ -383,43 +383,28 @@ public class ExportCoordinator {
                 duration: duration,
                 frameRate: configuration.frameRate,
                 canvasWidth: self.canvasSize.width,
-                canvasHeight: self.canvasSize.height
+                canvasHeight: self.canvasSize.height,
+                proResProfile: configuration.proResProfile
             )
             
-            // Render the video using canvas renderer
+            // Render the video using canvas renderer (now handles ProRes directly)
             let renderedAsset = try await canvasRenderer.renderToVideo(
                 configuration: canvasConfig,
                 progressHandler: progressHandler
             )
             
-            // If we need to apply ProRes or other post-processing, we can use VideoExporter on the rendered asset
+            // For both H.264 and ProRes, the CanvasVideoRenderer now handles the codec directly
+            // We just need to move/copy the file to the final destination if needed
             if configuration.proResProfile != nil {
-                os_log("Applying ProRes post-processing to rendered video", log: ExportCoordinator.logger, type: .info)
-                
-                // Create VideoExporter configuration for post-processing
-                let videoExporterConfig = VideoExporter.ExportConfiguration(
-                    format: .video,
-                    width: configuration.width,
-                    height: configuration.height,
-                    frameRate: configuration.frameRate,
-                    proResProfile: configuration.proResProfile,
-                    includeAudio: configuration.includeAudio,
-                    outputURL: configuration.outputURL,
-                    numberOfFrames: configuration.numberOfFrames
-                )
-                
-                // Create VideoExporter with the rendered asset
-                let videoExporter = VideoExporter(asset: renderedAsset)
-                
-                // Export with ProRes settings directly using async/await
-                return try await videoExporter.exportAsync(
-                    with: videoExporterConfig,
-                    progressHandler: nil // Progress already handled by canvas renderer
-                )
+                os_log("ProRes video rendered directly by CanvasVideoRenderer", log: ExportCoordinator.logger, type: .info)
             } else {
-                // For standard MP4, the CanvasVideoRenderer creates a temporary .mov file
-                // We need to move that temporary file to the final location
-                
+                os_log("H.264 video rendered by CanvasVideoRenderer", log: ExportCoordinator.logger, type: .info)
+            }
+            
+            // Check if we need to move the temporary file to the final location
+            // For CanvasVideoRenderer, the asset should be a file-based asset with a URL
+            if let urlAsset = renderedAsset as? AVURLAsset {
+                let tempURL = urlAsset.url
                 // Remove existing file if it exists to handle overwrite
                 if FileManager.default.fileExists(atPath: configuration.outputURL.path) {
                     do {
@@ -430,26 +415,19 @@ public class ExportCoordinator {
                     }
                 }
                 
-                // Create a temporary export using VideoExporter to convert/move the file
-                let videoExporterConfig = VideoExporter.ExportConfiguration(
-                    format: .video,
-                    width: configuration.width,
-                    height: configuration.height,
-                    frameRate: configuration.frameRate,
-                    proResProfile: nil, // No ProRes for standard MP4
-                    includeAudio: configuration.includeAudio,
-                    outputURL: configuration.outputURL,
-                    numberOfFrames: configuration.numberOfFrames
-                )
-                
-                // Create VideoExporter with the rendered asset
-                let videoExporter = VideoExporter(asset: renderedAsset)
-                
-                // Export to final location directly using async/await
-                return try await videoExporter.exportAsync(
-                    with: videoExporterConfig,
-                    progressHandler: nil // Progress already handled by canvas renderer
-                )
+                // Move the temporary file to the final location
+                do {
+                    try FileManager.default.moveItem(at: tempURL, to: configuration.outputURL)
+                    os_log("Moved rendered video from: %{public}@ to: %{public}@", log: ExportCoordinator.logger, type: .info, tempURL.path, configuration.outputURL.path)
+                    return configuration.outputURL
+                } catch {
+                    throw NSError(domain: "ExportCoordinator", code: 110, userInfo: [NSLocalizedDescriptionKey: "Failed to move rendered video to final location: \(error.localizedDescription)"])
+                }
+            } else {
+                // If no URL is available, return the asset directly
+                // This shouldn't normally happen, but we handle it gracefully
+                os_log("No URL available from rendered asset, returning configuration URL", log: ExportCoordinator.logger, type: .default)
+                return configuration.outputURL
             }
         } else {
             os_log("No animation data available, using traditional VideoExporter", log: ExportCoordinator.logger, type: .info)

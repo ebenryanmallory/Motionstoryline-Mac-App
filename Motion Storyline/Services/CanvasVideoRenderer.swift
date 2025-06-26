@@ -36,6 +36,9 @@ class CanvasVideoRenderer: @unchecked Sendable {
         /// Background color (default: white)
         let backgroundColor: CGColor
         
+        /// ProRes profile for high-quality export (optional)
+        let proResProfile: VideoExporter.ProResProfile?
+        
         init(
             width: Int,
             height: Int,
@@ -43,7 +46,8 @@ class CanvasVideoRenderer: @unchecked Sendable {
             frameRate: Float,
             canvasWidth: CGFloat,
             canvasHeight: CGFloat,
-            backgroundColor: CGColor = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
+            backgroundColor: CGColor = CGColor(red: 1, green: 1, blue: 1, alpha: 1),
+            proResProfile: VideoExporter.ProResProfile? = nil
         ) {
             self.width = width
             self.height = height
@@ -52,6 +56,7 @@ class CanvasVideoRenderer: @unchecked Sendable {
             self.canvasWidth = canvasWidth
             self.canvasHeight = canvasHeight
             self.backgroundColor = backgroundColor
+            self.proResProfile = proResProfile
         }
     }
     
@@ -147,22 +152,8 @@ class CanvasVideoRenderer: @unchecked Sendable {
             throw NSError(domain: "MotionStoryline", code: 103, userInfo: [NSLocalizedDescriptionKey: "Failed to create asset writer"])
         }
         
-        // Configure video settings with proper color space information
-        let videoSettings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: configuration.width,
-            AVVideoHeightKey: configuration.height,
-            AVVideoColorPropertiesKey: [
-                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
-                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
-                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
-            ],
-            AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: 5000000,
-                AVVideoProfileLevelKey: AVVideoProfileLevelH264BaselineAutoLevel,
-                AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCAVLC
-            ]
-        ]
+        // Configure video settings based on codec choice (H.264 vs ProRes)
+        let videoSettings = createVideoSettings(for: configuration)
         
         // Create a writer input
         let writerInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
@@ -272,7 +263,8 @@ class CanvasVideoRenderer: @unchecked Sendable {
                             to: context,
                             scaleFactor: scaleFactor,
                             xOffset: xOffset,
-                            yOffset: yOffset
+                            yOffset: yOffset,
+                            currentTime: frameTimeInSeconds
                         )
                     }
                     
@@ -465,7 +457,8 @@ class CanvasVideoRenderer: @unchecked Sendable {
     ///   - scaleFactor: Scale factor for sizing and positioning
     ///   - xOffset: Horizontal offset for centering
     ///   - yOffset: Vertical offset for centering
-    nonisolated private func renderElement(_ element: CanvasElement, to context: CGContext, scaleFactor: CGFloat, xOffset: CGFloat, yOffset: CGFloat) {
+    ///   - currentTime: Current timeline time for video synchronization
+    nonisolated private func renderElement(_ element: CanvasElement, to context: CGContext, scaleFactor: CGFloat, xOffset: CGFloat, yOffset: CGFloat, currentTime: TimeInterval) {
         // Helper function to safely convert SwiftUI Color to CGColor with consistent color space
         func convertToCGColor(_ color: Color) -> CGColor {
             // Use the same color conversion approach as CanvasExport.swift for consistency
@@ -519,8 +512,6 @@ class CanvasVideoRenderer: @unchecked Sendable {
             let fillColor = convertToCGColor(element.color)
             context.setFillColor(fillColor)
             context.fillEllipse(in: rect)
-            
-
             
         case .text:
             // Handle text rendering with proper coordinate system handling (same as CanvasRenderer)
@@ -654,9 +645,8 @@ class CanvasVideoRenderer: @unchecked Sendable {
                 imageGenerator.requestedTimeToleranceAfter = .zero
                 
                 // Calculate video time based on current export time and element's video start time
-                // Note: This would need to be passed from the export context
-                // For now, using a placeholder approach
-                let videoTime = max(0, element.videoStartTime)
+                // This ensures videos play correctly during export
+                let videoTime = max(0, currentTime - element.videoStartTime)
                 let cmTime = CMTime(seconds: videoTime, preferredTimescale: 600)
                 
                 do {
@@ -690,6 +680,41 @@ class CanvasVideoRenderer: @unchecked Sendable {
         
         // Restore the context state
         context.restoreGState()
+    }
+    
+    /// Create video settings based on codec choice (H.264 vs ProRes)
+    private func createVideoSettings(for configuration: Configuration) -> [String: Any] {
+        if let proResProfile = configuration.proResProfile {
+            // ProRes settings
+            return [
+                AVVideoCodecKey: proResProfile.avCodecKey,
+                AVVideoWidthKey: configuration.width,
+                AVVideoHeightKey: configuration.height,
+                AVVideoColorPropertiesKey: [
+                    AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                    AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                    AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+                ]
+                // No compression properties for ProRes - they're handled internally by the codec
+            ]
+        } else {
+            // H.264 settings (existing implementation)
+            return [
+                AVVideoCodecKey: AVVideoCodecType.h264,
+                AVVideoWidthKey: configuration.width,
+                AVVideoHeightKey: configuration.height,
+                AVVideoColorPropertiesKey: [
+                    AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                    AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                    AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+                ],
+                AVVideoCompressionPropertiesKey: [
+                    AVVideoAverageBitRateKey: 5000000,
+                    AVVideoProfileLevelKey: AVVideoProfileLevelH264BaselineAutoLevel,
+                    AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCAVLC
+                ]
+            ]
+        }
     }
     
     /// Create a black pixel buffer for use in video compositions

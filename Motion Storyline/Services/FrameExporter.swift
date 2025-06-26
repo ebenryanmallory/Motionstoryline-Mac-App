@@ -74,11 +74,12 @@ public class FrameExporter {
                time.seconds, configuration.imageFormat.rawValue)
         // 1. Get the canvas elements at the given timeline time
         let elements = getElementsAtTime(time)
-        // 2. Render the canvas as an image
+        // 2. Render the canvas as an image, passing the current timeline time
         guard let cgImage = CanvasRenderer.renderCanvasImage(
             elements: elements,
             size: canvasSize,
-            scaleFactor: 1.0
+            scaleFactor: 1.0,
+            currentTime: time.seconds
         ) else {
             throw NSError(domain: "FrameExporter", code: 10, userInfo: [NSLocalizedDescriptionKey: "Failed to render canvas image at time \(time.seconds)"])
         }

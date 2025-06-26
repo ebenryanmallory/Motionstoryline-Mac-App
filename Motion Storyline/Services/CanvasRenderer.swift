@@ -12,12 +12,14 @@ class CanvasRenderer {
     ///   - size: The desired output image size (in points).
     ///   - scaleFactor: The scale factor (for retina, etc).
     ///   - backgroundColor: The background color (default: white).
+    ///   - currentTime: The current timeline time in seconds for video synchronization.
     /// - Returns: A CGImage containing the rendered canvas, or nil if rendering fails.
     static func renderCanvasImage(
         elements: [CanvasElement],
         size: CGSize,
         scaleFactor: CGFloat = 1.0,
-        backgroundColor: CGColor = CGColor(red: 1, green: 1, blue: 1, alpha: 1)
+        backgroundColor: CGColor = CGColor(red: 1, green: 1, blue: 1, alpha: 1),
+        currentTime: TimeInterval = 0.0
     ) -> CGImage? {
         let width = Int(size.width * scaleFactor)
         let height = Int(size.height * scaleFactor)
@@ -234,10 +236,9 @@ class CanvasRenderer {
                     imageGenerator.requestedTimeToleranceBefore = .zero
                     imageGenerator.requestedTimeToleranceAfter = .zero
                     
-                    // Calculate video time based on element's video start time
-                    // Note: For export, we would need access to the current export time
-                    // This is a simplified version - in practice, you'd pass the current export time
-                    let videoTime = max(0, element.videoStartTime)
+                    // Calculate video time based on current timeline time and element's video start time
+                    // This ensures videos play correctly during timeline playback and export
+                    let videoTime = max(0, currentTime - element.videoStartTime)
                     let cmTime = CMTime(seconds: videoTime, preferredTimescale: 600)
                     
                     do {
@@ -258,7 +259,7 @@ class CanvasRenderer {
                         NSGraphicsContext.restoreGraphicsState()
                         context.restoreGState()
                         
-                        print("[CanvasRenderer] Drew video frame from: \(assetURL.path) at time: \(videoTime)")
+                        print("[CanvasRenderer] Drew video frame from: \(assetURL.path) at video time: \(videoTime) (timeline: \(currentTime), start: \(element.videoStartTime))")
                     } catch {
                         print("[CanvasRenderer] Failed to extract video frame: \(error)")
                         // Draw placeholder if frame extraction fails
