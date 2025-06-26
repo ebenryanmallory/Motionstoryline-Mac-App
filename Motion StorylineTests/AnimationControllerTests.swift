@@ -85,6 +85,24 @@ final class AnimationControllerTests: XCTestCase {
         XCTAssertNil(animationController.getTrack(id: "scale") as Motion_Storyline.KeyframeTrack<Double>?)
     }
     
+        func testClearAllTracks() {
+        // Add several tracks
+        let _ = animationController.addTrack(id: "position") { (_: CGPoint) in }
+        let _ = animationController.addTrack(id: "rotation") { (_: Double) in }
+        let _ = animationController.addTrack(id: "scale") { (_: CGFloat) in }
+        
+        XCTAssertEqual(animationController.getAllTracks().count, 3)
+        
+        // Clear all tracks
+        animationController.clearAllTracks()
+        
+        // Verify all tracks are gone
+        XCTAssertEqual(animationController.getAllTracks().count, 0)
+        XCTAssertFalse(animationController.hasTrack(id: "position"))
+        XCTAssertFalse(animationController.hasTrack(id: "rotation"))
+        XCTAssertFalse(animationController.hasTrack(id: "scale"))
+    }
+    
     // MARK: - Keyframe Tests
     
     func testAddKeyframe() {

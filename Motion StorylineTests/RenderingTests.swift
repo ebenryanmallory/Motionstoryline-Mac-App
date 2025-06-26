@@ -38,6 +38,7 @@ final class RenderingTests: XCTestCase {
                 size: CGSize(width: 300, height: 50),
                 color: .black,
                 text: "Sample Text Element",
+                fontSize: 18.0,
                 displayName: "Test Text"
             ),
             // Image element - would need a real image in production tests
@@ -110,7 +111,7 @@ final class RenderingTests: XCTestCase {
                 }
                 
                 let attributes: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 18),
+                    .font: NSFont.systemFont(ofSize: element.fontSize),
                     .foregroundColor: textColor,
                     .paragraphStyle: paragraphStyle
                 ]

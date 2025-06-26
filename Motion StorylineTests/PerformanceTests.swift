@@ -82,6 +82,7 @@ final class PerformanceTests: XCTestCase {
             // Set additional properties based on type
             if elementType == .text {
                 element.text = "Text \(i)"
+                element.fontSize = 14.0
             }
             // Note: Since CanvasElement doesn't have an image property in this implementation,
             // we'll skip setting that property here

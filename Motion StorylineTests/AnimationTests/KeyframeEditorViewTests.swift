@@ -137,8 +137,6 @@ final class KeyframeEditorViewTests: XCTestCase {
         }
     }
     
-
-    
     /// Test that keyframe data is correctly populated and accessible in the UI
     func testKeyframeDataPopulation() throws {
         // Setup a view with our test element
@@ -235,4 +233,6 @@ final class KeyframeEditorViewTests: XCTestCase {
             XCTFail("Failed to get interpolated rotation value")
         }
     }
+    
+
 } 

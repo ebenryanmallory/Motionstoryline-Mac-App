@@ -338,6 +338,7 @@ final class VideoExporterTests: XCTestCase {
                 color: .white,
                 text: "Sample Test Text",
                 textAlignment: .center,
+                fontSize: 24.0,
                 displayName: "Title Text"
             ),
             
@@ -627,6 +628,7 @@ final class VideoExporterTests: XCTestCase {
             if elementType == .text {
                 element.text = "Test Text"
                 element.textAlignment = .center
+                element.fontSize = 16.0
             }
             
             // 3. Verify rendering (in a real implementation)
