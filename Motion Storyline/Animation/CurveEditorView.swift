@@ -1,5 +1,33 @@
 import SwiftUI
 
+/// A struct to represent bezier control points
+struct BezierControlPoints: Equatable {
+    let x1: Double
+    let y1: Double
+    let x2: Double
+    let y2: Double
+    
+    init(x1: Double, y1: Double, x2: Double, y2: Double) {
+        self.x1 = x1
+        self.y1 = y1
+        self.x2 = x2
+        self.y2 = y2
+    }
+    
+    /// Convert to tuple for backward compatibility
+    var asTuple: (x1: Double, y1: Double, x2: Double, y2: Double) {
+        return (x1: x1, y1: y1, x2: x2, y2: y2)
+    }
+    
+    /// Initialize from tuple
+    init(from tuple: (x1: Double, y1: Double, x2: Double, y2: Double)) {
+        self.x1 = tuple.x1
+        self.y1 = tuple.y1
+        self.x2 = tuple.x2
+        self.y2 = tuple.y2
+    }
+}
+
 struct CurveEditorView: View {
     let property: String
     @Binding var currentTime: Double
@@ -155,6 +183,272 @@ struct CurveEditorView: View {
     private func updateCurrentTime(at xPosition: CGFloat, width: CGFloat) {
         let newTime = minTime + Double(xPosition) / Double(width) * (maxTime - minTime)
         currentTime = max(minTime, min(maxTime, newTime))
+    }
+}
+
+/// A sheet wrapper for the curve editor that integrates with the animation system
+struct CurveEditorSheet: View {
+    let property: AnimatableProperty
+    @ObservedObject var animationController: AnimationController
+    let selectedKeyframeTime: Double
+    @Binding var isPresented: Bool
+    var onCurveUpdate: ((x1: Double, y1: Double, x2: Double, y2: Double)) -> Void
+    
+    @State private var currentTime: Double = 0
+    @State private var bezierPoints = BezierControlPoints(x1: 0.25, y1: 0.1, x2: 0.25, y2: 1.0)
+    @State private var previewEasing: EasingFunction = .linear
+    
+    private var keyframeData: [(String, Double, Double)] {
+        // Convert the animation data to the format expected by CurveEditorView
+        var keyframes: [(String, Double, Double)] = []
+        
+        // Get keyframes from the track
+        switch property.type {
+        case .position:
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGPoint>? {
+                // For position, we'll show the magnitude (distance from origin) as the value
+                for keyframe in track.allKeyframes {
+                    let magnitude = sqrt(keyframe.value.x * keyframe.value.x + keyframe.value.y * keyframe.value.y)
+                    keyframes.append((property.name, keyframe.time, Double(magnitude)))
+                }
+            }
+        case .rotation, .opacity:
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<Double>? {
+                for keyframe in track.allKeyframes {
+                    keyframes.append((property.name, keyframe.time, keyframe.value))
+                }
+            }
+        case .size, .scale:
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGFloat>? {
+                for keyframe in track.allKeyframes {
+                    keyframes.append((property.name, keyframe.time, Double(keyframe.value)))
+                }
+            }
+        case .color:
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<Color>? {
+                // For color, we'll show the brightness as the value
+                for keyframe in track.allKeyframes {
+                    #if canImport(AppKit)
+                    let nsColor = NSColor(keyframe.value)
+                    let brightness = Double(nsColor.brightnessComponent)
+                    keyframes.append((property.name, keyframe.time, brightness))
+                    #else
+                    keyframes.append((property.name, keyframe.time, 0.5)) // Fallback
+                    #endif
+                }
+            }
+        default:
+            break
+        }
+        
+        return keyframes.sorted { $0.1 < $1.1 }
+    }
+    
+    var body: some View {
+        VStack(spacing: 16) {
+            // Header
+            HStack {
+                Text("Curve Editor - \(property.name)")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                Button("Done") {
+                    onCurveUpdate(bezierPoints.asTuple)
+                    isPresented = false
+                }
+                .keyboardShortcut(.return)
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(.horizontal)
+            .padding(.top)
+            
+            // Main curve editor
+            VStack(spacing: 12) {
+                // Timeline view showing keyframes
+                CurveEditorView(
+                    property: property.name,
+                    currentTime: $currentTime,
+                    keyframes: keyframeData,
+                    onKeyframeSelected: { _, time, _ in
+                        currentTime = time
+                        animationController.seekToTime(time)
+                    }
+                )
+                .frame(height: 200)
+                .padding(.horizontal)
+                
+                // Bezier curve controls
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Custom Bezier Curve")
+                        .font(.headline)
+                    
+                    HStack(spacing: 16) {
+                        VStack(alignment: .leading) {
+                            Text("Control Point 1")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            HStack {
+                                Text("X1:")
+                                TextField("X1", value: Binding(
+                                    get: { bezierPoints.x1 },
+                                    set: { bezierPoints = BezierControlPoints(x1: $0, y1: bezierPoints.y1, x2: bezierPoints.x2, y2: bezierPoints.y2) }
+                                ), formatter: NumberFormatter())
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 60)
+                                
+                                Text("Y1:")
+                                TextField("Y1", value: Binding(
+                                    get: { bezierPoints.y1 },
+                                    set: { bezierPoints = BezierControlPoints(x1: bezierPoints.x1, y1: $0, x2: bezierPoints.x2, y2: bezierPoints.y2) }
+                                ), formatter: NumberFormatter())
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 60)
+                            }
+                        }
+                        
+                        VStack(alignment: .leading) {
+                            Text("Control Point 2")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                            
+                            HStack {
+                                Text("X2:")
+                                TextField("X2", value: Binding(
+                                    get: { bezierPoints.x2 },
+                                    set: { bezierPoints = BezierControlPoints(x1: bezierPoints.x1, y1: bezierPoints.y1, x2: $0, y2: bezierPoints.y2) }
+                                ), formatter: NumberFormatter())
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 60)
+                                
+                                Text("Y2:")
+                                TextField("Y2", value: Binding(
+                                    get: { bezierPoints.y2 },
+                                    set: { bezierPoints = BezierControlPoints(x1: bezierPoints.x1, y1: bezierPoints.y1, x2: bezierPoints.x2, y2: $0) }
+                                ), formatter: NumberFormatter())
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 60)
+                            }
+                        }
+                    }
+                    
+                    // Preset buttons
+                    HStack {
+                        Text("Presets:")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
+                        Button("Ease In") {
+                            bezierPoints = BezierControlPoints(x1: 0.42, y1: 0.0, x2: 1.0, y2: 1.0)
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Button("Ease Out") {
+                            bezierPoints = BezierControlPoints(x1: 0.0, y1: 0.0, x2: 0.58, y2: 1.0)
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Button("Ease In Out") {
+                            bezierPoints = BezierControlPoints(x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.0)
+                        }
+                        .buttonStyle(.bordered)
+                        
+                        Button("Bounce") {
+                            bezierPoints = BezierControlPoints(x1: 0.68, y1: -0.55, x2: 0.265, y2: 1.55)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                .padding(.horizontal)
+                
+                // Preview section
+                VStack(alignment: .leading) {
+                    Text("Preview")
+                        .font(.headline)
+                    
+                    HStack {
+                        Text("Current Curve:")
+                            .foregroundColor(.secondary)
+                        
+                        Text("cubic-bezier(\(String(format: "%.2f", bezierPoints.x1)), \(String(format: "%.2f", bezierPoints.y1)), \(String(format: "%.2f", bezierPoints.x2)), \(String(format: "%.2f", bezierPoints.y2)))")
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.blue)
+                    }
+                }
+                .padding(.horizontal)
+            }
+            
+            Spacer()
+            
+            // Bottom buttons
+            HStack {
+                Button("Cancel") {
+                    isPresented = false
+                }
+                .keyboardShortcut(.escape)
+                
+                Spacer()
+                
+                Button("Apply Curve") {
+                    onCurveUpdate(bezierPoints.asTuple)
+                    isPresented = false
+                }
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(.horizontal)
+            .padding(.bottom)
+        }
+        .frame(width: 600, height: 500)
+        .background(Color(NSColor.windowBackgroundColor))
+        .onAppear {
+            currentTime = selectedKeyframeTime
+            
+            // Load existing bezier values if the current easing is a custom bezier
+            loadCurrentEasingFunction()
+        }
+        .onChange(of: bezierPoints) { _, newValue in
+            // Update preview easing
+            previewEasing = .customCubicBezier(x1: newValue.x1, y1: newValue.y1, x2: newValue.x2, y2: newValue.y2)
+        }
+    }
+    
+    /// Load the current easing function values if it's a custom bezier
+    private func loadCurrentEasingFunction() {
+        // Get the current keyframe's easing function
+        switch property.type {
+        case .position:
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGPoint>?,
+               let keyframe = track.allKeyframes.first(where: { abs($0.time - selectedKeyframeTime) < 0.001 }) {
+                if case .customCubicBezier(let x1, let y1, let x2, let y2) = keyframe.easingFunction {
+                    bezierPoints = BezierControlPoints(x1: x1, y1: y1, x2: x2, y2: y2)
+                }
+            }
+        case .rotation, .opacity:
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<Double>?,
+               let keyframe = track.allKeyframes.first(where: { abs($0.time - selectedKeyframeTime) < 0.001 }) {
+                if case .customCubicBezier(let x1, let y1, let x2, let y2) = keyframe.easingFunction {
+                    bezierPoints = BezierControlPoints(x1: x1, y1: y1, x2: x2, y2: y2)
+                }
+            }
+        case .size, .scale:
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<CGFloat>?,
+               let keyframe = track.allKeyframes.first(where: { abs($0.time - selectedKeyframeTime) < 0.001 }) {
+                if case .customCubicBezier(let x1, let y1, let x2, let y2) = keyframe.easingFunction {
+                    bezierPoints = BezierControlPoints(x1: x1, y1: y1, x2: x2, y2: y2)
+                }
+            }
+        case .color:
+            if let track = animationController.getTrack(id: property.id) as KeyframeTrack<Color>?,
+               let keyframe = track.allKeyframes.first(where: { abs($0.time - selectedKeyframeTime) < 0.001 }) {
+                if case .customCubicBezier(let x1, let y1, let x2, let y2) = keyframe.easingFunction {
+                    bezierPoints = BezierControlPoints(x1: x1, y1: y1, x2: x2, y2: y2)
+                }
+            }
+        default:
+            break
+        }
     }
 }
 

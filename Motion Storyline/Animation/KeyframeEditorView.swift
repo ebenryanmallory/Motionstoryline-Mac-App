@@ -9,6 +9,8 @@ struct KeyframeEditorView: View {
     @State private var selectedKeyframeTime: Double?
     @State private var isAddingKeyframe = false
     @State private var newKeyframeTime: Double = 0
+    @State private var isEditingKeyframe = false
+    @State private var editingKeyframeTime: Double?
     @State private var timelineScale: Double = 1.0
     @State private var timelineOffset: Double = 0.0
     
@@ -44,6 +46,193 @@ struct KeyframeEditorView: View {
         return baseProperties
     }
     
+
+    
+    private var propertyListView: some View {
+        VStack(spacing: 0) {
+            if selectedElement != nil {
+                let _ = print("KeyframeEditorView DEBUG: About to show List with \(properties.count) properties")
+                List {
+                    ForEach(properties) { property in
+                        propertyRowView(property: property)
+                    }
+                }
+                .id(propertyRefreshTrigger) // Force List to refresh when trigger changes
+            } else {
+                let _ = print("KeyframeEditorView DEBUG: No element selected, showing empty state")
+                Spacer()
+                Text("No element selected")
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+        }
+        .frame(minWidth: 150)
+    }
+    
+    private func propertyRowView(property: AnimatableProperty) -> some View {
+        let _ = print("KeyframeEditorView DEBUG: Rendering property \(property.name) with ID \(property.id)")
+        let keyframeCount = getKeyframeCount(for: property.id)
+        let _ = print("KeyframeEditorView DEBUG: Property \(property.name) has \(keyframeCount ?? -1) keyframes")
+        
+        return HStack {
+            Image(systemName: property.icon)
+                .frame(width: 16)
+                .foregroundColor(.secondary)
+            
+            Text(property.name)
+                .font(.caption)
+            
+            Spacer()
+            
+            // Show active keyframe count
+            if let count = keyframeCount {
+                Text("\(count)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .cornerRadius(4)
+            }
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 4)
+        .contentShape(Rectangle())
+        .overlay(
+            Rectangle()
+                .stroke(selectedProperty?.id == property.id ? Color.gray.opacity(0.5) : Color.clear, lineWidth: 2)
+        )
+        .onTapGesture {
+            print("KeyframeEditorView DEBUG: Property \(property.name) tapped")
+            selectedProperty = property
+        }
+    }
+    
+    private var keyframeEditorView: some View {
+        VStack(spacing: 0) {
+            toolbarView
+            Divider()
+            
+            // Timeline and Properties Area
+            if let property = selectedProperty {
+                VStack(spacing: 0) {
+                    // Timeline view (using the new component)
+                    AnimationTimelineView(
+                        animationController: animationController,
+                        propertyId: property.id,
+                        propertyType: property.type,
+                        selectedKeyframeTime: $selectedKeyframeTime,
+                        newKeyframeTime: $newKeyframeTime,
+                        isAddingKeyframe: $isAddingKeyframe,
+                        timelineOffset: $timelineOffset,
+                        onAddKeyframe: { time in
+                            newKeyframeTime = time
+                            isAddingKeyframe = true
+                        },
+                        onEditKeyframe: { time in
+                            editingKeyframeTime = time
+                            newKeyframeTime = time
+                            isEditingKeyframe = true
+                        }
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 100, maxHeight: .infinity)
+                    .padding(8)
+                    
+                    Divider()
+                    
+                    // Property inspector (using the new component)
+                    PropertyInspectorView(
+                        animationController: animationController,
+                        property: property,
+                        selectedKeyframeTime: $selectedKeyframeTime
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 80, maxHeight: .infinity)
+                    .padding(8)
+                    .id(property.id) // Force view refresh when property changes
+                }
+            } else {
+                // Empty state
+                VStack {
+                    Spacer()
+                    if selectedElement == nil {
+                        Text("Select an element on the canvas")
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("Select a property to edit keyframes")
+                            .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                }
+            }
+        }
+        .background(Color(NSColor.textBackgroundColor))
+    }
+    
+    private var toolbarView: some View {
+        HStack {
+            if let element = selectedElement {
+                Text(element.displayName)
+                    .font(.headline)
+            } else {
+                Text("No Element Selected")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            Button(action: {
+                isAddingKeyframe = true
+                newKeyframeTime = animationController.currentTime
+            }) {
+                Label("Add Keyframe", systemImage: "plus")
+            }
+            .disabled(selectedProperty == nil || selectedElement == nil)
+            .help("Add Keyframe at Current Time")
+            
+            Button(action: {
+                if let property = selectedProperty, let time = selectedKeyframeTime {
+                    animationController.removeKeyframe(trackId: property.id, time: time)
+                    selectedKeyframeTime = nil
+                }
+            }) {
+                Label("Delete Keyframe", systemImage: "minus")
+            }
+            .disabled(selectedKeyframeTime == nil)
+            .help("Delete Selected Keyframe")
+            
+            Divider()
+                .frame(height: 16)
+                .padding(.horizontal)
+            
+            // Zoom controls
+            Button(action: {
+                timelineScale = max(0.5, timelineScale - 0.25)
+            }) {
+                Image(systemName: "minus.magnifyingglass")
+            }
+            .help("Zoom Out")
+            
+            Button(action: {
+                timelineScale = min(4, timelineScale + 0.25)
+            }) {
+                Image(systemName: "plus.magnifyingglass")
+            }
+            .help("Zoom In")
+            
+            Button(action: {
+                timelineScale = 1.0
+                timelineOffset = 0.0
+            }) {
+                Image(systemName: "1.magnifyingglass")
+            }
+            .help("Reset Zoom")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Color(NSColor.controlBackgroundColor))
+    }
+
     var body: some View {
         // Debug logging to track state
         let _ = print("KeyframeEditorView DEBUG: selectedElement = \(selectedElement?.displayName ?? "nil")")
@@ -54,239 +243,12 @@ struct KeyframeEditorView: View {
         let _ = print("KeyframeEditorView DEBUG: propertyRefreshTrigger = \(propertyRefreshTrigger)")
         
         return HSplitView {
-            // Property List
-            VStack(spacing: 0) {
-                Text("Properties")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding()
-                    .background(Color(NSColor.controlBackgroundColor))
-                
-                Divider()
-                
-                if selectedElement != nil {
-                    let _ = print("KeyframeEditorView DEBUG: About to show List with \(properties.count) properties")
-                    List {
-                        ForEach(properties) { property in
-                            let _ = print("KeyframeEditorView DEBUG: Rendering property \(property.name) with ID \(property.id)")
-                            let keyframeCount = getKeyframeCount(for: property.id)
-                            let _ = print("KeyframeEditorView DEBUG: Property \(property.name) has \(keyframeCount ?? -1) keyframes")
-                            
-                            HStack {
-                                Image(systemName: property.icon)
-                                    .frame(width: 24)
-                                
-                                Text(property.name)
-                                
-                                Spacer()
-                                
-                                // Show active keyframe count
-                                if let count = keyframeCount {
-                                    Text("\(count)")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(Color(NSColor.controlBackgroundColor))
-                                        .cornerRadius(8)
-                                }
-                            }
-                            .padding(.vertical, 4)
-                            .contentShape(Rectangle())
-                            .background(selectedProperty?.id == property.id ? Color(NSColor.selectedContentBackgroundColor) : Color.clear)
-                            .onTapGesture {
-                                print("KeyframeEditorView DEBUG: Property \(property.name) tapped")
-                                selectedProperty = property
-                            }
-                        }
-                    }
-                    .listStyle(.sidebar)
-                    .id(propertyRefreshTrigger) // Force List to refresh when trigger changes
-                } else {
-                    let _ = print("KeyframeEditorView DEBUG: No element selected, showing empty state")
-                    Spacer()
-                    Text("No element selected")
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
-            }
-            .frame(minWidth: 200)
-            
-            // Keyframe Editor Area
-            VStack(spacing: 0) {
-                // Toolbar
-                HStack {
-                    if let element = selectedElement {
-                        Text(element.displayName)
-                            .font(.headline)
-                    } else {
-                        Text("No Element Selected")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        isAddingKeyframe = true
-                        newKeyframeTime = animationController.currentTime
-                    }) {
-                        Label("Add Keyframe", systemImage: "plus")
-                    }
-                    .disabled(selectedProperty == nil || selectedElement == nil)
-                    .help("Add Keyframe at Current Time")
-                    
-                    Button(action: {
-                        if let property = selectedProperty, let time = selectedKeyframeTime {
-                            animationController.removeKeyframe(trackId: property.id, time: time)
-                            selectedKeyframeTime = nil
-                        }
-                    }) {
-                        Label("Delete Keyframe", systemImage: "minus")
-                    }
-                    .disabled(selectedKeyframeTime == nil)
-                    .help("Delete Selected Keyframe")
-                    
-                    Divider()
-                        .frame(height: 16)
-                        .padding(.horizontal)
-                    
-                    // Zoom controls
-                    Button(action: {
-                        timelineScale = max(0.5, timelineScale - 0.25)
-                    }) {
-                        Image(systemName: "minus.magnifyingglass")
-                    }
-                    .help("Zoom Out")
-                    
-                    Button(action: {
-                        timelineScale = min(4, timelineScale + 0.25)
-                    }) {
-                        Image(systemName: "plus.magnifyingglass")
-                    }
-                    .help("Zoom In")
-                    
-                    Button(action: {
-                        timelineScale = 1.0
-                        timelineOffset = 0.0
-                    }) {
-                        Image(systemName: "1.magnifyingglass")
-                    }
-                    .help("Reset Zoom")
-                }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-                .background(Color(NSColor.controlBackgroundColor))
-                
-                Divider()
-                
-                // Timeline and Properties Area
-                if let property = selectedProperty {
-                    VStack(spacing: 0) {
-                        // Timeline view (using the new component)
-                        AnimationTimelineView(
-                            animationController: animationController,
-                            propertyId: property.id,
-                            propertyType: property.type,
-                            selectedKeyframeTime: $selectedKeyframeTime,
-                            newKeyframeTime: $newKeyframeTime,
-                            isAddingKeyframe: $isAddingKeyframe,
-                            timelineOffset: $timelineOffset,
-                            onAddKeyframe: { time in
-                                newKeyframeTime = time
-                                isAddingKeyframe = true
-                            }
-                        )
-                        .frame(maxWidth: .infinity, minHeight: 120, maxHeight: .infinity)
-                        .padding()
-                        
-                        Divider()
-                        
-                        // Property inspector (using the new component)
-                        PropertyInspectorView(
-                            animationController: animationController,
-                            property: property,
-                            selectedKeyframeTime: $selectedKeyframeTime
-                        )
-                        .frame(maxWidth: .infinity, minHeight: 100, maxHeight: .infinity)
-                        .padding()
-                        .id(property.id) // Force view refresh when property changes
-                    }
-                } else {
-                    // Empty state
-                    VStack {
-                        Spacer()
-                        if selectedElement == nil {
-                            Text("Select an element on the canvas")
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text("Select a property to edit keyframes")
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                    }
-                }
-            }
-            .background(Color(NSColor.textBackgroundColor))
+            propertyListView
+            keyframeEditorView
         }
         .id(selectedElement?.id.uuidString ?? "no-element") // Force view refresh when selected element changes
         .onChange(of: selectedElement) { oldValue, newValue in
-            print("KeyframeEditorView DEBUG: selectedElement onChange triggered")
-            print("KeyframeEditorView DEBUG: oldValue = \(oldValue?.displayName ?? "nil") (ID: \(oldValue?.id.uuidString ?? "nil"))")
-            print("KeyframeEditorView DEBUG: newValue = \(newValue?.displayName ?? "nil") (ID: \(newValue?.id.uuidString ?? "nil"))")
-            
-            // CRITICAL FIX: Clear selectedProperty immediately to prevent stale UI state
-            selectedProperty = nil
-            selectedKeyframeTime = nil
-            
-            // Force properties array to refresh by changing the trigger
-            propertyRefreshTrigger = UUID()
-            
-            if let newElement = newValue {
-                // Element was selected or changed
-                print("KeyframeEditorView: Element changed to \(newElement.displayName)")
-                
-                if oldValue?.id != newElement.id {
-                    // Different element selected
-                    print("KeyframeEditorView: New element selected, setting up tracks")
-                    
-                    // Setup keyframe tracks for the new element
-                    setupTracksForSelectedElement(newElement)
-                    
-                    // Force refresh all properties with current element values
-                    animationController.updateAnimatedProperties()
-                    
-                    // Use DispatchQueue to ensure the properties array has been refreshed before selecting
-                    DispatchQueue.main.async {
-                        // Select the first property by default after properties are refreshed
-                        if let firstProperty = self.properties.first {
-                            print("KeyframeEditorView DEBUG: Auto-selecting first property: \(firstProperty.name)")
-                            self.selectedProperty = firstProperty
-                        } else {
-                            print("KeyframeEditorView DEBUG: No properties available to auto-select")
-                        }
-                    }
-                } 
-                // Even if it's the same element, update tracks if properties changed
-                else if let oldElement = oldValue {
-                    if newElement.position != oldElement.position ||
-                       newElement.size != oldElement.size ||
-                       newElement.rotation != oldElement.rotation ||
-                       newElement.color != oldElement.color ||
-                       newElement.opacity != oldElement.opacity ||
-                       newElement.fontSize != oldElement.fontSize ||
-                       false {
-                        print("KeyframeEditorView: Element properties changed, updating tracks")
-                        setupTracksForSelectedElement(newElement)
-                    } else {
-                        print("KeyframeEditorView DEBUG: Same element, no property changes detected")
-                    }
-                }
-            } else {
-                // Element was deselected - clear UI state but keep tracks for potential re-selection
-                print("KeyframeEditorView: Element deselected")
-                // selectedProperty and selectedKeyframeTime already cleared above
-            }
+            handleSelectedElementChange(oldValue: oldValue, newValue: newValue)
         }
         .onChange(of: selectedProperty) { oldValue, newValue in
             // Reset keyframe selection when property changes
@@ -294,33 +256,7 @@ struct KeyframeEditorView: View {
             selectedKeyframeTime = nil
         }
         .onAppear {
-            print("KeyframeEditorView DEBUG: onAppear called")
-            // Setup tracks for the initially selected element, if any
-            if let element = selectedElement {
-                print("KeyframeEditorView onAppear with element: \(element.displayName)")
-                setupTracksForSelectedElement(element)
-                
-                // Force the animation controller to update with initial values
-                animationController.seekToTime(0)
-                animationController.updateAnimatedProperties()
-                
-                // Force properties to refresh on initial appear
-                propertyRefreshTrigger = UUID()
-                
-                // Use DispatchQueue to ensure the properties array has been refreshed before selecting
-                DispatchQueue.main.async {
-                    // Select the first property by default if none is selected
-                    if self.selectedProperty == nil, let firstProperty = self.properties.first {
-                        print("KeyframeEditorView DEBUG: onAppear - Auto-selecting first property: \(firstProperty.name)")
-                        self.selectedProperty = firstProperty
-                    }
-                }
-            } else {
-                print("KeyframeEditorView onAppear with no element selected")
-            }
-            
-            // Setup keyboard shortcuts for timeline navigation
-            setupKeyboardShortcuts()
+            handleOnAppear()
         }
         .onDisappear {
             // Clean up keyboard shortcuts when view disappears
@@ -340,6 +276,112 @@ struct KeyframeEditorView: View {
                 )
             }
         }
+        .sheet(isPresented: $isEditingKeyframe) {
+            if let property = selectedProperty, let _ = selectedElement, let editTime = editingKeyframeTime {
+                AddKeyframeSheet(
+                    animationController: animationController,
+                    property: property,
+                    isPresented: $isEditingKeyframe,
+                    newKeyframeTime: $newKeyframeTime,
+                    selectedElement: $selectedElement,
+                    onAddKeyframe: { time in
+                        selectedKeyframeTime = time
+                    },
+                    isEditingMode: true,
+                    originalKeyframeTime: editTime
+                )
+            }
+        }
+        .background(Color(NSColor.textBackgroundColor))
+    }
+    
+    // Extract the complex onChange logic into a separate method
+    private func handleSelectedElementChange(oldValue: CanvasElement?, newValue: CanvasElement?) {
+        print("KeyframeEditorView DEBUG: selectedElement onChange triggered")
+        print("KeyframeEditorView DEBUG: oldValue = \(oldValue?.displayName ?? "nil") (ID: \(oldValue?.id.uuidString ?? "nil"))")
+        print("KeyframeEditorView DEBUG: newValue = \(newValue?.displayName ?? "nil") (ID: \(newValue?.id.uuidString ?? "nil"))")
+        
+        // CRITICAL FIX: Clear selectedProperty immediately to prevent stale UI state
+        selectedProperty = nil
+        selectedKeyframeTime = nil
+        
+        // Force properties array to refresh by changing the trigger
+        propertyRefreshTrigger = UUID()
+        
+        if let newElement = newValue {
+            // Element was selected or changed
+            print("KeyframeEditorView: Element changed to \(newElement.displayName)")
+            
+            if oldValue?.id != newElement.id {
+                // Different element selected
+                print("KeyframeEditorView: New element selected, setting up tracks")
+                
+                // Setup keyframe tracks for the new element
+                setupTracksForSelectedElement(newElement)
+                
+                // Force refresh all properties with current element values
+                animationController.updateAnimatedProperties()
+                
+                // Use DispatchQueue to ensure the properties array has been refreshed before selecting
+                DispatchQueue.main.async {
+                    // Select the first property by default after properties are refreshed
+                    if let firstProperty = self.properties.first {
+                        print("KeyframeEditorView DEBUG: Auto-selecting first property: \(firstProperty.name)")
+                        self.selectedProperty = firstProperty
+                    } else {
+                        print("KeyframeEditorView DEBUG: No properties available to auto-select")
+                    }
+                }
+            } 
+            // Even if it's the same element, update tracks if properties changed
+            else if let oldElement = oldValue {
+                if newElement.position != oldElement.position ||
+                   newElement.size != oldElement.size ||
+                   newElement.rotation != oldElement.rotation ||
+                   newElement.color != oldElement.color ||
+                   newElement.opacity != oldElement.opacity ||
+                   newElement.fontSize != oldElement.fontSize {
+                    print("KeyframeEditorView: Element properties changed, updating tracks")
+                    setupTracksForSelectedElement(newElement)
+                } else {
+                    print("KeyframeEditorView DEBUG: Same element, no property changes detected")
+                }
+            }
+        } else {
+            // Element was deselected - clear UI state but keep tracks for potential re-selection
+            print("KeyframeEditorView: Element deselected")
+            // selectedProperty and selectedKeyframeTime already cleared above
+        }
+    }
+    
+    private func handleOnAppear() {
+        print("KeyframeEditorView DEBUG: onAppear called")
+        // Setup tracks for the initially selected element, if any
+        if let element = selectedElement {
+            print("KeyframeEditorView onAppear with element: \(element.displayName)")
+            setupTracksForSelectedElement(element)
+            
+            // Force the animation controller to update with initial values
+            animationController.seekToTime(0)
+            animationController.updateAnimatedProperties()
+            
+            // Force properties to refresh on initial appear
+            propertyRefreshTrigger = UUID()
+            
+            // Use DispatchQueue to ensure the properties array has been refreshed before selecting
+            DispatchQueue.main.async {
+                // Select the first property by default if none is selected
+                if self.selectedProperty == nil, let firstProperty = self.properties.first {
+                    print("KeyframeEditorView DEBUG: onAppear - Auto-selecting first property: \(firstProperty.name)")
+                    self.selectedProperty = firstProperty
+                }
+            }
+        } else {
+            print("KeyframeEditorView onAppear with no element selected")
+        }
+        
+        // Setup keyboard shortcuts for timeline navigation
+        setupKeyboardShortcuts()
     }
     
     /// Setup keyboard shortcuts for timeline navigation

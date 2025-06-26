@@ -258,7 +258,6 @@ struct TimelineViewPanel: View {
             }
             .background(Color(NSColor.controlBackgroundColor))
             .frame(height: timelineHeight)
-            .clipped() // Ensure content doesn't overflow the specified height
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("timeline-panel")
             .accessibilityLabel("Animation Timeline Panel")

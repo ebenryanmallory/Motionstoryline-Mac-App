@@ -14,6 +14,7 @@ struct AnimationTimelineView: View {
     @State var timelineScale: Double = 1.0
     @Binding var timelineOffset: Double
     var onAddKeyframe: (Double) -> Void
+    var onEditKeyframe: ((Double) -> Void)? = nil
     
     // Audio options
     var audioURL: URL?  // For single track backward compatibility
@@ -102,7 +103,8 @@ struct AnimationTimelineView: View {
                     isAddingKeyframe: $isAddingKeyframe,
                     scale: timelineScale,
                     offset: $timelineOffset,
-                    onAddKeyframe: onAddKeyframe
+                    onAddKeyframe: onAddKeyframe,
+                    onEditKeyframe: onEditKeyframe
                 )
                 .frame(height: timelineHeight - 70) // Adjust dynamically based on available space
                 
@@ -295,7 +297,8 @@ struct AnimationTimelineView_Previews: PreviewProvider {
             newKeyframeTime: .constant(0.0),
             isAddingKeyframe: .constant(false),
             timelineOffset: .constant(0.0),
-            onAddKeyframe: { _ in }
+            onAddKeyframe: { _ in },
+            onEditKeyframe: { _ in }
         )
         .frame(width: 800, height: 300)
         .padding()

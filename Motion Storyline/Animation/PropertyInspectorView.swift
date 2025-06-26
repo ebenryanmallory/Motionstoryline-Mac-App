@@ -7,6 +7,8 @@ struct PropertyInspectorView: View {
     let property: AnimatableProperty
     @Binding var selectedKeyframeTime: Double?
     @State private var selectedEasing: EasingFunction = .linear
+    @State private var showCurveEditor: Bool = false
+    @State private var customBezierValues = BezierControlPoints(x1: 0.25, y1: 0.1, x2: 0.25, y2: 1.0)
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -44,15 +46,43 @@ struct PropertyInspectorView: View {
                 }
                 
                 // Easing function selector
-                VStack(alignment: .leading) {
-                    Text("Easing Function")
-                        .font(.headline)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Easing Function")
+                            .font(.headline)
+                        
+                        // Display current easing type inline
+                        Text("(\(easingFunctionDisplayName(selectedEasing)))")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                            .foregroundColor(.primary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor.opacity(0.1))
+                            .cornerRadius(4)
+                        
+                        Spacer()
+                        
+                        Button(action: {
+                            showCurveEditor = true
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "waveform.path")
+                                Text("Curve Editor")
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Open advanced curve editor for custom easing")
+                    }
                     
                     Picker("", selection: $selectedEasing) {
                         Text("Linear").tag(EasingFunction.linear)
                         Text("Ease In").tag(EasingFunction.easeIn)
                         Text("Ease Out").tag(EasingFunction.easeOut)
                         Text("Ease In Out").tag(EasingFunction.easeInOut)
+                        if case .customCubicBezier = selectedEasing {
+                            Text("Custom Curve").tag(selectedEasing)
+                        }
                     }
                     .pickerStyle(.segmented)
                     .onChange(of: selectedEasing) { oldValue, newValue in
@@ -60,7 +90,27 @@ struct PropertyInspectorView: View {
                             updateEasingFunction(for: property, at: time, to: newValue)
                         }
                     }
+                    
+                    // Show custom bezier info if it's selected
+                    if case .customCubicBezier(let x1, let y1, let x2, let y2) = selectedEasing {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Bezier Values:")
+                                .font(.caption)
+                                .fontWeight(.medium)
+                                .foregroundColor(.secondary)
+                            
+                            Text("cubic-bezier(\(String(format: "%.2f", x1)), \(String(format: "%.2f", y1)), \(String(format: "%.2f", x2)), \(String(format: "%.2f", y2)))")
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundColor(.blue)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 6)
+                                .background(Color.blue.opacity(0.1))
+                                .cornerRadius(4)
+                        }
+                        .padding(.top, 8)
+                    }
                 }
+                .fixedSize(horizontal: false, vertical: true)
             } else {
                 VStack {
                     Spacer()
@@ -77,6 +127,23 @@ struct PropertyInspectorView: View {
             loadEasingFunction(for: property)
         }
         .id("\(property.id)_\(selectedKeyframeTime?.description ?? "none")")  // Force refresh when property or keyframe changes
+        .sheet(isPresented: $showCurveEditor) {
+            if let keyframeTime = selectedKeyframeTime {
+                CurveEditorSheet(
+                    property: property,
+                    animationController: animationController,
+                    selectedKeyframeTime: keyframeTime,
+                    isPresented: $showCurveEditor,
+                    onCurveUpdate: { newBezier in
+                        // Update the easing function with the custom bezier
+                        let newEasing = EasingFunction.customCubicBezier(x1: newBezier.x1, y1: newBezier.y1, x2: newBezier.x2, y2: newBezier.y2)
+                        selectedEasing = newEasing
+                        updateEasingFunction(for: property, at: keyframeTime, to: newEasing)
+                        customBezierValues = BezierControlPoints(from: newBezier)
+                    }
+                )
+            }
+        }
     }
     
     // MARK: - Property Specific Editors
@@ -534,6 +601,41 @@ struct PropertyInspectorView: View {
             }
         default:
             break
+        }
+    }
+    
+    /// Convert an EasingFunction to a user-friendly display name
+    private func easingFunctionDisplayName(_ easing: EasingFunction) -> String {
+        switch easing {
+        case .linear:
+            return "Linear"
+        case .easeIn:
+            return "Ease In"
+        case .easeOut:
+            return "Ease Out"
+        case .easeInOut:
+            return "Ease In Out"
+        case .bounce:
+            return "Bounce"
+        case .elastic:
+            return "Elastic"
+        case .spring:
+            return "Spring"
+        case .sine:
+            return "Sine"
+        case .customCubicBezier(let x1, let y1, let x2, let y2):
+            // Check if it matches common presets
+            if abs(x1 - 0.42) < 0.01 && abs(y1 - 0.0) < 0.01 && abs(x2 - 1.0) < 0.01 && abs(y2 - 1.0) < 0.01 {
+                return "Custom (Ease In)"
+            } else if abs(x1 - 0.0) < 0.01 && abs(y1 - 0.0) < 0.01 && abs(x2 - 0.58) < 0.01 && abs(y2 - 1.0) < 0.01 {
+                return "Custom (Ease Out)"
+            } else if abs(x1 - 0.42) < 0.01 && abs(y1 - 0.0) < 0.01 && abs(x2 - 0.58) < 0.01 && abs(y2 - 1.0) < 0.01 {
+                return "Custom (Ease In Out)"
+            } else if abs(x1 - 0.68) < 0.01 && abs(y1 + 0.55) < 0.01 && abs(x2 - 0.265) < 0.01 && abs(y2 - 1.55) < 0.01 {
+                return "Custom (Bounce)"
+            } else {
+                return "Custom Curve"
+            }
         }
     }
 }

@@ -162,6 +162,7 @@ struct KeyframeTimelineView: View {
     let scale: Double
     @Binding var offset: Double
     var onAddKeyframe: (Double) -> Void
+    var onEditKeyframe: ((Double) -> Void)? = nil
     
     // Keyframe times for the current property
     private var keyframeTimes: [Double] {
@@ -247,6 +248,11 @@ struct KeyframeTimelineView: View {
                         .position(x: x, y: geometry.size.height / 2)
                         .onTapGesture {
                             selectedKeyframeTime = time
+                        }
+                        .onTapGesture(count: 2) {
+                            // Double-click to edit keyframe
+                            selectedKeyframeTime = time
+                            onEditKeyframe?(time)
                         }
                 }
                 
@@ -371,6 +377,7 @@ struct TimelineView: View {
     @State var timelineScale: Double = 1.0
     @Binding var timelineOffset: Double
     var onAddKeyframe: (Double) -> Void
+    var onEditKeyframe: ((Double) -> Void)? = nil
     
     // Audio options
     var audioURL: URL?  // For single track backward compatibility
@@ -551,7 +558,8 @@ struct TimelineView: View {
                     isAddingKeyframe: $isAddingKeyframe,
                     scale: timelineScale,
                     offset: $timelineOffset,
-                    onAddKeyframe: onAddKeyframe
+                    onAddKeyframe: onAddKeyframe,
+                    onEditKeyframe: onEditKeyframe
                 )
                 .frame(height: timelineHeight - 70) // Adjust dynamically based on available space
                 
