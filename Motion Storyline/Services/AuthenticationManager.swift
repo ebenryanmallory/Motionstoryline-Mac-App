@@ -8,19 +8,88 @@ class AuthenticationManager: ObservableObject {
     @Published var user: User?
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
+    @Published var isAuthenticationAvailable: Bool = true
+    @Published var isOfflineMode: Bool = false
     
-    private var clerk: Clerk
+    private var clerk: Clerk?
     private var cancellables = Set<AnyCancellable>()
+    private var initializationTimeout: Timer?
     
     init() {
-        self.clerk = Clerk.shared
+        initializeAuthentication()
+    }
+    
+    private func initializeAuthentication() {
+        isLoading = true
         
-        // Initialize authentication state
-        self.user = clerk.user
-        self.isAuthenticated = clerk.user != nil
+        // Set a timeout for authentication initialization
+        initializationTimeout = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleAuthenticationTimeout()
+            }
+        }
         
-        // Observe authentication state changes
-        setupObservers()
+        Task {
+            await initializeClerk()
+        }
+    }
+    
+    private func initializeClerk() async {
+        do {
+            // Check if Clerk is properly configured before trying to initialize
+            guard ClerkConfig.isAuthenticationConfigured else {
+                throw NSError(domain: "AuthenticationError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Clerk is not properly configured. Please check your Config.plist file."])
+            }
+            
+            // Try to initialize Clerk
+            self.clerk = Clerk.shared
+            
+            // Check if Clerk is properly configured
+            if let clerk = self.clerk {
+                // Initialize authentication state
+                self.user = clerk.user
+                self.isAuthenticated = clerk.user != nil
+                self.isAuthenticationAvailable = true
+                self.isOfflineMode = false
+                
+                // Setup observers for authentication changes
+                setupObservers()
+                
+                // Cancel timeout since initialization succeeded
+                initializationTimeout?.invalidate()
+                initializationTimeout = nil
+                
+                self.isLoading = false
+            } else {
+                throw NSError(domain: "AuthenticationError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Failed to initialize Clerk"])
+            }
+        } catch {
+            await handleAuthenticationFailure(error)
+        }
+    }
+    
+    private func handleAuthenticationTimeout() {
+        print("Authentication initialization timed out - entering offline mode")
+        isAuthenticationAvailable = false
+        isOfflineMode = true
+        isLoading = false
+        errorMessage = "Authentication service is currently unavailable. You can continue using the app without signing in."
+        
+        // Cancel the timeout timer
+        initializationTimeout?.invalidate()
+        initializationTimeout = nil
+    }
+    
+    private func handleAuthenticationFailure(_ error: Error) async {
+        print("Authentication initialization failed: \(error.localizedDescription)")
+        isAuthenticationAvailable = false
+        isOfflineMode = true
+        isLoading = false
+        errorMessage = "Authentication service is currently unavailable. You can continue using the app without signing in."
+        
+        // Cancel the timeout timer
+        initializationTimeout?.invalidate()
+        initializationTimeout = nil
     }
     
     private func setupObservers() {
@@ -30,14 +99,27 @@ class AuthenticationManager: ObservableObject {
     }
     
     func refreshAuthenticationState() {
+        guard let clerk = clerk else { return }
         // Update authentication state from the shared Clerk instance
         self.user = clerk.user
         self.isAuthenticated = clerk.user != nil
     }
     
+    // MARK: - Authentication Availability Check
+    
+    private func checkAuthenticationAvailability() -> Bool {
+        guard isAuthenticationAvailable, let _ = clerk else {
+            errorMessage = "Authentication service is currently unavailable. Please try again later."
+            return false
+        }
+        return true
+    }
+    
     // MARK: - Sign In Methods
     
     func signInWithEmail(_ email: String, password: String) async {
+        guard checkAuthenticationAvailability() else { return }
+        
         isLoading = true
         errorMessage = nil
         
@@ -60,13 +142,15 @@ class AuthenticationManager: ObservableObject {
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = self.getErrorMessage(from: error)
                 self.isLoading = false
             }
         }
     }
     
     func signInWithEmailCode(_ email: String) async {
+        guard checkAuthenticationAvailability() else { return }
+        
         isLoading = true
         errorMessage = nil
         
@@ -81,19 +165,21 @@ class AuthenticationManager: ObservableObject {
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = self.getErrorMessage(from: error)
                 self.isLoading = false
             }
         }
     }
     
     func verifyEmailCode(_ code: String) async {
+        guard checkAuthenticationAvailability() else { return }
+        
         isLoading = true
         errorMessage = nil
         
         do {
             // This assumes we have a pending sign in
-            if let signIn = clerk.client?.signIn {
+            if let signIn = clerk?.client?.signIn {
                 let completedSignIn = try await signIn.attemptFirstFactor(strategy: .emailCode(code: code))
                 
                 if completedSignIn.status == .complete {
@@ -110,7 +196,7 @@ class AuthenticationManager: ObservableObject {
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = self.getErrorMessage(from: error)
                 self.isLoading = false
             }
         }
@@ -119,6 +205,8 @@ class AuthenticationManager: ObservableObject {
     // MARK: - Sign Up Methods
     
     func signUpWithEmail(_ email: String, password: String, firstName: String? = nil, lastName: String? = nil) async {
+        guard checkAuthenticationAvailability() else { return }
+        
         isLoading = true
         errorMessage = nil
         
@@ -147,18 +235,20 @@ class AuthenticationManager: ObservableObject {
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = self.getErrorMessage(from: error)
                 self.isLoading = false
             }
         }
     }
     
     func verifySignUpEmailCode(_ code: String) async {
+        guard checkAuthenticationAvailability() else { return }
+        
         isLoading = true
         errorMessage = nil
         
         do {
-            if let signUp = clerk.client?.signUp {
+            if let signUp = clerk?.client?.signUp {
                 let completedSignUp = try await signUp.attemptVerification(strategy: .emailCode(code: code))
                 
                 if completedSignUp.status == .complete {
@@ -175,7 +265,7 @@ class AuthenticationManager: ObservableObject {
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = self.getErrorMessage(from: error)
                 self.isLoading = false
             }
         }
@@ -184,6 +274,8 @@ class AuthenticationManager: ObservableObject {
     // MARK: - OAuth Sign In
     
     func signInWithGoogle() async {
+        guard checkAuthenticationAvailability() else { return }
+        
         isLoading = true
         errorMessage = nil
         
@@ -195,13 +287,15 @@ class AuthenticationManager: ObservableObject {
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = self.getErrorMessage(from: error)
                 self.isLoading = false
             }
         }
     }
     
     func signInWithApple() async {
+        guard checkAuthenticationAvailability() else { return }
+        
         isLoading = true
         errorMessage = nil
         
@@ -227,7 +321,7 @@ class AuthenticationManager: ObservableObject {
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = self.getErrorMessage(from: error)
                 self.isLoading = false
             }
         }
@@ -236,18 +330,20 @@ class AuthenticationManager: ObservableObject {
     // MARK: - Sign Out
     
     func signOut() async {
+        guard checkAuthenticationAvailability() else { return }
+        
         isLoading = true
         errorMessage = nil
         
         do {
-            try await clerk.signOut()
+            try await clerk?.signOut()
             await MainActor.run {
                 self.refreshAuthenticationState()
                 self.isLoading = false
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = self.getErrorMessage(from: error)
                 self.isLoading = false
             }
         }
@@ -256,6 +352,8 @@ class AuthenticationManager: ObservableObject {
     // MARK: - Password Reset
     
     func resetPassword(_ email: String) async {
+        guard checkAuthenticationAvailability() else { return }
+        
         isLoading = true
         errorMessage = nil
         
@@ -270,18 +368,20 @@ class AuthenticationManager: ObservableObject {
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = self.getErrorMessage(from: error)
                 self.isLoading = false
             }
         }
     }
     
     func verifyPasswordResetCode(_ code: String, newPassword: String) async {
+        guard checkAuthenticationAvailability() else { return }
+        
         isLoading = true
         errorMessage = nil
         
         do {
-            if let signIn = clerk.client?.signIn {
+            if let signIn = clerk?.client?.signIn {
                 var updatedSignIn = try await signIn.attemptFirstFactor(strategy: .resetPasswordEmailCode(code: code))
                 updatedSignIn = try await updatedSignIn.resetPassword(.init(password: newPassword, signOutOfOtherSessions: true))
                 
@@ -299,7 +399,7 @@ class AuthenticationManager: ObservableObject {
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = self.getErrorMessage(from: error)
                 self.isLoading = false
             }
         }
@@ -308,7 +408,7 @@ class AuthenticationManager: ObservableObject {
     // MARK: - User Profile Management
     
     func updateProfile(firstName: String?, lastName: String?) async {
-        guard let user = user else { return }
+        guard checkAuthenticationAvailability(), let user = user else { return }
         
         isLoading = true
         errorMessage = nil
@@ -316,19 +416,19 @@ class AuthenticationManager: ObservableObject {
         do {
             try await user.update(.init(firstName: firstName, lastName: lastName))
             await MainActor.run {
-                self.user = clerk.user // Refresh user data
+                self.user = clerk?.user // Refresh user data
                 self.isLoading = false
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = self.getErrorMessage(from: error)
                 self.isLoading = false
             }
         }
     }
     
     func updateProfileImage(imageData: Data) async {
-        guard let user = user else { return }
+        guard checkAuthenticationAvailability(), let user = user else { return }
         
         isLoading = true
         errorMessage = nil
@@ -340,7 +440,7 @@ class AuthenticationManager: ObservableObject {
             }
         } catch {
             await MainActor.run {
-                self.errorMessage = error.localizedDescription
+                self.errorMessage = self.getErrorMessage(from: error)
                 self.isLoading = false
             }
         }
@@ -349,13 +449,55 @@ class AuthenticationManager: ObservableObject {
     // MARK: - Session Management
     
     func getSessionToken() async -> String? {
+        guard checkAuthenticationAvailability() else { return nil }
+        
         do {
-            return try await clerk.session?.getToken()?.jwt
+            return try await clerk?.session?.getToken()?.jwt
         } catch {
             await MainActor.run {
-                self.errorMessage = "Failed to get session token: \(error.localizedDescription)"
+                self.errorMessage = "Failed to get session token: \(self.getErrorMessage(from: error))"
             }
             return nil
         }
+    }
+    
+    // MARK: - Retry Authentication
+    
+    func retryAuthentication() async {
+        isLoading = true
+        errorMessage = nil
+        isAuthenticationAvailable = true
+        isOfflineMode = false
+        
+        await initializeClerk()
+    }
+    
+    // MARK: - Continue Without Authentication
+    
+    func continueWithoutAuthentication() {
+        isOfflineMode = true
+        isLoading = false
+        errorMessage = nil
+    }
+    
+    // MARK: - Helper Methods
+    
+    private func getErrorMessage(from error: Error) -> String {
+        // Check if this is a network-related error
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .notConnectedToInternet:
+                return "No internet connection. Please check your network and try again."
+            case .timedOut:
+                return "Request timed out. Please try again."
+            case .cannotConnectToHost:
+                return "Cannot connect to authentication service. Please try again later."
+            default:
+                return "Network error: \(urlError.localizedDescription)"
+            }
+        }
+        
+        // Return the original error message for other types of errors
+        return error.localizedDescription
     }
 } 

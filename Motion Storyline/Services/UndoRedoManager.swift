@@ -1,18 +1,5 @@
 import Foundation
-import SwiftUI // For CGSize, or define a CodableCGSize if not available directly
-
-// Represents the state of the project to be saved for undo/redo
-struct ProjectState: Codable {
-    let canvasElements: [CanvasElement]
-    let animationControllerState: Data // Assuming AnimationController can serialize its state to Data
-    let canvasSize: CGSize
-    // Add other properties that define the project's state if necessary
-    
-    // CGSize Codable conformance if not already provided by SwiftUI in this context
-    // If using an older SwiftUI or if CGSize isn't directly Codable in your target,
-    // you might need a wrapper or manual encoding/decoding.
-    // For simplicity, assuming CGSize is Codable or you have a Codable wrapper.
-}
+import SwiftUI
 
 class UndoRedoManager: ObservableObject {
     @Published private(set) var undoStack: [Data] = []
@@ -70,8 +57,6 @@ class UndoRedoManager: ObservableObject {
     }
 }
 
-// Note: Ensure CanvasElement is Codable.
-// Ensure AnimationController can provide its state as Data and restore from Data.
-// e.g., AnimationController might have:
-// func serializeState() -> Data?
-// func restoreState(from data: Data)
+// Note: This UndoRedoManager works with ProjectData serialized as Data.
+// State capture and restoration is handled through DocumentManager.getCurrentProjectStateData()
+// and DocumentManager.decodeProjectState() to ensure consistency.

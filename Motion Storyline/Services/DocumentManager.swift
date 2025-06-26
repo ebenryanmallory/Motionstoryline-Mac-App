@@ -8,7 +8,7 @@ import AVFoundation
 @MainActor
 class DocumentManager: ObservableObject {
     // Project state
-    @Published var currentProjectURL: URL? = nil
+    @Published var projectURL: URL? = nil // Single canonical project file location
     @Published var hasUnsavedChanges: Bool = false
     
     // Export state
@@ -31,6 +31,10 @@ class DocumentManager: ObservableObject {
     private var animationController: AnimationController?
     private var canvasSize: CGSize = CGSize(width: 1280, height: 720)
     private var currentProject: Project?
+    
+    // Public read-only access for debugging and validation
+    var currentElementCount: Int { canvasElements.count }
+    var currentTrackCount: Int { animationController?.getAllTracks().count ?? 0 }
     
     /// Set up the document manager with the current canvas state. This is typically called when DesignCanvas state changes.
     func configure(canvasElements: [CanvasElement], 
@@ -102,76 +106,108 @@ class DocumentManager: ObservableObject {
         }
     }
     
-    /// Saves the project to a new location chosen by the user ("Save As...").
-    /// Updates `currentProjectURL` and resets `hasUnsavedChanges` on success.
-    func saveProjectAs() -> Bool {
+    /// Exports the project to a new location chosen by the user ("Export As...").
+    /// This creates an external copy without affecting the internal working file.
+    /// Updates `projectURL` for future exports.
+    func exportProjectAs() -> Bool {
         // Debug check to make sure canvas elements are properly set
-        print("Initiating Save As... with \(canvasElements.count) canvas elements")
+        print("Initiating Export As... with \(canvasElements.count) canvas elements")
         
         let savePanel = NSSavePanel()
         savePanel.canCreateDirectories = true
         savePanel.showsTagField = true
-        savePanel.nameFieldStringValue = currentProjectURL?.lastPathComponent ?? "Motion Storyline Project.storyline"
+        savePanel.nameFieldStringValue = projectURL?.lastPathComponent ?? "Motion Storyline Project.storyline"
         savePanel.allowedContentTypes = [UTType(filenameExtension: "storyline")!]
-        savePanel.message = "Save your Motion Storyline project"
-        if let existingDir = currentProjectURL?.deletingLastPathComponent() {
+        savePanel.message = "Export your Motion Storyline project"
+        if let existingDir = projectURL?.deletingLastPathComponent() {
             savePanel.directoryURL = existingDir
         }
         
         let response = savePanel.runModal()
         
         guard response == .OK, let url = savePanel.url else {
-            print("Save As cancelled by user or save panel failed.")
+            print("Export As cancelled by user or save panel failed.")
             return false
         }
         
         if performSaveInternal(to: url) {
-            self.currentProjectURL = url
-            self.hasUnsavedChanges = false
-            print("Project successfully saved as \(url.path)")
-            // Update window title or other UI elements if necessary via AppStateManager or direct binding
+            self.projectURL = url
+            print("Project successfully exported to \(url.path)")
             return true
         } else {
-            print("Failed to save project to \(url.path) during Save As operation.")
+            print("Failed to export project to \(url.path) during Export As operation.")
             return false
         }
     }
 
-    /// Saves the project to its `currentProjectURL` if known, otherwise performs a "Save As".
+    /// Saves the internal working file. Always uses projectURL.
     /// Resets `hasUnsavedChanges` on success.
-    func saveProject() -> Bool {
-        if let url = currentProjectURL {
-            print("Saving project to existing URL: \(url.path) with \(canvasElements.count) elements")
-            // Directly call performSave without showing a panel again
-            if performSaveInternal(to: url) { // Changed to performSaveInternal
+    func saveWorkingFile() -> Bool {
+        // Validate that we have current data before saving
+        if canvasElements.isEmpty {
+            print("⚠️ WARNING: DocumentManager has no canvas elements to save!")
+        }
+        
+        if let url = projectURL {
+            print("💾 Saving working file to: \(url.path)")
+            print("💾 Saving \(canvasElements.count) elements and \(animationController?.getAllTracks().count ?? 0) animation tracks")
+            
+            if performSaveInternal(to: url) {
                 self.hasUnsavedChanges = false
-                print("Project successfully saved to \(url.path)")
+                print("✅ Working file successfully saved to \(url.path)")
                 return true
             } else {
-                print("Failed to save project to \(url.path)")
+                print("❌ Failed to save working file to \(url.path)")
                 return false
             }
         } else {
-            print("No current project URL, initiating Save As...")
-            return saveProjectAs() // This will show the panel and then call performSaveInternal
+            print("❌ No project URL set, cannot save working file")
+            return false
         }
+    }
+    
+    /// Exports to the current project location.
+    /// This updates the external exported copy with current state.
+    func exportToFile() -> Bool {
+        guard let url = projectURL else {
+            print("No project URL set, cannot export to file")
+            return false
+        }
+        
+        print("Exporting to existing project location: \(url.path) with \(canvasElements.count) elements")
+        if performSaveInternal(to: url) {
+            print("Project successfully exported to \(url.path)")
+            return true
+        } else {
+            print("Failed to export project to \(url.path)")
+            return false
+        }
+    }
+    
+    /// Legacy method for backward compatibility - now delegates to working file save
+    /// Resets `hasUnsavedChanges` on success.
+    @available(*, deprecated, message: "Use saveWorkingFile() or exportProjectAs() instead")
+    func saveProject() -> Bool {
+        return saveWorkingFile()
     }
 
     /// Private helper function to perform the actual saving logic without showing a panel.
     private func performSaveInternal(to url: URL) -> Bool {
         // Debug check to make sure canvas elements are properly set
-        print("Starting save with \(canvasElements.count) canvas elements")
+        print("💾 Starting save operation with \(canvasElements.count) canvas elements")
+        print("💾 Animation controller has \(animationController?.getAllTracks().count ?? 0) tracks")
         
-        // The URL is now passed directly to this function.
-        // The save panel logic is handled by saveProjectAs() or not at all if saving to an existing URL.
-
         // Create project data structure
         let projectData = createProjectData()
         
         // Verify that elements were properly included
         if projectData.elements.isEmpty && !canvasElements.isEmpty {
-            print("WARNING: Project data has no elements despite \(canvasElements.count) canvas elements being available")
+            print("⚠️ WARNING: Project data has no elements despite \(canvasElements.count) canvas elements being available")
+            print("⚠️ This indicates a serious state synchronization issue!")
+            return false
         }
+        
+        print("💾 Created project data with \(projectData.elements.count) elements and \(projectData.tracks.count) tracks")
         
         do {
             // Encode the project data as JSON
@@ -180,28 +216,26 @@ class DocumentManager: ObservableObject {
             let data = try encoder.encode(projectData)
             
             // Debug info
-            print("Serialized project data size: \(data.count) bytes")
+            print("💾 Serialized project data size: \(data.count) bytes")
             
             // Write to file
             try data.write(to: url)
-            print("Successfully saved project to \(url.path)")
+            print("✅ Successfully saved project to \(url.path)")
             
             // Provide haptic feedback on successful save
             NSHapticFeedbackManager.defaultPerformer.perform(.generic, performanceTime: .default)
             
-            // Update document state (e.g., mark as clean, update window title)
-            // This is now handled by the callers (saveProject, saveProjectAs) by setting hasUnsavedChanges
             return true
         } catch {
-            print("Error performing save to \(url.path): \(error.localizedDescription)")
+            print("❌ Error performing save to \(url.path): \(error.localizedDescription)")
             
             // More detailed error logging
             if let encodingError = error as? EncodingError {
                 switch encodingError {
                 case .invalidValue(let value, let context):
-                    print("Encoding error: Invalid value \(value) at \(context.codingPath)")
+                    print("❌ Encoding error: Invalid value \(value) at \(context.codingPath)")
                 default:
-                    print("Other encoding error: \(encodingError)")
+                    print("❌ Other encoding error: \(encodingError)")
                 }
             }
             
@@ -213,7 +247,7 @@ class DocumentManager: ObservableObject {
     }
     
     /// Load a saved project from a file URL.
-    /// Updates `currentProjectURL` and resets `hasUnsavedChanges` on success.
+    /// Updates `projectURL` and resets `hasUnsavedChanges` on success.
     func loadProject(from url: URL) throws -> (elements: [CanvasElement], tracksData: [TrackData], duration: Double, canvasWidth: CGFloat, canvasHeight: CGFloat, mediaAssets: [MediaAsset], projectName: String)? {
         // Note: The NSOpenPanel logic is now handled by the caller (e.g., DesignCanvas)
         
@@ -232,7 +266,7 @@ class DocumentManager: ObservableObject {
             let projectName = url.deletingPathExtension().lastPathComponent
             
             // Successfully loaded, update document manager state
-            self.currentProjectURL = url
+            self.projectURL = url
             self.hasUnsavedChanges = false // Project is clean right after loading
             
             // Configure the document manager with the loaded data if it's supposed to hold it directly
@@ -247,7 +281,7 @@ class DocumentManager: ObservableObject {
         } catch {
             print("Error loading project: \(error.localizedDescription)")
             // Propagate the error so the caller can handle it
-            self.currentProjectURL = nil // Ensure URL is cleared on load failure
+            self.projectURL = nil
             self.hasUnsavedChanges = false // Or true, depending on desired state after failed load
             throw error 
         }
@@ -400,14 +434,27 @@ class DocumentManager: ObservableObject {
                         easing: easingToString(keyframe.easingFunction)
                     ))
                 }
+            } else if let track = animationController.getTrack(id: trackId) as? KeyframeTrack<CGFloat> {
+                valueType = "CGFloat"
+                
+                for keyframe in track.allKeyframes {
+                    keyframes.append(KeyframeData(
+                        time: keyframe.time,
+                        value: "\(keyframe.value)",
+                        easing: easingToString(keyframe.easingFunction)
+                    ))
+                }
             } else if let track = animationController.getTrack(id: trackId) as? KeyframeTrack<Color> {
                 valueType = "Color"
                 
                 for keyframe in track.allKeyframes {
-                    // Basic serialization of color - ideally you'd use a more robust method
+                    // Proper serialization of color using RGB components
+                    let color = keyframe.value
+                    let valueString = colorToString(color)
+                    
                     keyframes.append(KeyframeData(
-                        time: keyframe.time, 
-                        value: "Color", // In the real implementation, you'd encode the actual color values
+                        time: keyframe.time,
+                        value: valueString,
                         easing: easingToString(keyframe.easingFunction)
                     ))
                 }
@@ -431,6 +478,20 @@ class DocumentManager: ObservableObject {
                     keyframes.append(KeyframeData(
                         time: keyframe.time,
                         value: keyframe.value,
+                        easing: easingToString(keyframe.easingFunction)
+                    ))
+                }
+            } else if let track = animationController.getTrack(id: trackId) as? KeyframeTrack<[CGPoint]> {
+                valueType = "[CGPoint]"
+                
+                for keyframe in track.allKeyframes {
+                    let points = keyframe.value
+                    let pointStrings = points.map { "{\($0.x),\($0.y)}" }
+                    let valueString = "[\(pointStrings.joined(separator: ","))]"
+                    
+                    keyframes.append(KeyframeData(
+                        time: keyframe.time,
+                        value: valueString,
                         easing: easingToString(keyframe.easingFunction)
                     ))
                 }
@@ -497,6 +558,113 @@ class DocumentManager: ObservableObject {
             return .linear // Fallback
         default: return .linear // Default to linear if string is unrecognized
         }
+    }
+    
+    /// Convert Color to string representation for saving
+    internal func colorToString(_ color: Color) -> String {
+        #if canImport(AppKit)
+        let nsColor = NSColor(color)
+        guard let rgbColor = nsColor.usingColorSpace(.sRGB) else {
+            return "rgba(1.0,1.0,1.0,1.0)" // Default to white
+        }
+        
+        let r = rgbColor.redComponent
+        let g = rgbColor.greenComponent
+        let b = rgbColor.blueComponent
+        let a = rgbColor.alphaComponent
+        
+        return "rgba(\(r),\(g),\(b),\(a))"
+        #else
+        // Fallback for non-macOS platforms
+        return "rgba(1.0,1.0,1.0,1.0)"
+        #endif
+    }
+    
+    /// Convert string representation to Color
+    internal func colorFromString(_ colorString: String) -> Color {
+        // Parse format: "rgba(r,g,b,a)"
+        guard colorString.hasPrefix("rgba(") && colorString.hasSuffix(")") else {
+            return Color.white // Default fallback
+        }
+        
+        let valuesString = String(colorString.dropFirst(5).dropLast())
+        let components = valuesString.split(separator: ",").map { 
+            Double($0.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0.0 
+        }
+        
+        guard components.count == 4 else {
+            return Color.white // Default fallback
+        }
+        
+        #if canImport(AppKit)
+        let nsColor = NSColor(red: CGFloat(components[0]), 
+                             green: CGFloat(components[1]), 
+                             blue: CGFloat(components[2]), 
+                             alpha: CGFloat(components[3]))
+        return Color(nsColor)
+        #else
+        return Color(.sRGB, red: components[0], green: components[1], blue: components[2], opacity: components[3])
+        #endif
+    }
+    
+    /// Convert string representation to [CGPoint] array
+    internal func pointArrayFromString(_ pointArrayString: String) -> [CGPoint] {
+        // Parse format: "[{x1,y1},{x2,y2},{x3,y3}]"
+        guard pointArrayString.hasPrefix("[") && pointArrayString.hasSuffix("]") else {
+            return [] // Default to empty array
+        }
+        
+        let content = String(pointArrayString.dropFirst().dropLast())
+        if content.isEmpty {
+            return []
+        }
+        
+        var points: [CGPoint] = []
+        var current = ""
+        var braceLevel = 0
+        
+        for char in content {
+            if char == "{" {
+                braceLevel += 1
+                current.append(char)
+            } else if char == "}" {
+                braceLevel -= 1
+                current.append(char)
+                
+                if braceLevel == 0 {
+                    // Parse the complete point
+                    if let point = parsePoint(from: current) {
+                        points.append(point)
+                    }
+                    current = ""
+                }
+            } else if char == "," && braceLevel == 0 {
+                // Skip comma separators between points
+                continue
+            } else {
+                current.append(char)
+            }
+        }
+        
+        return points
+    }
+    
+    /// Parse a single CGPoint from string format "{x,y}"
+    private func parsePoint(from pointString: String) -> CGPoint? {
+        guard pointString.hasPrefix("{") && pointString.hasSuffix("}") else {
+            return nil
+        }
+        
+        let content = String(pointString.dropFirst().dropLast())
+        let components = content.split(separator: ",").map { 
+            Double($0.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0.0 
+        }
+        
+        guard components.count == 2 else {
+            return nil
+        }
+        
+        return CGPoint(x: components[0], y: components[1])
     }
 }
 

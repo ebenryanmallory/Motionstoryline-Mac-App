@@ -306,12 +306,11 @@ public class ExportCoordinator {
             )
         }
         
-        // Use the canvas size from configuration
-        let canvasSize = CGSize(width: configuration.width, height: configuration.height)
-        
+        // Use the actual canvas size, not the export configuration size
+        // This ensures coordinate system consistency with the canvas elements
         let frameExporter = FrameExporter(
             getElementsAtTime: getElementsAtTime,
-            canvasSize: canvasSize
+            canvasSize: self.canvasSize  // Use actual canvas size instead of configuration size
         )
         
         do {
@@ -360,36 +359,122 @@ public class ExportCoordinator {
         os_log("Exporting video with ProRes profile: %{public}@", log: ExportCoordinator.logger, type: .info, 
                configuration.proResProfile?.description ?? "Standard MP4")
         
-        // Create VideoExporter configuration
-        let videoExporterConfig = VideoExporter.ExportConfiguration(
-            format: .video,
-            width: configuration.width,
-            height: configuration.height,
-            frameRate: configuration.frameRate,
-            proResProfile: configuration.proResProfile,
-            includeAudio: configuration.includeAudio,
-            outputURL: configuration.outputURL,
-            numberOfFrames: configuration.numberOfFrames
-        )
-        
-        // Create VideoExporter
-        let videoExporter = VideoExporter(asset: asset)
-        
-        // Create a continuation to handle async completion
-        return try await withCheckedThrowingContinuation { continuation in
-            Task {
-                await videoExporter.export(
+        // Check if we have animation data to use canvas rendering
+        if let animationController = self.animationController, !self.canvasElements.isEmpty {
+            os_log("Using canvas rendering for video export", log: ExportCoordinator.logger, type: .info)
+            
+            // Use CanvasVideoRenderer for canvas-based export
+            let canvasRenderer = CanvasVideoRenderer(animationController: animationController)
+            await canvasRenderer.setElements(self.canvasElements)
+            
+            // Calculate duration based on numberOfFrames if specified
+            let duration: Double
+            if let numberOfFrames = configuration.numberOfFrames, numberOfFrames > 0 {
+                duration = Double(numberOfFrames) / Double(configuration.frameRate)
+            } else {
+                // Use animation controller duration or default to 5 seconds
+                duration = animationController.duration > 0 ? animationController.duration : 5.0
+            }
+            
+            // Create canvas renderer configuration
+            let canvasConfig = CanvasVideoRenderer.Configuration(
+                width: configuration.width,
+                height: configuration.height,
+                duration: duration,
+                frameRate: configuration.frameRate,
+                canvasWidth: self.canvasSize.width,
+                canvasHeight: self.canvasSize.height
+            )
+            
+            // Render the video using canvas renderer
+            let renderedAsset = try await canvasRenderer.renderToVideo(
+                configuration: canvasConfig,
+                progressHandler: progressHandler
+            )
+            
+            // If we need to apply ProRes or other post-processing, we can use VideoExporter on the rendered asset
+            if configuration.proResProfile != nil {
+                os_log("Applying ProRes post-processing to rendered video", log: ExportCoordinator.logger, type: .info)
+                
+                // Create VideoExporter configuration for post-processing
+                let videoExporterConfig = VideoExporter.ExportConfiguration(
+                    format: .video,
+                    width: configuration.width,
+                    height: configuration.height,
+                    frameRate: configuration.frameRate,
+                    proResProfile: configuration.proResProfile,
+                    includeAudio: configuration.includeAudio,
+                    outputURL: configuration.outputURL,
+                    numberOfFrames: configuration.numberOfFrames
+                )
+                
+                // Create VideoExporter with the rendered asset
+                let videoExporter = VideoExporter(asset: renderedAsset)
+                
+                // Export with ProRes settings directly using async/await
+                return try await videoExporter.exportAsync(
                     with: videoExporterConfig,
-                    progressHandler: progressHandler
-                ) { result in
-                    switch result {
-                    case .success(let url):
-                        continuation.resume(returning: url)
-                    case .failure(let error):
-                        continuation.resume(throwing: error)
+                    progressHandler: nil // Progress already handled by canvas renderer
+                )
+            } else {
+                // For standard MP4, the CanvasVideoRenderer creates a temporary .mov file
+                // We need to move that temporary file to the final location
+                
+                // Remove existing file if it exists to handle overwrite
+                if FileManager.default.fileExists(atPath: configuration.outputURL.path) {
+                    do {
+                        try FileManager.default.removeItem(at: configuration.outputURL)
+                        os_log("Removed existing file at: %{public}@", log: ExportCoordinator.logger, type: .info, configuration.outputURL.path)
+                    } catch {
+                        throw NSError(domain: "ExportCoordinator", code: 109, userInfo: [NSLocalizedDescriptionKey: "Failed to remove existing file: \(error.localizedDescription)"])
                     }
                 }
+                
+                // Create a temporary export using VideoExporter to convert/move the file
+                let videoExporterConfig = VideoExporter.ExportConfiguration(
+                    format: .video,
+                    width: configuration.width,
+                    height: configuration.height,
+                    frameRate: configuration.frameRate,
+                    proResProfile: nil, // No ProRes for standard MP4
+                    includeAudio: configuration.includeAudio,
+                    outputURL: configuration.outputURL,
+                    numberOfFrames: configuration.numberOfFrames
+                )
+                
+                // Create VideoExporter with the rendered asset
+                let videoExporter = VideoExporter(asset: renderedAsset)
+                
+                // Export to final location directly using async/await
+                return try await videoExporter.exportAsync(
+                    with: videoExporterConfig,
+                    progressHandler: nil // Progress already handled by canvas renderer
+                )
             }
+        } else {
+            os_log("No animation data available, using traditional VideoExporter", log: ExportCoordinator.logger, type: .info)
+            
+            // Fallback to traditional VideoExporter (for cases where we have an actual AVAsset)
+            // Create VideoExporter configuration
+            let videoExporterConfig = VideoExporter.ExportConfiguration(
+                format: .video,
+                width: configuration.width,
+                height: configuration.height,
+                frameRate: configuration.frameRate,
+                proResProfile: configuration.proResProfile,
+                includeAudio: configuration.includeAudio,
+                outputURL: configuration.outputURL,
+                numberOfFrames: configuration.numberOfFrames
+            )
+            
+            // Create VideoExporter
+            let videoExporter = VideoExporter(asset: asset)
+            
+            // Export directly using async/await
+            return try await videoExporter.exportAsync(
+                with: videoExporterConfig,
+                progressHandler: progressHandler
+            )
         }
     }
     

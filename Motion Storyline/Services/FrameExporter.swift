@@ -117,6 +117,7 @@ public class FrameExporter {
         let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
         
         // Create the bitmap representation based on format
+        // Use sRGB color space to match video export consistency
         guard let bitmapRep = NSBitmapImageRep(
             bitmapDataPlanes: nil,
             pixelsWide: image.width,
@@ -125,7 +126,7 @@ public class FrameExporter {
             samplesPerPixel: 4,
             hasAlpha: true,
             isPlanar: false,
-            colorSpaceName: .deviceRGB,
+            colorSpaceName: NSColorSpaceName.calibratedRGB,
             bytesPerRow: 0,
             bitsPerPixel: 0
         ) else {
@@ -142,12 +143,12 @@ public class FrameExporter {
         let imageData: Data?
         switch format {
         case .png:
-            imageData = bitmapRep.representation(using: .png, properties: [:])
+            imageData = bitmapRep.representation(using: NSBitmapImageRep.FileType.png, properties: [:])
         case .jpeg:
             let properties: [NSBitmapImageRep.PropertyKey: Any] = [
                 .compressionFactor: quality ?? format.quality
             ]
-            imageData = bitmapRep.representation(using: .jpeg, properties: properties)
+            imageData = bitmapRep.representation(using: NSBitmapImageRep.FileType.jpeg, properties: properties)
         }
         
         // Check if we have valid image data

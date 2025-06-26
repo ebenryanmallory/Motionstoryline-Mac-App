@@ -7,8 +7,7 @@ import Combine
 import os.log
 
 /// Service responsible for rendering canvas elements to a video file
-@MainActor
-class CanvasVideoRenderer {
+class CanvasVideoRenderer: @unchecked Sendable {
     // Logger for debugging
     private static let logger = OSLog(subsystem: "com.app.Motion-Storyline", category: "CanvasVideoRenderer")
     
@@ -84,6 +83,7 @@ class CanvasVideoRenderer {
     
     /// Set the canvas elements to render
     /// - Parameter elements: The array of canvas elements
+    @MainActor
     func setElements(_ elements: [CanvasElement]) {
         self.canvasElements = elements
     }
@@ -123,7 +123,9 @@ class CanvasVideoRenderer {
         }
         
         // Create a temporary file URL for the video
-        let tempDir = FileManager.default.temporaryDirectory
+        // Use NSTemporaryDirectory() which is more reliable in sandboxed environments
+        let tempDirPath = NSTemporaryDirectory()
+        let tempDir = URL(fileURLWithPath: tempDirPath)
         let temporaryVideoURL = tempDir.appendingPathComponent("temp_canvas_\(UUID().uuidString).mov")
         
         // If a temporary file already exists, delete it
@@ -131,41 +133,48 @@ class CanvasVideoRenderer {
             try FileManager.default.removeItem(at: temporaryVideoURL)
         }
         
-        // Store the current animation state to restore later
-        let currentAnimationTime = animationController.currentTime
-        let isCurrentlyPlaying = animationController.isPlaying
+        os_log("Creating temporary video file at: %{public}@", log: OSLog.default, type: .info, temporaryVideoURL.path)
         
-        // Pause the animation during export (if playing)
-        if isCurrentlyPlaying {
-            await MainActor.run {
-                animationController.pause()
-            }
-        }
+        // Note: We don't modify the animation controller during export to avoid UI updates
+        // This prevents layout recursion issues during background rendering
         
-        // Create a copy of the current elements for rendering
-        _ = canvasElements
+        // Capture the necessary data for rendering on the main actor
+        let elementsForRendering = canvasElements
+        let animationControllerRef = animationController
         
         // Create an asset writer to generate a video
         guard let assetWriter = try? AVAssetWriter(outputURL: temporaryVideoURL, fileType: .mov) else {
             throw NSError(domain: "MotionStoryline", code: 103, userInfo: [NSLocalizedDescriptionKey: "Failed to create asset writer"])
         }
         
-        // Configure video settings
+        // Configure video settings with proper color space information
         let videoSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: configuration.width,
-            AVVideoHeightKey: configuration.height
+            AVVideoHeightKey: configuration.height,
+            AVVideoColorPropertiesKey: [
+                AVVideoColorPrimariesKey: AVVideoColorPrimaries_ITU_R_709_2,
+                AVVideoTransferFunctionKey: AVVideoTransferFunction_ITU_R_709_2,
+                AVVideoYCbCrMatrixKey: AVVideoYCbCrMatrix_ITU_R_709_2
+            ],
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: 5000000,
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264BaselineAutoLevel,
+                AVVideoH264EntropyModeKey: AVVideoH264EntropyModeCAVLC
+            ]
         ]
         
         // Create a writer input
         let writerInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         writerInput.expectsMediaDataInRealTime = false
         
-        // Create a pixel buffer adaptor
+        // Create a pixel buffer adaptor - match CanvasRenderer exactly
         let attributes: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB,
             kCVPixelBufferWidthKey as String: configuration.width,
-            kCVPixelBufferHeightKey as String: configuration.height
+            kCVPixelBufferHeightKey as String: configuration.height,
+            kCVPixelBufferCGImageCompatibilityKey as String: true,
+            kCVPixelBufferCGBitmapContextCompatibilityKey as String: true
         ]
         
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(
@@ -182,10 +191,17 @@ class CanvasVideoRenderer {
         
         // Start writing
         assetWriter.startWriting()
+        
+        // Check if writing started successfully
+        guard assetWriter.status == .writing else {
+            let errorMessage = assetWriter.error?.localizedDescription ?? "Unknown error starting asset writer"
+            throw NSError(domain: "MotionStoryline", code: 107, userInfo: [NSLocalizedDescriptionKey: "Failed to start writing: \(errorMessage)"])
+        }
+        
         assetWriter.startSession(atSourceTime: .zero)
         
-        // Bitmap info for context creation
-        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)
+        // Bitmap info for context creation - match CanvasRenderer exactly
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
         
         // Scale factor for positioning elements
         let scaleFactor = min(
@@ -213,11 +229,6 @@ class CanvasVideoRenderer {
         
         writerInput.requestMediaDataWhenReady(on: mediaQueue) { [weak self] in
             guard let self = self else { return }
-            // Capture a weak reference to self to avoid strong reference cycles
-            // and store essential variables locally to avoid needing self in the closure
-            // let animationController = self.animationController // Removed, use self.animationController
-            // let progressPublisher = self.progressPublisher   // Removed, use self.progressPublisher
-            // let canvasElements = self.canvasElements           // Removed, was unused and self.canvasElements used later or captured as initialCanvasElements implicitly by usage context
             
             // Render each frame with the animation state at that time
             for frameIdx in 0..<frameCount {
@@ -225,23 +236,13 @@ class CanvasVideoRenderer {
                     // Calculate time for this frame
                     let frameTimeInSeconds = Double(frameIdx) / Double(configuration.frameRate)
                     
-                    // Update animation controller on the main thread (synchronously)
-                    // and get the elements for this time point
-                    var elementsForFrame: [CanvasElement] = []
-                    
-                    // Use a dispatch semaphore to wait for the main thread task
-                    let animationSemaphore = DispatchSemaphore(value: 0)
-                    
-                    // Dispatch to main thread to update animation state
-                    DispatchQueue.main.async {
-                        self.animationController.currentTime = frameTimeInSeconds
-                        // Get a snapshot of elements at current time
-                        elementsForFrame = self.getElementsAtTime(frameTimeInSeconds)
-                        animationSemaphore.signal()
-                    }
-                    
-                    // Wait for animation update to complete
-                    _ = animationSemaphore.wait(timeout: .distantFuture)
+                    // Get elements for this time point without updating the animation controller
+                    // This avoids UI updates during export which can cause layout recursion
+                    let elementsForFrame = Self.getElementsAtTime(
+                        frameTimeInSeconds, 
+                        elements: elementsForRendering, 
+                        animationController: animationControllerRef
+                    )
                     
                     // Create a context for this frame
                     guard let context = CGContext(
@@ -250,7 +251,7 @@ class CanvasVideoRenderer {
                         height: configuration.height,
                         bitsPerComponent: 8,
                         bytesPerRow: configuration.width * 4,
-                        space: CGColorSpaceCreateDeviceRGB(),
+                        space: CGColorSpace(name: CGColorSpace.sRGB)!,
                         bitmapInfo: bitmapInfo.rawValue
                     ) else {
                         continue
@@ -259,6 +260,10 @@ class CanvasVideoRenderer {
                     // Draw background
                     context.setFillColor(configuration.backgroundColor)
                     context.fill(CGRect(x: 0, y: 0, width: configuration.width, height: configuration.height))
+                    
+                    // Transform context to use top-left origin (same as CanvasRenderer)
+                    context.translateBy(x: 0, y: CGFloat(configuration.height))
+                    context.scaleBy(x: 1, y: -1)
                     
                     // Draw each element
                     for element in elementsForFrame {
@@ -276,7 +281,7 @@ class CanvasVideoRenderer {
                         continue
                     }
                     
-                    // Create a pixel buffer
+                    // Create a pixel buffer - match CanvasRenderer format
                     var pixelBuffer: CVPixelBuffer?
                     CVPixelBufferCreate(
                         kCFAllocatorDefault,
@@ -300,7 +305,7 @@ class CanvasVideoRenderer {
                                 height: configuration.height,
                                 bitsPerComponent: 8,
                                 bytesPerRow: bytesPerRow,
-                                space: CGColorSpaceCreateDeviceRGB(),
+                                space: CGColorSpace(name: CGColorSpace.sRGB)!,
                                 bitmapInfo: bitmapInfo.rawValue
                             )
                             
@@ -339,14 +344,6 @@ class CanvasVideoRenderer {
                                 os_log("Failed to append pixel buffer: %{public}@", log: CanvasVideoRenderer.logger, type: .error, assetWriter.error?.localizedDescription ?? "unknown error")
                             }
                             
-                            // Restore original animation state
-                            DispatchQueue.main.sync {
-                                self.animationController.currentTime = currentAnimationTime
-                                if isCurrentlyPlaying {
-                                    self.animationController.play()
-                                }
-                            }
-                            
                             semaphore.signal()
                             return
                         }
@@ -359,27 +356,14 @@ class CanvasVideoRenderer {
                 self.progressPublisher.send(1.0)
             }
             
-            // Restore original animation state
-            // Use a dispatch semaphore to wait for the main thread task
-            let restorationSemaphore = DispatchSemaphore(value: 0)
-            
-            // Dispatch to main thread to restore animation state
-            DispatchQueue.main.async {
-                self.animationController.currentTime = currentAnimationTime
-                if isCurrentlyPlaying {
-                    self.animationController.play()
-                }
-                restorationSemaphore.signal()
-            }
-            
-            // Wait for restoration to complete
-            _ = restorationSemaphore.wait(timeout: .distantFuture)
-            
             // Finish writing
             writerInput.markAsFinished()
             
-            // Signal completion
-            semaphore.signal()
+            // Finalize the asset writer
+            assetWriter.finishWriting {
+                // Signal completion after the asset writer has finished
+                semaphore.signal()
+            }
         }
         
         // Wait for media writing to complete
@@ -401,25 +385,36 @@ class CanvasVideoRenderer {
         }
         
         // Check for any errors after processing is complete
-        if let error = assetWriter.error {
-            throw NSError(domain: "MotionStoryline", code: 105, userInfo: [NSLocalizedDescriptionKey: "Failed to create video: \(error.localizedDescription)"])
+        if assetWriter.status == .failed {
+            let errorMessage = assetWriter.error?.localizedDescription ?? "Unknown asset writer error"
+            throw NSError(domain: "MotionStoryline", code: 105, userInfo: [NSLocalizedDescriptionKey: "Failed to create video: \(errorMessage)"])
+        } else if assetWriter.status != .completed {
+            throw NSError(domain: "MotionStoryline", code: 108, userInfo: [NSLocalizedDescriptionKey: "Asset writer finished with unexpected status: \(assetWriter.status.rawValue)"])
         }
         
         // Clean up
         cancellables.removeAll()
         
+        // Verify the file was created successfully before returning the asset
+        guard FileManager.default.fileExists(atPath: temporaryVideoURL.path) else {
+            throw NSError(domain: "MotionStoryline", code: 106, userInfo: [NSLocalizedDescriptionKey: "Temporary video file was not created successfully"])
+        }
+        
         // Return the final asset
-        return AVAsset(url: temporaryVideoURL)
+        return AVURLAsset(url: temporaryVideoURL)
     }
     
     // MARK: - Helper Methods
     
     /// Gets a snapshot of canvas elements with animations applied at a specific time
-    /// - Parameter time: The time point to get elements for
+    /// - Parameters:
+    ///   - time: The time point to get elements for
+    ///   - elements: The canvas elements to animate
+    ///   - animationController: The animation controller containing the tracks
     /// - Returns: Array of elements with animation properties applied
-    private func getElementsAtTime(_ time: Double) -> [CanvasElement] {
+    nonisolated private static func getElementsAtTime(_ time: Double, elements: [CanvasElement], animationController: AnimationController) -> [CanvasElement] {
         // Make a deep copy of the current canvas elements
-        var elementsAtTime = canvasElements
+        var elementsAtTime = elements
         
         // For each element, apply all animated properties at the given time
         for i in 0..<elementsAtTime.count {
@@ -471,8 +466,9 @@ class CanvasVideoRenderer {
     ///   - xOffset: Horizontal offset for centering
     ///   - yOffset: Vertical offset for centering
     nonisolated private func renderElement(_ element: CanvasElement, to context: CGContext, scaleFactor: CGFloat, xOffset: CGFloat, yOffset: CGFloat) {
-        // Helper function to properly convert SwiftUI Color to CGColor
+        // Helper function to safely convert SwiftUI Color to CGColor with consistent color space
         func convertToCGColor(_ color: Color) -> CGColor {
+            // Use the same color conversion approach as CanvasExport.swift for consistency
             // Convert through NSColor to ensure consistent color space
             let nsColor = NSColor(color)
             // Use sRGB color space for consistent rendering across canvas and export
@@ -527,55 +523,120 @@ class CanvasVideoRenderer {
 
             
         case .text:
-            // Implement proper text rendering using Core Text
-            let attributedString = NSAttributedString(
-                string: element.text,
-                attributes: [
-                    // Use a size relative to the element's height for better proportional scaling
-                    .font: NSFont.systemFont(ofSize: min(rect.height * 0.7, 36)),
-                    // Ensure consistent color conversion
-                    .foregroundColor: {
-                        // First create NSColor from SwiftUI Color
-                        let nsColor = NSColor(element.color)
-                        // Then try to use a consistent color space
-                        return nsColor.usingColorSpace(.sRGB) ?? nsColor
-                    }(),
-                    .paragraphStyle: {
-                        let style = NSMutableParagraphStyle()
-                        switch element.textAlignment {
-                        case .leading:
-                            style.alignment = .left
-                        case .center:
-                            style.alignment = .center
-                        case .trailing:
-                            style.alignment = .right
-                        }
-                        return style
-                    }()
-                ]
-            )
+            // Handle text rendering with proper coordinate system handling (same as CanvasRenderer)
+            let fontSize = element.fontSize
             
-            // Apply element opacity to the entire text
-            context.setAlpha(element.opacity)
+            // Create paragraph style based on text alignment
+            let paragraphStyle = NSMutableParagraphStyle()
+            switch element.textAlignment {
+            case .leading:
+                paragraphStyle.alignment = .left
+            case .center:
+                paragraphStyle.alignment = .center
+            case .trailing:
+                paragraphStyle.alignment = .right
+            }
             
-            // Create the text frame to draw in
-            let textPath = CGPath(rect: rect, transform: nil)
-            let frameSetter = CTFramesetterCreateWithAttributedString(attributedString)
-            let textFrame = CTFramesetterCreateFrame(frameSetter, CFRange(location: 0, length: attributedString.length), textPath, nil)
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: fontSize),
+                .foregroundColor: NSColor(cgColor: convertToCGColor(element.color)) ?? NSColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0),
+                .paragraphStyle: paragraphStyle
+            ]
             
-            // Draw the text
-            CTFrameDraw(textFrame, context)
+            // Create attributed string with the text content
+            let attributedString = NSAttributedString(string: element.text, attributes: attributes)
+            
+            // Calculate text size to properly center text
+            let textSize = attributedString.size()
+            
+            // Calculate center-aligned text rect
+            let textRect: CGRect
+            switch element.textAlignment {
+            case .center:
+                // Center horizontally
+                textRect = CGRect(
+                    x: rect.midX - textSize.width / 2,
+                    y: rect.midY - textSize.height / 2,
+                    width: textSize.width,
+                    height: textSize.height
+                )
+            case .leading:
+                // Align to left
+                textRect = CGRect(
+                    x: rect.minX,
+                    y: rect.midY - textSize.height / 2,
+                    width: rect.width,
+                    height: textSize.height
+                )
+            case .trailing:
+                // Align to right
+                textRect = CGRect(
+                    x: rect.maxX - textSize.width,
+                    y: rect.midY - textSize.height / 2,
+                    width: textSize.width,
+                    height: textSize.height
+                )
+            }
+            
+            // Set up NSGraphicsContext to bridge AppKit and CoreGraphics
+            // The main CGContext is already Y-flipped. For NSAttributedString drawing,
+            // we need to counteract this flip locally.
+            context.saveGState() // Save the globally Y-flipped state
+
+            // Translate to the desired bottom-left of the text in the Y-flipped system.
+            // textRect.origin.y is top in the flipped system.
+            // So, textRect.origin.y + textRect.height is bottom in the flipped system.
+            context.translateBy(x: textRect.origin.x, y: textRect.origin.y + textRect.height)
+            context.scaleBy(x: 1, y: -1) // Un-flip Y axis locally for text
+
+            // Now that the context is locally upright, draw text at (0,0) of this local system.
+            // We need an NSGraphicsContext for NSAttributedString.
+            let nsContext = NSGraphicsContext(cgContext: context, flipped: false) // Context is now locally upright
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = nsContext
+            
+            attributedString.draw(with: CGRect(origin: .zero, size: attributedString.size()), options: [.usesLineFragmentOrigin])
+            
+            NSGraphicsContext.restoreGraphicsState()
+            context.restoreGState() // Restore to globally Y-flipped state
             
         case .image:
-            // Handle image elements
-            if let assetURL = element.assetURL, assetURL.isFileURL,
-               let imageData = try? Data(contentsOf: assetURL),
-               let nsImage = NSImage(data: imageData) {
-                
-                var imageRect = CGRect(x: 0, y: 0, width: nsImage.size.width, height: nsImage.size.height)
-                if let cgImage = nsImage.cgImage(forProposedRect: &imageRect, context: nil, hints: nil) {
-                    context.setAlpha(CGFloat(element.opacity))
-                    context.draw(cgImage, in: rect)
+            // Handle image elements with proper coordinate system handling (same as CanvasRenderer)
+            if let assetURL = element.assetURL, assetURL.isFileURL {
+                // Use NSImage for consistent image loading and handling
+                if let image = NSImage(contentsOfFile: assetURL.path) {
+                    // The context is already set up with opacity and rotation
+                    // We need to draw the NSImage into the element's rect
+                    // NSGraphicsContext is used here to draw NSImage into CGContext
+                    let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
+                    NSGraphicsContext.saveGraphicsState()
+                    NSGraphicsContext.current = nsContext
+                    
+                    // Locally flip the context for NSImage drawing to make it upright
+                    context.saveGState() // Save current CTM (globally flipped, rotated for element)
+
+                    // Translate to the top-left of the image's rect in the current (flipped) system.
+                    // Then, account for local flip: move to bottom-left of where image should draw.
+                    context.translateBy(x: rect.origin.x, y: rect.origin.y + rect.size.height)
+                    context.scaleBy(x: 1, y: -1) // Locally un-flip the Y axis
+
+                    // Now that the context is locally upright, draw image at (0,0) of this local system.
+                    let localImageDrawRect = CGRect(origin: .zero, size: rect.size)
+
+                    // NSGraphicsContext is needed for NSImage.draw
+                    // The 'context' here is now locally upright.
+                    let nsContextForImage = NSGraphicsContext(cgContext: context, flipped: false)
+                    NSGraphicsContext.saveGraphicsState()
+                    NSGraphicsContext.current = nsContextForImage
+                    
+                    image.draw(in: localImageDrawRect)
+                    
+                    NSGraphicsContext.restoreGraphicsState() // Restore NSGraphicsContext state
+                    context.restoreGState() // Restore CGContext to globally flipped, rotated CTM
+                } else {
+                    // Fallback placeholder for images
+                    context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
+                    context.fill(rect)
                 }
             } else {
                 // Fallback placeholder for images
@@ -584,7 +645,7 @@ class CanvasVideoRenderer {
             }
             
         case .video:
-            // Handle video elements with timeline synchronization
+            // Handle video elements with proper coordinate system handling (same as CanvasRenderer)
             if let assetURL = element.assetURL, assetURL.isFileURL {
                 let asset = AVAsset(url: assetURL)
                 let imageGenerator = AVAssetImageGenerator(asset: asset)
@@ -600,8 +661,21 @@ class CanvasVideoRenderer {
                 
                 do {
                     let cgImage = try imageGenerator.copyCGImage(at: cmTime, actualTime: nil)
-                    context.setAlpha(CGFloat(element.opacity))
-                    context.draw(cgImage, in: rect)
+                    
+                    // Draw the video frame with proper coordinate system handling
+                    let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
+                    NSGraphicsContext.saveGraphicsState()
+                    NSGraphicsContext.current = nsContext
+                    
+                    context.saveGState()
+                    context.translateBy(x: rect.origin.x, y: rect.origin.y + rect.size.height)
+                    context.scaleBy(x: 1, y: -1)
+                    
+                    let localImageDrawRect = CGRect(origin: .zero, size: rect.size)
+                    context.draw(cgImage, in: localImageDrawRect)
+                    
+                    NSGraphicsContext.restoreGraphicsState()
+                    context.restoreGState()
                 } catch {
                     // Fallback placeholder for videos
                     context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
@@ -653,7 +727,7 @@ class CanvasVideoRenderer {
                 height: height,
                 bitsPerComponent: 8,
                 bytesPerRow: bytesPerRow,
-                space: CGColorSpaceCreateDeviceRGB(),
+                space: CGColorSpace(name: CGColorSpace.sRGB)!,
                 bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
             )
             

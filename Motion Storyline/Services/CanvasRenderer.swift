@@ -23,7 +23,7 @@ class CanvasRenderer {
         let height = Int(size.height * scaleFactor)
         let bitsPerComponent = 8
         let bytesPerRow = width * 4
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
         let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
         
         guard let context = CGContext(
@@ -111,8 +111,8 @@ class CanvasRenderer {
                     paragraphStyle.alignment = .right
                 }
                 
-                // Scale font size based on element height and apply consistent sizing
-                let fontSize = min(24 * scaleFactor, rect.height * 0.8)
+                // Use the element's fontSize property, scaled appropriately
+                let fontSize = element.fontSize * scaleFactor
                 
                 let attributes: [NSAttributedString.Key: Any] = [
                     .font: NSFont.systemFont(ofSize: fontSize),
@@ -279,7 +279,7 @@ class CanvasRenderer {
     }
 
     private static func convertToCGColor(_ color: NSColor) -> CGColor {
-        return color.usingColorSpace(.deviceRGB)?.cgColor ?? NSColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0).cgColor
+        return color.usingColorSpace(.sRGB)?.cgColor ?? NSColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0).cgColor
     }
     
     /// Properly converts a SwiftUI Color to CGColor
@@ -305,19 +305,11 @@ class CanvasRenderer {
         } else if color == Color(red: 0.690, green: 0.322, blue: 0.871, opacity: 1.0) {
             nsColor = NSColor(red: 0.690, green: 0.322, blue: 0.871, alpha: 1.0)
         } else {
-            // Convert using NSColor's color provider - more reliable than the previous method
-            let provider = color.resolve(in: EnvironmentValues())
-            nsColor = NSColor(colorSpace: .deviceRGB, 
-                             components: [
-                                provider.cgColor.components?[0] ?? 0,
-                                provider.cgColor.components?[1] ?? 0,
-                                provider.cgColor.components?[2] ?? 0,
-                                provider.cgColor.components?[3] ?? 1
-                             ],
-                             count: 4)
+            // Convert using NSColor for consistent color space handling
+            nsColor = NSColor(color)
         }
         
-        // Convert to CGColor ensuring we're in the RGB color space
-        return nsColor.usingColorSpace(.deviceRGB)?.cgColor ?? NSColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0).cgColor
+        // Convert to CGColor ensuring we're in the sRGB color space for consistency
+        return nsColor.usingColorSpace(.sRGB)?.cgColor ?? NSColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 1.0).cgColor
     }
 }
