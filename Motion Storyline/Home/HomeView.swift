@@ -27,6 +27,8 @@ struct HomeView: View {
     @State private var isShowingUserMenu = false
     @State private var selectedTemplateType: String = ""
     @State private var isShowingPreferencesSheet = false
+    @State private var isShowingAuthenticationView = false
+    @State private var isShowingUserProfileView = false
     
     // Dynamic colors for light/dark mode adaptability
     private var designBg: Color {
@@ -44,6 +46,11 @@ struct HomeView: View {
     
     // Computed property for user display name
     private var userDisplayName: String {
+        // Handle case where authentication is unavailable
+        guard authManager.isAuthenticationAvailable else {
+            return "User"
+        }
+        
         let firstName = authManager.user?.firstName ?? ""
         let lastName = authManager.user?.lastName ?? ""
         
@@ -233,7 +240,8 @@ struct HomeView: View {
                     // User menu
                     Button(action: { isShowingUserMenu.toggle() }) {
                         Group {
-                            if let imageUrl = authManager.user?.imageUrl {
+                            if authManager.isAuthenticationAvailable && authManager.isAuthenticated,
+                               let imageUrl = authManager.user?.imageUrl {
                                 AsyncImage(url: URL(string: imageUrl)) { image in
                                     image
                                         .resizable()
@@ -257,65 +265,148 @@ struct HomeView: View {
                     .accessibilityHint("Access profile and settings")
                     .popover(isPresented: $isShowingUserMenu) {
                         VStack(alignment: .leading, spacing: 12) {
-                            // User info header
-                            HStack(spacing: 12) {
-                                Group {
-                                    if let imageUrl = authManager.user?.imageUrl {
-                                        AsyncImage(url: URL(string: imageUrl)) { image in
-                                            image
-                                                .resizable()
-                                                .aspectRatio(contentMode: .fill)
-                                        } placeholder: {
+                            if !authManager.isAuthenticationAvailable || authManager.isOfflineMode {
+                                // Offline mode menu
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "person.circle.fill")
+                                            .font(.title)
+                                            .foregroundColor(.gray)
+                                            .frame(width: 40, height: 40)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Offline Mode")
+                                                .font(.headline)
+                                                .lineLimit(1)
+                                            
+                                            Text("Authentication unavailable")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                        
+                                        Spacer()
+                                    }
+                                    
+                                    Divider()
+                                    
+                                    Button("Sign In", action: {
+                                        isShowingUserMenu = false
+                                        if authManager.isAuthenticationAvailable {
+                                            isShowingAuthenticationView = true
+                                        } else {
+                                            Task {
+                                                await authManager.retryAuthentication()
+                                            }
+                                        }
+                                    })
+                                    .disabled(authManager.isLoading)
+                                    .accessibilityHint("Try to sign in")
+                                    
+                                    Button("Settings", action: {
+                                        isShowingUserMenu = false
+                                        isShowingPreferencesSheet = true
+                                    })
+                                    .accessibilityHint("Open application settings")
+                                }
+                            } else if authManager.isAuthenticated {
+                                // Authenticated user menu
+                                HStack(spacing: 12) {
+                                    Group {
+                                        if let imageUrl = authManager.user?.imageUrl {
+                                            AsyncImage(url: URL(string: imageUrl)) { image in
+                                                image
+                                                    .resizable()
+                                                    .aspectRatio(contentMode: .fill)
+                                            } placeholder: {
+                                                Image(systemName: "person.circle.fill")
+                                                    .font(.title)
+                                                    .foregroundColor(.gray)
+                                            }
+                                        } else {
                                             Image(systemName: "person.circle.fill")
                                                 .font(.title)
                                                 .foregroundColor(.gray)
                                         }
-                                    } else {
-                                        Image(systemName: "person.circle.fill")
+                                    }
+                                    .frame(width: 40, height: 40)
+                                    .clipShape(Circle())
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(userDisplayName)
+                                            .font(.headline)
+                                            .lineLimit(1)
+                                        
+                                        Text(authManager.user?.primaryEmailAddress?.emailAddress ?? "")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                    
+                                    Spacer()
+                                }
+                                
+                                Divider()
+                                
+                                Button("Profile", action: {
+                                    isShowingUserMenu = false
+                                    isShowingUserProfileView = true
+                                })
+                                .accessibilityHint("View your profile")
+                                
+                                Button("Settings", action: {
+                                    isShowingUserMenu = false
+                                    isShowingPreferencesSheet = true
+                                })
+                                .accessibilityHint("Open application settings")
+                                
+                                Divider()
+                                
+                                Button("Sign Out", action: {
+                                    isShowingUserMenu = false
+                                    Task {
+                                        await authManager.signOut()
+                                    }
+                                })
+                                .accessibilityHint("Sign out of your account")
+                            } else {
+                                // Not authenticated but auth is available
+                                VStack(alignment: .leading, spacing: 12) {
+                                    HStack(spacing: 12) {
+                                        Image(systemName: "person.circle")
                                             .font(.title)
                                             .foregroundColor(.gray)
+                                            .frame(width: 40, height: 40)
+                                        
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("Not Signed In")
+                                                .font(.headline)
+                                                .lineLimit(1)
+                                            
+                                            Text("Sign in to sync your projects")
+                                                .font(.caption)
+                                                .foregroundColor(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                        
+                                        Spacer()
                                     }
-                                }
-                                .frame(width: 40, height: 40)
-                                .clipShape(Circle())
-                                
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(userDisplayName)
-                                        .font(.headline)
-                                        .lineLimit(1)
                                     
-                                    Text(authManager.user?.primaryEmailAddress?.emailAddress ?? "")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(1)
+                                    Divider()
+                                    
+                                    Button("Sign In", action: {
+                                        isShowingUserMenu = false
+                                        isShowingAuthenticationView = true
+                                    })
+                                    .accessibilityHint("Sign in to your account")
+                                    
+                                    Button("Settings", action: {
+                                        isShowingUserMenu = false
+                                        isShowingPreferencesSheet = true
+                                    })
+                                    .accessibilityHint("Open application settings")
                                 }
-                                
-                                Spacer()
                             }
-                            
-                            Divider()
-                            
-                            Button("Profile", action: {
-                                isShowingUserMenu = false
-                                // TODO: Show profile view
-                            })
-                            .accessibilityHint("View your profile")
-                            
-                            Button("Settings", action: {
-                                isShowingUserMenu = false
-                                isShowingPreferencesSheet = true
-                            })
-                            .accessibilityHint("Open application settings")
-                            
-                            Divider()
-                            
-                            Button("Sign Out", action: {
-                                isShowingUserMenu = false
-                                Task {
-                                    await authManager.signOut()
-                                }
-                            })
-                            .accessibilityHint("Sign out of your account")
                         }
                         .padding()
                         .frame(width: 250)
@@ -417,7 +508,6 @@ struct HomeView: View {
                                             onToggleStar: toggleProjectStar
                                         )
                                             .onTapGesture {
-                                                appState.navigateToProject(project)
                                                 onProjectSelected(project)
                                             }
                                     }
@@ -466,7 +556,6 @@ struct HomeView: View {
                                             onToggleStar: toggleProjectStar
                                         )
                                             .onTapGesture {
-                                                appState.navigateToProject(project)
                                                 onProjectSelected(project)
                                             }
                                     }
@@ -529,6 +618,16 @@ struct HomeView: View {
         }
         .sheet(isPresented: $isShowingPreferencesSheet) {
             PreferencesView()
+        }
+        .sheet(isPresented: $isShowingAuthenticationView) {
+            AuthenticationView()
+                .environmentObject(authManager)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(isPresented: $isShowingUserProfileView) {
+            UserProfileView()
+                .environmentObject(authManager)
         }
         .sheet(isPresented: $isCreatingNewProject) {
             NewProjectSheet(

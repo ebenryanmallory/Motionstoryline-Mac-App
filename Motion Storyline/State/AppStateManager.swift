@@ -17,7 +17,7 @@ class AppStateManager: ObservableObject {
     @Published var scenePhase: ScenePhase = .active
 
     // Project State for UI updates (e.g., window title)
-    @Published var currentProjectURL: URL? = nil
+    @Published var projectURL: URL? = nil
     @Published var hasUnsavedChanges: Bool = false
     @Published var currentTimelineScale: Double = 1.0
     @Published var currentTimelineOffset: Double = 0.0
@@ -141,7 +141,7 @@ class AppStateManager: ObservableObject {
 
         currentProjectURLPublisher
             .receive(on: DispatchQueue.main)
-            .assign(to: &$currentProjectURL)
+            .assign(to: &$projectURL)
     }
 
     func clearUndoRedoActions() {
@@ -150,7 +150,7 @@ class AppStateManager: ObservableObject {
         self.canUndo = false
         self.canRedo = false
         self.hasUnsavedChanges = false
-        self.currentProjectURL = nil
+        self.projectURL = nil
         cancellables.forEach { $0.cancel() }
         cancellables.removeAll()
     }

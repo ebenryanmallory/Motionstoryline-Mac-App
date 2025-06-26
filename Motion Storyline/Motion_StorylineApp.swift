@@ -27,18 +27,31 @@ struct Motion_StorylineApp: App {
         WindowGroup {
             NavigationStack {
                 ZStack {
-                    if !clerk.isLoaded {
-                        // Show loading view while Clerk is initializing
-                        VStack {
+                    if authManager.isLoading {
+                        // Show loading view while authentication is initializing
+                        VStack(spacing: 16) {
                             ProgressView()
                                 .scaleEffect(1.5)
                             Text("Loading...")
-                                .padding(.top)
+                                .font(.headline)
+                            
+                            if !authManager.isAuthenticationAvailable {
+                                VStack(spacing: 12) {
+                                    Text("Authentication service is taking longer than expected")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                        .multilineTextAlignment(.center)
+                                    
+                                    Button("Continue Without Signing In") {
+                                        authManager.continueWithoutAuthentication()
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                }
+                                .padding(.top, 20)
+                            }
                         }
-                    } else if !authManager.isAuthenticated {
-                        // Show authentication view when user is not signed in
-                        AuthenticationView()
-                            .environmentObject(authManager)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(NSColor.windowBackgroundColor))
                     } else if self.appStateManager.selectedProject != nil {
                         DesignCanvas()
                             .withUITestIdentifier()
@@ -55,37 +68,53 @@ struct Motion_StorylineApp: App {
                                 }
                             }
                     } else {
+                        // Show home view (works in both authenticated and offline modes)
                         HomeView(
                             recentProjects: $recentProjects,
                             userProjects: $userProjects,
                             statusMessage: $statusMessage,
                             onProjectSelected: { project in
                                 self.appStateManager.selectedProject = project
-                                self.addToRecentProjects(project)
+                                addToRecentProjects(project)
                             },
                             isCreatingNewProject: $isCreatingNewProject,
                             onCreateNewProject: { name, type in
                                 createNewProject(name: name, type: type)
                             },
-                            onDeleteProject: deleteProject,
-                            onRenameProject: renameProject,
-                            onToggleProjectStar: toggleProjectStar
+                            onDeleteProject: { project in
+                                deleteProject(project)
+                            },
+                            onRenameProject: { project, newName in
+                                renameProject(project, newName: newName)
+                            },
+                            onToggleProjectStar: { project in
+                                toggleProjectStar(project)
+                            }
                         )
                         .environmentObject(self.appStateManager)
-                        .environmentObject(self.authManager) // Add AuthManager to environment
+                        .environmentObject(self.authManager)
                         .onAppear {
-                            loadRecentProjects()
-                            loadAllProjects()
-                            updateStatus()
+                            loadProjects()
+                            updateStatusMessage()
                         }
                     }
-                } // Close ZStack
+                }
             }
-            .environment(clerk)
+            .environmentObject(authManager)
             .task {
-                // Configure Clerk with your publishable key
-                clerk.configure(publishableKey: ClerkConfig.currentPublishableKey)
-                try? await clerk.load()
+                // Only configure Clerk if authentication is properly set up
+                if ClerkConfig.isAuthenticationConfigured {
+                    do {
+                        // Configure Clerk with your publishable key
+                        clerk.configure(publishableKey: ClerkConfig.currentPublishableKey)
+                        try await clerk.load()
+                    } catch {
+                        print("Failed to load Clerk: \(error.localizedDescription)")
+                        // The AuthenticationManager will handle this gracefully
+                    }
+                } else {
+                    print("Clerk not configured - running in offline mode")
+                }
             }
             .onAppear {
                 // Configure window to prevent automatic snapping during resize
@@ -99,8 +128,8 @@ struct Motion_StorylineApp: App {
                     // Disable full screen transitions which can cause snapping
                     window.animationBehavior = .documentWindow
                     
-                    // Set a reasonable minimum size for the window
-                    window.minSize = NSSize(width: 800, height: 600)
+                    // Set a reasonable minimum size for the window with extra height for timeline
+                    window.minSize = NSSize(width: 1000, height: 750)
                 }
                 
                 // Initialize appearance based on saved preference
@@ -122,6 +151,9 @@ struct Motion_StorylineApp: App {
             } // Closes '.overlay'
         } // Closes 'WindowGroup' content block
         .onChange(of: scenePhase) { oldPhase, newPhase in
+            if newPhase == .background {
+                saveProjects()
+            }
             print("Scene phase changed from \(oldPhase) to: \(newPhase)")
             self.appStateManager.scenePhase = newPhase
         }
@@ -371,5 +403,23 @@ struct Motion_StorylineApp: App {
         default:
             return "doc"
         }
+    }
+    
+    // Load projects and update status message
+    private func loadProjects() {
+        loadRecentProjects()
+        loadAllProjects()
+        updateStatus()
+    }
+    
+    // Update status message
+    private func updateStatusMessage() {
+        updateStatus()
+    }
+    
+    // Save projects
+    private func saveProjects() {
+        saveRecentProjects()
+        saveAllProjects()
     }
 } 
