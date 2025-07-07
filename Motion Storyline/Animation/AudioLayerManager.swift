@@ -13,6 +13,9 @@ public class AudioLayerManager: ObservableObject {
     private var timeObservers: [UUID: Any] = [:]
     private var animationController: AnimationController?
     
+    /// Closure to notify about audio layer changes that need to be saved to document
+    public var onAudioLayerChanged: ((String) -> Void)?
+    
     public init() {}
     
     /// Set the animation controller for timeline synchronization
@@ -22,6 +25,17 @@ public class AudioLayerManager: ObservableObject {
     
     /// Add an audio layer to the manager
     public func addAudioLayer(_ audioLayer: AudioLayer) {
+        // Check for duplicate audio at same start time (within 0.1 seconds)
+        let hasDuplicate = audioLayers.contains { existingLayer in
+            existingLayer.assetURL == audioLayer.assetURL && 
+            abs(existingLayer.startTime - audioLayer.startTime) < 0.1
+        }
+        
+        if hasDuplicate {
+            print("⚠️ AudioLayerManager: Audio layer already exists at this timeline position. Skipping duplicate.")
+            return
+        }
+        
         audioLayers.append(audioLayer)
         setupAudioPlayer(for: audioLayer)
     }
@@ -40,6 +54,9 @@ public class AudioLayerManager: ObservableObject {
         
         // Remove from layers
         audioLayers.removeAll { $0.id == id }
+        
+        // Notify about the change
+        onAudioLayerChanged?("Remove Audio Layer")
     }
     
     /// Update an existing audio layer
@@ -51,7 +68,30 @@ public class AudioLayerManager: ObservableObject {
             if let player = audioPlayers[audioLayer.id] {
                 player.volume = Float(audioLayer.isMuted ? 0.0 : audioLayer.volume)
             }
+            
+            // Notify about the change
+            onAudioLayerChanged?("Update Audio Layer")
         }
+    }
+    
+    /// Clear all audio layers and their associated players
+    public func clearAllAudioLayers() {
+        // Stop and clean up all players
+        for (_, player) in audioPlayers {
+            player.pause()
+        }
+        
+        // Remove all time observers
+        for (id, observer) in timeObservers {
+            if let player = audioPlayers[id] {
+                player.removeTimeObserver(observer)
+            }
+        }
+        
+        // Clear all collections
+        audioPlayers.removeAll()
+        timeObservers.removeAll()
+        audioLayers.removeAll()
     }
     
     /// Set up an audio player for a specific audio layer

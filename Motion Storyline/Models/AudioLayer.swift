@@ -66,39 +66,75 @@ public struct AudioLayer: Identifiable, Codable, Hashable {
     public func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
-}
-
-/// Extension to make Color codable for AudioLayer
-extension Color: Codable {
+    
+    // Custom Codable implementation to handle Color encoding
     enum CodingKeys: String, CodingKey {
-        case red, green, blue, alpha
+        case id, name, assetURL, startTime, duration, volume, isMuted, isVisible, waveformColor
     }
     
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        let red = try container.decode(Double.self, forKey: .red)
-        let green = try container.decode(Double.self, forKey: .green)
-        let blue = try container.decode(Double.self, forKey: .blue)
-        let alpha = try container.decode(Double.self, forKey: .alpha)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.name = try container.decode(String.self, forKey: .name)
+        self.assetURL = try container.decode(URL.self, forKey: .assetURL)
+        self.startTime = try container.decode(TimeInterval.self, forKey: .startTime)
+        self.duration = try container.decode(TimeInterval.self, forKey: .duration)
+        self.volume = try container.decode(Double.self, forKey: .volume)
+        self.isMuted = try container.decode(Bool.self, forKey: .isMuted)
+        self.isVisible = try container.decode(Bool.self, forKey: .isVisible)
         
-        self.init(red: red, green: green, blue: blue, opacity: alpha)
+        // Decode waveformColor using CodableColor helper
+        let codableColor = try container.decode(CodableColor.self, forKey: .waveformColor)
+        self.waveformColor = codableColor.toColor()
     }
     
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(assetURL, forKey: .assetURL)
+        try container.encode(startTime, forKey: .startTime)
+        try container.encode(duration, forKey: .duration)
+        try container.encode(volume, forKey: .volume)
+        try container.encode(isMuted, forKey: .isMuted)
+        try container.encode(isVisible, forKey: .isVisible)
         
-        // Convert Color to RGB components
-        let uiColor = NSColor(self)
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        var alpha: CGFloat = 0
+        // Encode waveformColor using CodableColor helper
+        let codableColor = CodableColor(from: waveformColor)
+        try container.encode(codableColor, forKey: .waveformColor)
+    }
+}
+
+/// Helper struct for encoding/decoding Color in AudioLayer
+struct CodableColor: Codable {
+    var red: Double
+    var green: Double
+    var blue: Double
+    var alpha: Double
+    
+    init(from color: Color) {
+        let nsColor = NSColor(color)
+        var r: CGFloat = 0
+        var g: CGFloat = 0
+        var b: CGFloat = 0
+        var a: CGFloat = 0
         
-        uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        // Convert to sRGB colorspace to safely extract components
+        if let srgbColor = nsColor.usingColorSpace(.sRGB) {
+            srgbColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+        } else {
+            // Fallback to default values if conversion fails
+            r = 0; g = 0; b = 0; a = 1
+            print("Warning: Could not convert color to sRGB in AudioLayer, using black as fallback")
+        }
         
-        try container.encode(Double(red), forKey: .red)
-        try container.encode(Double(green), forKey: .green)
-        try container.encode(Double(blue), forKey: .blue)
-        try container.encode(Double(alpha), forKey: .alpha)
+        self.red = Double(r)
+        self.green = Double(g)
+        self.blue = Double(b)
+        self.alpha = Double(a)
+    }
+    
+    func toColor() -> Color {
+        return Color(red: red, green: green, blue: blue, opacity: alpha)
     }
 } 

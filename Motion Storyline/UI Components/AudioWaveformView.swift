@@ -204,57 +204,37 @@ public struct AudioWaveformView: View {
     
     private func loadAudioSamples() async {
         do {
-            let asset = AVAsset(url: audioURL)
-            let assetReader = try AVAssetReader(asset: asset)
+            // Use AVAudioFile instead of AVAssetReader to avoid microphone permissions on macOS
+            let audioFile = try AVAudioFile(forReading: audioURL)
+            let format = audioFile.processingFormat
+            let frameCount = AVAudioFrameCount(audioFile.length)
             
-            guard let audioTrack = try await asset.loadTracks(withMediaType: .audio).first else {
-                throw NSError(domain: "AudioWaveformView", code: 1, userInfo: [NSLocalizedDescriptionKey: "No audio track found"])
+            // Create a buffer to hold the audio data
+            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else {
+                throw NSError(domain: "AudioWaveformView", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not create audio buffer"])
             }
             
-            // Configure the output settings for reading samples
-            let outputSettings: [String: Any] = [
-                AVFormatIDKey: kAudioFormatLinearPCM,
-                AVLinearPCMIsFloatKey: true,
-                AVLinearPCMBitDepthKey: 32,
-                AVLinearPCMIsBigEndianKey: false,
-                AVLinearPCMIsNonInterleaved: false
-            ]
+            // Read the entire file into the buffer
+            try audioFile.read(into: buffer)
             
-            let readerOutput = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: outputSettings)
-            assetReader.add(readerOutput)
+            // Extract samples from the buffer
+            guard let floatChannelData = buffer.floatChannelData else {
+                throw NSError(domain: "AudioWaveformView", code: 2, userInfo: [NSLocalizedDescriptionKey: "Could not get float channel data"])
+            }
             
-            // Start reading
-            assetReader.startReading()
+            let frameLength = Int(buffer.frameLength)
+            let channelCount = Int(buffer.format.channelCount)
             
-            // Collect all audio samples
+            // Convert to Array<Float> - use first channel if stereo
             var sampleBuffer: [Float] = []
+            let channelData = floatChannelData[0] // Use first channel
             
-            // We'll downsample to a reasonable number of points (max 2000 for performance)
-            let desiredNumberOfSamples = 2000
-            
-            while let nextBuffer = readerOutput.copyNextSampleBuffer(),
-                  let blockBuffer = CMSampleBufferGetDataBuffer(nextBuffer) {
-                
-                // Get the buffer length
-                var bufferLength: Int = 0
-                var bufferPointer: UnsafeMutablePointer<Int8>?
-                CMBlockBufferGetDataPointer(blockBuffer, atOffset: 0, lengthAtOffsetOut: &bufferLength, totalLengthOut: nil, dataPointerOut: &bufferPointer)
-                
-                // Number of samples in this buffer
-                let floatCount = bufferLength / MemoryLayout<Float>.size
-                
-                // Convert buffer pointer to UnsafePointer<Float>
-                if let floatPointer = bufferPointer?.withMemoryRebound(to: Float.self, capacity: floatCount, { $0 }) {
-                    // Copy samples from buffer
-                    let floats = Array(UnsafeBufferPointer(start: floatPointer, count: floatCount))
-                    sampleBuffer.append(contentsOf: floats)
-                }
-                
-                // Free the sample buffer
-                CMSampleBufferInvalidate(nextBuffer)
+            for i in 0..<frameLength {
+                sampleBuffer.append(channelData[i])
             }
             
-            // Downsample the audio samples
+            // Downsample to a reasonable number of points (max 2000 for performance)
+            let desiredNumberOfSamples = 2000
             let samples = downsample(sampleBuffer, targetCount: desiredNumberOfSamples)
             
             // Update the UI on the main thread

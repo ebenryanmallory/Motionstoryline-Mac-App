@@ -12,10 +12,10 @@ struct TimelineViewPanel: View {
     @Binding var selectedElement: CanvasElement?
     @Binding var timelineScale: Double
     
-    // Optional media assets for audio visualization
-    var mediaAssets: [MediaAsset] = []
-    var audioURL: URL? = nil
-    var showAudioWaveform: Bool = false
+    // Audio layers for timeline display
+    var audioLayers: [AudioLayer] = []
+    var audioLayerManager: AudioLayerManager?
+    var onRemoveAudioLayer: ((AudioLayer) -> Void)?
     
     // Available height from parent container for proper constraint calculation
     var availableParentHeight: CGFloat = 0
@@ -78,9 +78,7 @@ struct TimelineViewPanel: View {
                         let effectiveMaxHeight = min(maxHeight, dynamicMaxHeight)
                         let effectiveMinHeight = minHeight
                         dragConstraints = (min: effectiveMinHeight, max: effectiveMaxHeight)
-                        
-                        print("TimelineViewPanel: Drag started - startHeight: \(dragStartHeight), constraints: min=\(dragConstraints.min), max=\(dragConstraints.max)")
-                    }
+                                            }
                     
                     // Calculate new height based on mouse movement
                     // For a top resize handle on a bottom panel, dragging up should increase height
@@ -95,10 +93,6 @@ struct TimelineViewPanel: View {
                     // Update height immediately for responsive feedback
                     timelineHeight = newHeight
                     
-                    // Optional: Print debug info for fine-tuning
-                    if abs(mouseMovement) > 1 { // Only print for meaningful movements
-                        print("TimelineViewPanel: Mouse moved \(mouseMovement)pt, height: \(dragStartHeight) -> \(newHeight)")
-                    }
                 }
                 .onEnded { value in
                     // Calculate final height and apply constraints one more time
@@ -106,9 +100,7 @@ struct TimelineViewPanel: View {
                     let finalHeight = dragStartHeight + mouseMovement
                     let constrainedHeight = min(dragConstraints.max, max(dragConstraints.min, finalHeight))
                     timelineHeight = constrainedHeight
-                    
-                    print("TimelineViewPanel: Drag ended - finalHeight: \(constrainedHeight), total movement: \(mouseMovement)pt")
-                    
+                                        
                     // Clear dragging state
                     isDragging = false
                     dragStartHeight = 0
@@ -122,6 +114,16 @@ struct TimelineViewPanel: View {
             } else {
                 NSCursor.arrow.set()
             }
+        }
+    }
+    
+    /// Accessibility hint for the timeline panel
+    private var timelineAccessibilityHint: String {
+        if selectedElement == nil {
+            return "Timeline panel for animation control. Select an element on the canvas to begin editing animations. Current height: \(Int(timelineHeight)) pixels"
+        } else {
+            let elementName = selectedElement?.displayName ?? "selected element"
+            return "Timeline panel showing animation controls and keyframe editor for \(elementName). Drag the resize handle to adjust height. Current height: \(Int(timelineHeight)) pixels"
         }
     }
     
@@ -151,119 +153,208 @@ struct TimelineViewPanel: View {
         }
     }
     
-    var body: some View {
-        VStack(spacing: 0) {
-            // Resize handle at the top
-            timelineResizeHandle
-                .accessibilityIdentifier("timeline-resize-handle")
-                .accessibilityLabel("Timeline Resize Handle")
-                .accessibilityHint("Drag to adjust timeline height")
+    private var resizeHandleView: some View {
+        timelineResizeHandle
+            .accessibilityIdentifier("timeline-resize-handle")
+            .accessibilityLabel("Timeline Resize Handle")
+            .accessibilityHint("Drag to adjust timeline height")
+    }
+    
+    private var controlsToolbar: some View {
+        HStack {
+            playPauseButton
+            resetButton
+            Spacer()
+            timeDisplay
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color(NSColor.controlBackgroundColor))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("timeline-controls")
+        .accessibilityLabel("Animation Controls")
+        .accessibilityHint("Control animation playback and view timing information")
+    }
+    
+    private var playPauseButton: some View {
+        Button(action: {
+            if animationController.isPlaying {
+                animationController.pause()
+                audioLayerManager?.pause()
+                isPlaying = false
+            } else {
+                animationController.play()
+                audioLayerManager?.play()
+                isPlaying = true
+            }
+        }) {
+            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                .font(.system(size: 16))
+                .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(4)
+        .accessibilityIdentifier(isPlaying ? "pause-button" : "play-button")
+        .accessibilityLabel(isPlaying ? "Pause Animation" : "Play Animation")
+        .accessibilityHint("Toggle animation playback")
+    }
+    
+    private var resetButton: some View {
+        Button(action: {
+            animationController.reset()
+            audioLayerManager?.seekToTime(0.0)
+            isPlaying = false
+        }) {
+            Image(systemName: "backward.end.fill")
+                .font(.system(size: 16))
+                .frame(width: 32, height: 32)
+        }
+        .buttonStyle(.plain)
+        .background(Color(NSColor.controlBackgroundColor))
+        .cornerRadius(4)
+        .accessibilityIdentifier("reset-button")
+        .accessibilityLabel("Reset Animation")
+        .accessibilityHint("Reset animation to beginning")
+    }
+    
+    private var timeDisplay: some View {
+        HStack(spacing: 4) {
+            Text(String(format: "%.1fs", animationController.currentTime))
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundColor(.gray)
             
-            // Animation controls toolbar
-            HStack {
-                    // Play/Pause button
-                    Button(action: {
-                        if animationController.isPlaying {
-                            animationController.pause()
-                            isPlaying = false
-                        } else {
-                            animationController.play()
-                            isPlaying = true
-                        }
-                    }) {
-                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 16))
-                            .frame(width: 32, height: 32)
+            Text("/")
+                .font(.caption)
+                .foregroundColor(.gray)
+            
+            TextField("", text: Binding(
+                get: { String(format: "%.1f", animationController.duration) },
+                set: { newValue in
+                    if let newDuration = Double(newValue), newDuration > 0 {
+                        animationController.duration = newDuration
                     }
-                    .buttonStyle(.plain)
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .cornerRadius(4)
-                    .accessibilityIdentifier(isPlaying ? "pause-button" : "play-button")
-                    .accessibilityLabel(isPlaying ? "Pause Animation" : "Play Animation")
-                    .accessibilityHint("Toggle animation playback")
-                    
-                    // Reset button
-                    Button(action: {
-                        animationController.reset()
-                        isPlaying = false
-                    }) {
-                        Image(systemName: "backward.end.fill")
-                            .font(.system(size: 16))
-                            .frame(width: 32, height: 32)
-                    }
-                    .buttonStyle(.plain)
-                    .background(Color(NSColor.controlBackgroundColor))
-                    .cornerRadius(4)
-                    .accessibilityIdentifier("reset-button")
-                    .accessibilityLabel("Reset Animation")
-                    .accessibilityHint("Reset animation to beginning")
-                    
-                    Spacer()
-                    
-                    // Time display
-                    Text(String(format: "%.1fs / %.1fs", animationController.currentTime, animationController.duration))
-                        .font(.caption)
-                        .monospacedDigit()
-                        .foregroundColor(.gray)
-                        .accessibilityIdentifier("time-display")
-                        .accessibilityLabel("Current time: \(String(format: "%.1f", animationController.currentTime)) seconds of \(String(format: "%.1f", animationController.duration)) seconds")
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(Color(NSColor.controlBackgroundColor))
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("timeline-controls")
-                .accessibilityLabel("Animation Controls")
-                .accessibilityHint("Control animation playback and view timing information")
+            ))
+            .textFieldStyle(.plain)
+            .font(.caption)
+            .monospacedDigit()
+            .foregroundColor(.primary)
+            .frame(width: 40)
+            .multilineTextAlignment(.trailing)
+            
+            Text("s")
+                .font(.caption)
+                .foregroundColor(.gray)
+        }
+        .accessibilityIdentifier("time-display")
+        .accessibilityLabel("Current time: \(String(format: "%.1f", animationController.currentTime)) seconds of \(String(format: "%.1f", animationController.duration)) seconds. Duration is editable.")
+    }
+    
+    private var timelineEditorArea: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(spacing: 4) {
+                audioTimelineSection
+                mainEditorContent
+            }
+        }
+        .frame(maxHeight: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("timeline-editor-area")
+        .accessibilityLabel("Timeline Editor")
+        .accessibilityHint("Contains timeline ruler and keyframe editing tools. Scroll to view more content if needed.")
+    }
+    
+    private var audioTimelineSection: some View {
+        Group {
+            if !audioLayers.isEmpty {
+                VStack(spacing: 8) {
+                    HStack {
+                        Text("Audio Tracks")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        Spacer()
+                        Text("\(audioLayers.count) track\(audioLayers.count == 1 ? "" : "s")")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    
+                    if let audioLayerManager = audioLayerManager {
+                        AudioLayerTimelineView(
+                            audioLayerManager: audioLayerManager,
+                            currentTime: $animationController.currentTime,
+                            isPlaying: $isPlaying,
+                            scale: timelineScale,
+                            offset: $timelineOffset,
+                            timelineDuration: animationController.duration
+                        )
+                        .padding(.horizontal, 16)
+                        .accessibilityIdentifier("audio-layers-timeline")
+                        .accessibilityLabel("Audio layers timeline")
+                    }
+                }
+                .padding(.bottom, 12)
                 
                 Divider()
-                
-                // Scrollable animation editor area (timeline + keyframe editor)
-                ScrollView(.vertical, showsIndicators: true) {
-                    VStack(spacing: 4) {
-                        // Show helpful hint when no element is selected
-                        if selectedElement == nil {
-                            VStack(spacing: 8) {
-                                Image(systemName: "hand.tap")
-                                    .font(.system(size: 24))
-                                    .foregroundColor(.secondary)
-                                Text("Select an element on the canvas to edit its animation properties")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                    .multilineTextAlignment(.center)
-                                Text("Timeline will expand automatically when an element is selected")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary.opacity(0.7))
-                                    .multilineTextAlignment(.center)
-                            }
-                            .padding(.vertical, 20)
-                            .frame(maxWidth: .infinity)
-                        } else {
-                            // KeyframeEditorView component (main section)
-                            KeyframeEditorView(animationController: animationController, selectedElement: $selectedElement)
-                                .layoutPriority(1) // Give this component layout priority
-                                .padding(.horizontal, 16)
-                                .padding(.bottom, 8)
-                                .accessibilityIdentifier("keyframe-editor")
-                                .accessibilityLabel("Keyframe Editor")
-                                .accessibilityHint("Edit animation keyframes for the selected element")
-                        }
+                    .padding(.horizontal, 16)
+            }
+        }
+    }
+    
+    private var mainEditorContent: some View {
+        Group {
+            if selectedElement == nil {
+                VStack(spacing: 8) {
+                    Image(systemName: "hand.tap")
+                        .font(.system(size: 24))
+                        .foregroundColor(.secondary)
+                    Text("Select an element on the canvas to edit its animation properties")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                    Text("Timeline will expand automatically when an element is selected")
+                        .font(.caption)
+                        .foregroundColor(.secondary.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                    
+                    if audioLayers.isEmpty {
+                        Text("Import audio from the Media Browser to see audio tracks here")
+                            .font(.caption)
+                            .foregroundColor(.secondary.opacity(0.7))
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 4)
                     }
                 }
-                .frame(maxHeight: .infinity) // Let the scroll view expand to fill available space
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("timeline-editor-area")
-                .accessibilityLabel("Timeline Editor")
-                .accessibilityHint("Contains timeline ruler and keyframe editing tools. Scroll to view more content if needed.")
+                .padding(.vertical, 20)
+                .frame(maxWidth: .infinity)
+            } else {
+                KeyframeEditorView(animationController: animationController, selectedElement: $selectedElement)
+                    .layoutPriority(1)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                    .accessibilityIdentifier("keyframe-editor")
+                    .accessibilityLabel("Keyframe Editor")
+                    .accessibilityHint("Edit animation keyframes for the selected element")
             }
-            .background(Color(NSColor.controlBackgroundColor))
-            .frame(height: timelineHeight)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("timeline-panel")
-            .accessibilityLabel("Animation Timeline Panel")
-                            .accessibilityHint(selectedElement == nil ? 
-                                  "Timeline panel for animation control. Select an element on the canvas to begin editing animations. Current height: \(Int(timelineHeight)) pixels" : 
-                                  "Timeline panel showing animation controls and keyframe editor for \(selectedElement?.displayName ?? "selected element"). Drag the resize handle to adjust height. Current height: \(Int(timelineHeight)) pixels")
+        }
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            resizeHandleView
+            controlsToolbar
+            Divider()
+            timelineEditorArea
+        }
+        .background(Color(NSColor.controlBackgroundColor))
+        .frame(height: timelineHeight)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("timeline-panel")
+        .accessibilityLabel("Animation Timeline Panel")
+        .accessibilityHint(timelineAccessibilityHint)
                 .onAppear {
                     // Set up synchronization with the animation controller's playback state
                     isPlaying = animationController.isPlaying
@@ -274,10 +365,8 @@ struct TimelineViewPanel: View {
                     }
                     
                     // Ensure timeline starts with a visible height
-                    print("TimelineViewPanel: onAppear - Initial timeline height: \(timelineHeight), minHeight: \(minHeight)")
                     if timelineHeight < minHeight {
                         timelineHeight = minHeight
-                        print("TimelineViewPanel: onAppear - Timeline height was below minimum, set to \(minHeight)")
                     }
                     
                     // Calculate initial available space and dynamic constraints using parent height
@@ -301,12 +390,10 @@ struct TimelineViewPanel: View {
                 
                 // Ensure current height is within acceptable bounds
                 if timelineHeight > effectiveMaxHeight {
-                    print("TimelineViewPanel: Timeline height \(timelineHeight) exceeds max \(effectiveMaxHeight), adjusting")
                     withAnimation(.easeInOut(duration: 0.3)) {
                         timelineHeight = effectiveMaxHeight
                     }
                 } else if timelineHeight < effectiveMinHeight {
-                    print("TimelineViewPanel: Timeline height \(timelineHeight) below min \(effectiveMinHeight), adjusting")
                     withAnimation(.easeInOut(duration: 0.3)) {
                         timelineHeight = effectiveMinHeight
                     }
@@ -314,10 +401,6 @@ struct TimelineViewPanel: View {
             }
         }
     }
-    
-
-    
-
 
 #if !DISABLE_PREVIEWS
 struct TimelineViewPanel_Previews: PreviewProvider {
@@ -327,7 +410,7 @@ struct TimelineViewPanel_Previews: PreviewProvider {
         animationController.setup(duration: 5.0)
         
         // Add some sample keyframes
-        let positionTrack = animationController.addTrack(id: "element1_position") { (newPosition: CGPoint) in }
+        let positionTrack: KeyframeTrack<CGPoint> = animationController.addTrack(id: "element1_position") { (newPosition: CGPoint) in }
         positionTrack.add(keyframe: Keyframe(time: 0.0, value: CGPoint(x: 100, y: 100)))
         positionTrack.add(keyframe: Keyframe(time: 2.5, value: CGPoint(x: 300, y: 200)))
         positionTrack.add(keyframe: Keyframe(time: 5.0, value: CGPoint(x: 100, y: 300)))
@@ -339,6 +422,9 @@ struct TimelineViewPanel_Previews: PreviewProvider {
             timelineOffset: .constant(0.0),
             selectedElement: .constant(nil),
             timelineScale: .constant(1.0),
+            audioLayers: [],
+            audioLayerManager: nil,
+            onRemoveAudioLayer: nil,
             availableParentHeight: 600
         )
         .frame(width: 800, height: 300)

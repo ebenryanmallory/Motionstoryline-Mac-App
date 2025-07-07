@@ -26,6 +26,9 @@ public class AudioTrackState: ObservableObject, Identifiable {
     private func setupPlayer() {
         player = AVPlayer(url: url)
         
+        // Configure player for playback only (no recording capabilities)
+        player?.automaticallyWaitsToMinimizeStalling = false
+        
         // Observe player status
         statusObserver = player?.publisher(for: \.status)
             .sink { [weak self] status in
