@@ -75,7 +75,7 @@ public class FrameExporter {
         // 1. Get the canvas elements at the given timeline time
         let elements = getElementsAtTime(time)
         // 2. Render the canvas as an image, passing the current timeline time
-        guard let cgImage = CanvasRenderer.renderCanvasImage(
+        guard let cgImage = CanvasImageRenderer.renderCanvasImage(
             elements: elements,
             size: canvasSize,
             scaleFactor: 1.0,

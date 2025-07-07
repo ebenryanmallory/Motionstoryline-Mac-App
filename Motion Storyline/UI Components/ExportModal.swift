@@ -17,6 +17,7 @@ struct ExportModal: View {
     // Closures to get the latest data
     let getAnimationController: () -> AnimationController?
     let getCanvasElements: () -> [CanvasElement]?
+    let getAudioLayers: () -> [AudioLayer]?
     
     // Callback for when the modal is dismissed
     let onDismiss: () -> Void
@@ -27,8 +28,8 @@ struct ExportModal: View {
     @State private var selectedImageFormat: ImageFormat
     @State private var exportWidth: String
     @State private var exportHeight: String
-    @State private var frameRate: String = "60" // Default to 60 for 5s/300 frames
-    @State private var numberOfFrames: String = "300" // Default to 300 (5s at 60fps)
+    @State private var frameRate: String // Will be initialized in init based on project
+    @State private var numberOfFrames: String // Will be initialized in init based on project
     @State private var includeAudio: Bool = true
     @State private var jpegQuality: Double = 0.9
     
@@ -47,9 +48,11 @@ struct ExportModal: View {
         asset: AVAsset,
         canvasWidth: Int,
         canvasHeight: Int,
+        project: Project? = nil, // Add project parameter
         initialFormat: ExportFormat = .video, // Add parameter to pre-select format
         getAnimationController: @escaping () -> AnimationController? = { nil }, // Default to nil
         getCanvasElements: @escaping () -> [CanvasElement]? = { nil },    // Default to nil
+        getAudioLayers: @escaping () -> [AudioLayer]? = { nil },         // Default to nil
         onDismiss: @escaping () -> Void
     ) {
         self.asset = asset
@@ -57,11 +60,23 @@ struct ExportModal: View {
         self.canvasHeight = canvasHeight
         self.getAnimationController = getAnimationController
         self.getCanvasElements = getCanvasElements
+        self.getAudioLayers = getAudioLayers
         self.onDismiss = onDismiss
         
         _exportWidth = State(initialValue: String(canvasWidth))
         _exportHeight = State(initialValue: String(canvasHeight))
         _selectedFormat = State(initialValue: initialFormat) // Use the provided initial format
+        
+        // Initialize frames from project timeline length if available
+        if let project = project {
+            let defaultFrameRate: Float = 60.0
+            let calculatedFrames = project.calculateFrameTotal(frameRate: defaultFrameRate)
+            _numberOfFrames = State(initialValue: String(calculatedFrames))
+            _frameRate = State(initialValue: String(Int(defaultFrameRate)))
+        } else {
+            _numberOfFrames = State(initialValue: "300") // Default fallback
+            _frameRate = State(initialValue: "60") // Default fallback
+        }
         
         // Set the image format based on the initial format if it's an image sequence
         if case .imageSequence(let imageFormat) = initialFormat {
@@ -284,10 +299,23 @@ struct ExportModal: View {
                         .accessibilityLabel("Select Video Format")
                         .accessibilityHint("Choose between standard MP4 or ProRes formats for different quality and compatibility needs")
                         
+                        let audioLayers = getAudioLayers() ?? []
+                        
                         Toggle("Include Audio", isOn: $includeAudio)
                             .accessibilityIdentifier("include-audio-toggle")
                             .accessibilityLabel("Include Audio in Export")
                             .accessibilityHint("When enabled, audio tracks will be included in the exported video")
+                            .disabled(audioLayers.isEmpty)
+                        
+                        if audioLayers.isEmpty {
+                            Text("No audio tracks available")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("\(audioLayers.count) audio track\(audioLayers.count == 1 ? "" : "s") available")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
                 case .gif:
                     Text("GIF exports are optimized for web sharing")
@@ -364,6 +392,7 @@ struct ExportModal: View {
             // Call the closures to get the latest data
             let currentAnimationController = getAnimationController()
             let currentCanvasElements = getCanvasElements()
+            let currentAudioLayers = getAudioLayers()
             // Assuming canvasWidth/Height are still relevant for size, if not, these should also come from a closure or DesignDocument
             let currentCanvasSize = CGSize(width: self.canvasWidth, height: self.canvasHeight)
 
@@ -373,6 +402,7 @@ struct ExportModal: View {
                 animationController: currentAnimationController, // Pass fetched controller
                 canvasElements: currentCanvasElements,       // Pass fetched elements
                 canvasSize: currentCanvasSize,               // Pass size
+                audioLayers: currentAudioLayers,             // Pass fetched audio layers
                 onCompletion: { result in
                     // Handle export completion
                     DispatchQueue.main.async {
@@ -568,7 +598,9 @@ struct ExportModal_Previews: PreviewProvider {
             asset: AVAsset(url: URL(fileURLWithPath: "")),
             canvasWidth: 1920, 
             canvasHeight: 1080,
+            project: nil, // No project in preview
             initialFormat: .video,
+            getAudioLayers: { [] },
             onDismiss: {}
         )
     }

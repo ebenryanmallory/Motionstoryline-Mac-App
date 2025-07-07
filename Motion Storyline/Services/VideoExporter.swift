@@ -222,7 +222,7 @@ public class VideoExporter: @unchecked Sendable {
         }
         
         // Create export session
-        guard let exportSession = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
+        guard var exportSession = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
             throw ExportError.exportSessionSetupFailed
         }
         
@@ -260,6 +260,67 @@ public class VideoExporter: @unchecked Sendable {
         if let progressHandler = progressHandler {
             startProgressMonitoring(progressHandler: progressHandler)
         }
+        
+        // Handle audio inclusion/exclusion
+        print("=== VIDEOEXPORTER AUDIO CONFIGURATION ===")
+        print("Include audio setting: \(configuration.includeAudio)")
+        
+        // Check what tracks are available in the original asset
+        let originalVideoTracks = try? await asset.loadTracks(withMediaType: .video)
+        let originalAudioTracks = try? await asset.loadTracks(withMediaType: .audio)
+        
+        print("Original asset has \(originalVideoTracks?.count ?? 0) video tracks")
+        print("Original asset has \(originalAudioTracks?.count ?? 0) audio tracks")
+        
+        if !configuration.includeAudio {
+            print("EXCLUDING AUDIO from export")
+            // Filter out audio tracks when includeAudio is false
+            let videoTracks = try? await asset.loadTracks(withMediaType: .video)
+            if let videoTracks = videoTracks, !videoTracks.isEmpty {
+                // Create a mutable composition with only video tracks
+                let composition = AVMutableComposition()
+                let videoCompositionTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
+                
+                // Add video tracks to the composition
+                for track in videoTracks {
+                    try? videoCompositionTrack?.insertTimeRange(
+                        timeRange ?? CMTimeRange(start: .zero, duration: asset.duration),
+                        of: track,
+                        at: .zero
+                    )
+                }
+                
+                // Create a new export session with the audio-free composition
+                if let audioFreeExportSession = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) {
+                    self.exportSession = audioFreeExportSession
+                    audioFreeExportSession.outputURL = configuration.outputURL
+                    audioFreeExportSession.outputFileType = exportSession.outputFileType
+                    
+                    // Set the calculated timeRange if available
+                    if let timeRange = timeRange {
+                        audioFreeExportSession.timeRange = timeRange
+                    }
+                    
+                    // Update the export session reference
+                    exportSession = audioFreeExportSession
+                    print("Created audio-free export session")
+                } else {
+                    print("Warning: Could not create audio-free export session, proceeding with original")
+                }
+            }
+        } else {
+            print("INCLUDING AUDIO in export")
+            if let audioTracks = originalAudioTracks, !audioTracks.isEmpty {
+                print("Audio tracks available for export: \(audioTracks.count)")
+                for (index, track) in audioTracks.enumerated() {
+                    print("  Audio track \(index): enabled=\(track.isEnabled), playable=\(track.isPlayable)")
+                }
+            } else {
+                print("WARNING: No audio tracks found in asset, even though includeAudio is true")
+            }
+        }
+        
+        print("=== END VIDEOEXPORTER AUDIO CONFIGURATION ===")
         
         // Remove existing file if it exists to handle overwrite
         if FileManager.default.fileExists(atPath: configuration.outputURL.path) {
@@ -354,7 +415,7 @@ public class VideoExporter: @unchecked Sendable {
         }
         
         // Create export session
-        guard let exportSession = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
+        guard var exportSession = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
             await MainActor.run {
                 completion(.failure(.exportSessionSetupFailed))
             }
@@ -395,6 +456,67 @@ public class VideoExporter: @unchecked Sendable {
         if let progressHandler = progressHandler {
             startProgressMonitoring(progressHandler: progressHandler)
         }
+        
+        // Handle audio inclusion/exclusion
+        print("=== VIDEOEXPORTER AUDIO CONFIGURATION ===")
+        print("Include audio setting: \(configuration.includeAudio)")
+        
+        // Check what tracks are available in the original asset
+        let originalVideoTracks = try? await asset.loadTracks(withMediaType: .video)
+        let originalAudioTracks = try? await asset.loadTracks(withMediaType: .audio)
+        
+        print("Original asset has \(originalVideoTracks?.count ?? 0) video tracks")
+        print("Original asset has \(originalAudioTracks?.count ?? 0) audio tracks")
+        
+        if !configuration.includeAudio {
+            print("EXCLUDING AUDIO from export")
+            // Filter out audio tracks when includeAudio is false
+            let videoTracks = try? await asset.loadTracks(withMediaType: .video)
+            if let videoTracks = videoTracks, !videoTracks.isEmpty {
+                // Create a mutable composition with only video tracks
+                let composition = AVMutableComposition()
+                let videoCompositionTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
+                
+                // Add video tracks to the composition
+                for track in videoTracks {
+                    try? videoCompositionTrack?.insertTimeRange(
+                        timeRange ?? CMTimeRange(start: .zero, duration: asset.duration),
+                        of: track,
+                        at: .zero
+                    )
+                }
+                
+                // Create a new export session with the audio-free composition
+                if let audioFreeExportSession = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) {
+                    self.exportSession = audioFreeExportSession
+                    audioFreeExportSession.outputURL = configuration.outputURL
+                    audioFreeExportSession.outputFileType = exportSession.outputFileType
+                    
+                    // Set the calculated timeRange if available
+                    if let timeRange = timeRange {
+                        audioFreeExportSession.timeRange = timeRange
+                    }
+                    
+                    // Update the export session reference
+                    exportSession = audioFreeExportSession
+                    print("Created audio-free export session")
+                } else {
+                    print("Warning: Could not create audio-free export session, proceeding with original")
+                }
+            }
+        } else {
+            print("INCLUDING AUDIO in export")
+            if let audioTracks = originalAudioTracks, !audioTracks.isEmpty {
+                print("Audio tracks available for export: \(audioTracks.count)")
+                for (index, track) in audioTracks.enumerated() {
+                    print("  Audio track \(index): enabled=\(track.isEnabled), playable=\(track.isPlayable)")
+                }
+            } else {
+                print("WARNING: No audio tracks found in asset, even though includeAudio is true")
+            }
+        }
+        
+        print("=== END VIDEOEXPORTER AUDIO CONFIGURATION ===")
         
         // Remove existing file if it exists to handle overwrite
         if FileManager.default.fileExists(atPath: configuration.outputURL.path) {

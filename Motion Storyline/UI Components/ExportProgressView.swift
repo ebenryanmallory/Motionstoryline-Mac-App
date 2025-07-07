@@ -20,6 +20,7 @@ public struct ExportProgressView: View {
     let animationController: AnimationController?
     let canvasElements: [CanvasElement]?
     let canvasSize: CGSize?
+    let audioLayers: [AudioLayer]?
     
     let onCompletion: ((Result<URL, Error>) -> Void)?
     
@@ -29,6 +30,7 @@ public struct ExportProgressView: View {
         animationController: AnimationController? = nil,
         canvasElements: [CanvasElement]? = nil,
         canvasSize: CGSize? = nil,
+        audioLayers: [AudioLayer]? = nil,
         onCompletion: ((Result<URL, Error>) -> Void)? = nil
     ) {
         self.configuration = configuration
@@ -36,6 +38,7 @@ public struct ExportProgressView: View {
         self.animationController = animationController
         self.canvasElements = canvasElements
         self.canvasSize = canvasSize
+        self.audioLayers = audioLayers
         self.onCompletion = onCompletion
     }
     
@@ -201,12 +204,13 @@ public struct ExportProgressView: View {
                    let canvasElements = canvasElements,
                    let canvasSize = canvasSize {
                     // Use the fully-configured coordinator with animation data
-                    os_log("Creating ExportCoordinator with actual animation data", log: ExportProgressView.logger, type: .info)
+                    os_log("Creating ExportCoordinator with animation data and %d audio layers", log: ExportProgressView.logger, type: .info, audioLayers?.count ?? 0)
                     coordinator = ExportCoordinator(
                         asset: asset,
                         animationController: animationController,
                         canvasElements: canvasElements,
-                        canvasSize: canvasSize
+                        canvasSize: canvasSize,
+                        audioLayers: audioLayers ?? []
                     )
                 } else {
                     // Fallback to the basic coordinator

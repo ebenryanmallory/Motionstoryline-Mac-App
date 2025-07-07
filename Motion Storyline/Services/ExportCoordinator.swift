@@ -25,7 +25,10 @@ public class ExportCoordinator {
         /// Frame rate (frames per second)
         public var frameRate: Float
         
-        /// Number of frames to export (user-specified limit)
+        /// Duration in seconds (from timeline length)
+        public var duration: Double?
+        
+        /// Number of frames to export (user-specified limit or calculated from duration)
         public var numberOfFrames: Int?
         
         /// Output URL for the exported file or directory
@@ -48,6 +51,7 @@ public class ExportCoordinator {
             width: Int,
             height: Int,
             frameRate: Float,
+            duration: Double? = nil,
             numberOfFrames: Int? = nil,
             outputURL: URL,
             proResProfile: VideoExporter.ProResProfile? = nil,
@@ -59,12 +63,52 @@ public class ExportCoordinator {
             self.width = width
             self.height = height
             self.frameRate = frameRate
+            self.duration = duration
             self.numberOfFrames = numberOfFrames
             self.outputURL = outputURL
             self.proResProfile = proResProfile
             self.includeAudio = includeAudio
             self.baseFilename = baseFilename
             self.imageQuality = imageQuality
+        }
+        
+        /// Calculate number of frames from duration and frame rate
+        public var calculatedFrameCount: Int? {
+            guard let duration = duration else { return numberOfFrames }
+            return Int(duration * Double(frameRate))
+        }
+        
+        /// Get the effective frame count (user-specified or calculated from duration)
+        public var effectiveFrameCount: Int? {
+            return numberOfFrames ?? calculatedFrameCount
+        }
+        
+        /// Create export configuration from project with timeline length as default duration
+        public static func fromProject(
+            _ project: Project,
+            format: ExportFormat,
+            width: Int,
+            height: Int,
+            frameRate: Float,
+            outputURL: URL,
+            proResProfile: VideoExporter.ProResProfile? = nil,
+            includeAudio: Bool = true,
+            baseFilename: String = "frame",
+            imageQuality: CGFloat? = nil
+        ) -> ExportConfiguration {
+            return ExportConfiguration(
+                format: format,
+                width: width,
+                height: height,
+                frameRate: frameRate,
+                duration: project.timelineLength,
+                numberOfFrames: nil, // Let it calculate from duration
+                outputURL: outputURL,
+                proResProfile: proResProfile,
+                includeAudio: includeAudio,
+                baseFilename: baseFilename,
+                imageQuality: imageQuality
+            )
         }
     }
     
@@ -80,20 +124,25 @@ public class ExportCoordinator {
     /// Canvas size for rendering
     private let canvasSize: CGSize
     
+    /// Audio layers for export
+    private let audioLayers: [AudioLayer]
+    
     /// Initialize with an AVAsset
     public init(asset: AVAsset) {
         self.asset = asset
         self.animationController = nil
         self.canvasElements = []
         self.canvasSize = CGSize(width: 1280, height: 720)
+        self.audioLayers = []
     }
     
     /// Initialize with animation and canvas data
-    init(asset: AVAsset, animationController: AnimationController, canvasElements: [CanvasElement], canvasSize: CGSize) {
+    init(asset: AVAsset, animationController: AnimationController, canvasElements: [CanvasElement], canvasSize: CGSize, audioLayers: [AudioLayer] = []) {
         self.asset = asset
         self.animationController = animationController
         self.canvasElements = canvasElements
         self.canvasSize = canvasSize
+        self.audioLayers = audioLayers
     }
     
     /// Export the asset using the specified configuration
@@ -314,16 +363,16 @@ public class ExportCoordinator {
         )
         
         do {
-            // Calculate endTime if we have numberOfFrames specified
+            // Calculate endTime if we have frame count specified (from numberOfFrames or duration)
             let startTime = CMTime.zero
             var endTime: CMTime? = nil
             
-            if let numberOfFrames = configuration.numberOfFrames, numberOfFrames > 0 {
+            if let frameCount = configuration.effectiveFrameCount, frameCount > 0 {
                 // Calculate duration based on number of frames and frame rate
-                let durationInSeconds = Double(numberOfFrames) / Double(configuration.frameRate)
+                let durationInSeconds = Double(frameCount) / Double(configuration.frameRate)
                 endTime = CMTime(seconds: durationInSeconds, preferredTimescale: 600)
                 os_log("Limited export to %{public}d frames (%{public}f seconds)", 
-                       log: ExportCoordinator.logger, type: .info, numberOfFrames, durationInSeconds)
+                       log: ExportCoordinator.logger, type: .info, frameCount, durationInSeconds)
             }
             
             // Export the frames
@@ -367,14 +416,25 @@ public class ExportCoordinator {
             let canvasRenderer = CanvasVideoRenderer(animationController: animationController)
             await canvasRenderer.setElements(self.canvasElements)
             
-            // Calculate duration based on numberOfFrames if specified
+            // Calculate duration based on frame count (from numberOfFrames or duration)
             let duration: Double
-            if let numberOfFrames = configuration.numberOfFrames, numberOfFrames > 0 {
-                duration = Double(numberOfFrames) / Double(configuration.frameRate)
+            if let frameCount = configuration.effectiveFrameCount, frameCount > 0 {
+                duration = Double(frameCount) / Double(configuration.frameRate)
+            } else if let configDuration = configuration.duration, configDuration > 0 {
+                duration = configDuration
             } else {
                 // Use animation controller duration or default to 5 seconds
                 duration = animationController.duration > 0 ? animationController.duration : 5.0
             }
+            
+            // Determine if audio should be included:
+            // - includeAudio checkbox must be true
+            // - AND we must have at least one audio layer
+            let shouldIncludeAudio = configuration.includeAudio && !self.audioLayers.isEmpty
+            
+            os_log("Audio export decision: includeAudio=%{public}@, audioLayers.count=%{public}d, shouldIncludeAudio=%{public}@", 
+                   log: ExportCoordinator.logger, type: .info, 
+                   String(configuration.includeAudio), self.audioLayers.count, String(shouldIncludeAudio))
             
             // Create canvas renderer configuration
             let canvasConfig = CanvasVideoRenderer.Configuration(
@@ -384,7 +444,9 @@ public class ExportCoordinator {
                 frameRate: configuration.frameRate,
                 canvasWidth: self.canvasSize.width,
                 canvasHeight: self.canvasSize.height,
-                proResProfile: configuration.proResProfile
+                proResProfile: configuration.proResProfile,
+                audioLayers: shouldIncludeAudio ? self.audioLayers : nil,
+                includeAudio: shouldIncludeAudio
             )
             
             // Render the video using canvas renderer (now handles ProRes directly)
@@ -432,6 +494,15 @@ public class ExportCoordinator {
         } else {
             os_log("No animation data available, using traditional VideoExporter", log: ExportCoordinator.logger, type: .info)
             
+            // Determine if audio should be included:
+            // - includeAudio checkbox must be true
+            // - AND we must have at least one audio layer (though traditional VideoExporter may not use audio layers)
+            let shouldIncludeAudio = configuration.includeAudio && !self.audioLayers.isEmpty
+            
+            os_log("Audio export decision for VideoExporter: includeAudio=%{public}@, audioLayers.count=%{public}d, shouldIncludeAudio=%{public}@", 
+                   log: ExportCoordinator.logger, type: .info, 
+                   String(configuration.includeAudio), self.audioLayers.count, String(shouldIncludeAudio))
+            
             // Fallback to traditional VideoExporter (for cases where we have an actual AVAsset)
             // Create VideoExporter configuration
             let videoExporterConfig = VideoExporter.ExportConfiguration(
@@ -440,9 +511,9 @@ public class ExportCoordinator {
                 height: configuration.height,
                 frameRate: configuration.frameRate,
                 proResProfile: configuration.proResProfile,
-                includeAudio: configuration.includeAudio,
+                includeAudio: shouldIncludeAudio,
                 outputURL: configuration.outputURL,
-                numberOfFrames: configuration.numberOfFrames
+                numberOfFrames: configuration.effectiveFrameCount
             )
             
             // Create VideoExporter
@@ -496,16 +567,16 @@ public class ExportCoordinator {
             canvasSize: canvasSize
         )
         
-        // Calculate endTime if we have numberOfFrames specified
+        // Calculate endTime if we have frame count specified (from numberOfFrames or duration)
         let startTime = CMTime.zero
         var endTime: CMTime? = nil
         
-        if let numberOfFrames = configuration.numberOfFrames, numberOfFrames > 0 {
+        if let frameCount = configuration.effectiveFrameCount, frameCount > 0 {
             // Calculate duration based on number of frames and frame rate
-            let durationInSeconds = Double(numberOfFrames) / Double(configuration.frameRate)
+            let durationInSeconds = Double(frameCount) / Double(configuration.frameRate)
             endTime = CMTime(seconds: durationInSeconds, preferredTimescale: 600)
             os_log("Limited GIF export to %{public}d frames (%{public}f seconds)", 
-                   log: ExportCoordinator.logger, type: .info, numberOfFrames, durationInSeconds)
+                   log: ExportCoordinator.logger, type: .info, frameCount, durationInSeconds)
         }
         
         // Export the frames
@@ -543,7 +614,7 @@ public class ExportCoordinator {
             outputURL: config.outputURL,
             baseFilename: config.baseFilename,
             imageQuality: config.imageQuality,
-            numberOfFrames: config.numberOfFrames
+            numberOfFrames: config.effectiveFrameCount
         )
     }
 } 
