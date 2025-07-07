@@ -24,7 +24,8 @@ extension DesignCanvas {
                 canvasElements: self.canvasElements,
                 animationController: self.animationController,
                 canvasSize: CGSize(width: self.canvasWidth, height: self.canvasHeight),
-                currentProject: appState.selectedProject
+                currentProject: appState.selectedProject,
+                audioLayers: self.audioLayers
             )
             
             // Save to the selected URL

@@ -129,11 +129,11 @@ struct CanvasElementView: View {
                 Group {
                     if element.type == .rectangle {
                         Rectangle()
-                            .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
+                            .stroke(Color(red: 0.4, green: 0.4, blue: 0.4, opacity: 0.6), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
                             .frame(width: element.size.width, height: element.size.height)
                     } else if element.type == .ellipse {
                         Ellipse()
-                            .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), style: StrokeStyle(lineWidth: 2, dash: [5, 5]))
+                            .stroke(Color(red: 0.4, green: 0.4, blue: 0.4, opacity: 0.6), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
                             .frame(width: element.size.width, height: element.size.height)
                     }
                 }
@@ -143,8 +143,7 @@ struct CanvasElementView: View {
         // Explicitly set the anchor point to the center of the element
         // The element's position is its center, and we're rotating around that center
         .rotationEffect(.degrees(element.rotation), anchor: anchorPoint)
-        .shadow(color: isDragging ? Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 1.0).opacity(0.5) : Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 0.0), radius: 8)
-        .scaleEffect(isDragging ? 1.02 : 1.0)
+        .shadow(color: isDragging ? Color.black.opacity(0.15) : Color.clear, radius: 3, x: 0, y: 2)
         .animation(.interactiveSpring(), value: isDragging)
         // Make sure this view is above other elements in the ZStack
         .zIndex(isSelected ? 10 : 5)
@@ -193,8 +192,8 @@ struct SelectionOverlay: View {
     var isAspectRatioLocked: Bool = false
     
     // Handle positions
-    private let handleSize: CGFloat = 8
-    private let rotationHandleSize: CGFloat = 10
+    private let handleSize: CGFloat = 6
+    private let rotationHandleSize: CGFloat = 8
     private let outlineOffset: CGFloat = 4 // Offset for the selection border
     private let rotationHandleOffset: CGFloat = 24 // Distance from the top of the element
     
@@ -202,7 +201,7 @@ struct SelectionOverlay: View {
         ZStack {
             // Selection border - use a Rectangle directly positioned at the center
             Rectangle()
-                .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), lineWidth: 2)
+                .stroke(Color(red: 0.4, green: 0.4, blue: 0.4, opacity: 0.6), lineWidth: 1)
                 .frame(width: size.width + 2*outlineOffset, height: size.height + 2*outlineOffset)
             
             // Corner handles
@@ -262,7 +261,7 @@ struct SelectionOverlay: View {
                     path.move(to: CGPoint(x: size.width / 2, y: -outlineOffset))
                     path.addLine(to: CGPoint(x: size.width / 2, y: -rotationHandleOffset + rotationHandleSize/2))
                 }
-                .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), lineWidth: 1)
+                .stroke(Color(red: 0.4, green: 0.4, blue: 0.4, opacity: 0.6), lineWidth: 1)
             }
         }
         .frame(width: size.width, height: size.height) // Frame the whole overlay to match element size
@@ -372,23 +371,23 @@ struct ResizeHandle: View {
             if position == .topCenter {
                 // Special handle for rotation
                 Circle()
-                    .fill(Color(red: 1.0, green: 1.0, blue: 1.0, opacity: 1.0))
+                    .fill(Color(red: 0.98, green: 0.98, blue: 0.98, opacity: 0.95))
                     .frame(width: size, height: size)
                     .overlay(
                         Circle()
-                            .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), lineWidth: 1)
+                            .stroke(Color(red: 0.4, green: 0.4, blue: 0.4, opacity: 0.6), lineWidth: 1)
                     )
-                    .shadow(color: Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 1.0).opacity(0.3), radius: 1, x: 0, y: 1)
+                    .shadow(color: Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 0.1), radius: 0.5, x: 0, y: 0.5)
             } else {
                 // Regular resize handles
                 Rectangle()
-                    .fill(Color(red: 1.0, green: 1.0, blue: 1.0, opacity: 1.0))
+                    .fill(Color(red: 0.98, green: 0.98, blue: 0.98, opacity: 0.95))
                     .frame(width: size, height: size)
                     .overlay(
                         Rectangle()
-                            .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0), lineWidth: 1)
+                            .stroke(Color(red: 0.4, green: 0.4, blue: 0.4, opacity: 0.6), lineWidth: 1)
                     )
-                    .shadow(color: Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 1.0).opacity(0.3), radius: 1, x: 0, y: 1)
+                    .shadow(color: Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 0.1), radius: 0.5, x: 0, y: 0.5)
             }
         }
     }

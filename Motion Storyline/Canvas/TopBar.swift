@@ -10,6 +10,7 @@ struct CanvasTopBar: View {
     @State private var isShowingAuthenticationView = false
     @State private var isShowingUserProfileView = false
     let projectName: String
+    let project: Project? // Add full project parameter
     let onClose: () -> Void
     let onCameraRecord: () -> Void
     let onMediaLibrary: () -> Void
@@ -52,6 +53,7 @@ struct CanvasTopBar: View {
     // Live canvas state for export
     let liveCanvasElements: () -> [CanvasElement]
     let liveAnimationController: () -> AnimationController
+    let liveAudioLayers: () -> [AudioLayer]
     
     @State private var isShowingMenu = false
     // Add a state for showing the export modal
@@ -210,7 +212,7 @@ struct CanvasTopBar: View {
                 .frame(height: 20)
             
             // Project name
-            Text(projectName)
+            Text(projectName.displayName())
                 .fontWeight(.medium)
             
             Spacer()
@@ -237,6 +239,8 @@ struct CanvasTopBar: View {
                         Text("Media")
                     }
                     .foregroundColor(.black)
+                    .padding(8)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("Open Media Library")
@@ -244,7 +248,10 @@ struct CanvasTopBar: View {
                 Button(action: onCameraRecord) {
                     Image(systemName: "camera.fill")
                         .foregroundColor(.black)
+                        .padding(8)
+                        .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 
                 // Updated Export menu
                 Menu {
@@ -253,7 +260,8 @@ struct CanvasTopBar: View {
                         self.documentManager.configure(
                             canvasElements: self.liveCanvasElements(),
                             animationController: self.liveAnimationController(),
-                            canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
+                            canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil,
+                            audioLayers: self.liveAudioLayers()
                         )
                         exportModalInitialFormat = .video
                         showingExportModal = true
@@ -267,7 +275,8 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil,
+                                audioLayers: self.liveAudioLayers()
                             )
                             exportModalInitialFormat = .video
                             showingExportModal = true
@@ -284,7 +293,8 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil,
+                                audioLayers: self.liveAudioLayers()
                             )
                             exportModalInitialFormat = .video
                             showingExportModal = true
@@ -295,7 +305,8 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil,
+                                audioLayers: self.liveAudioLayers()
                             )
                             exportModalInitialFormat = .video
                             showingExportModal = true
@@ -306,7 +317,8 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil,
+                                audioLayers: self.liveAudioLayers()
                             )
                             exportModalInitialFormat = .video
                             showingExportModal = true
@@ -317,7 +329,8 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil,
+                                audioLayers: self.liveAudioLayers()
                             )
                             exportModalInitialFormat = .video
                             showingExportModal = true
@@ -328,7 +341,8 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil,
+                                audioLayers: self.liveAudioLayers()
                             )
                             exportModalInitialFormat = .video
                             showingExportModal = true
@@ -339,7 +353,8 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil,
+                                audioLayers: self.liveAudioLayers()
                             )
                             exportModalInitialFormat = .video
                             showingExportModal = true
@@ -351,7 +366,8 @@ struct CanvasTopBar: View {
                         self.documentManager.configure(
                             canvasElements: self.liveCanvasElements(),
                             animationController: self.liveAnimationController(),
-                            canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
+                            canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil,
+                            audioLayers: self.liveAudioLayers()
                         )
                         exportModalInitialFormat = .gif
                         showingExportModal = true
@@ -363,7 +379,8 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil,
+                                audioLayers: self.liveAudioLayers()
                             )
                             exportModalInitialFormat = .imageSequence(.png)
                             showingExportModal = true
@@ -374,7 +391,8 @@ struct CanvasTopBar: View {
                             self.documentManager.configure(
                                 canvasElements: self.liveCanvasElements(),
                                 animationController: self.liveAnimationController(),
-                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil
+                                canvasSize: CGSize(width: CGFloat(self.canvasWidth), height: CGFloat(self.canvasHeight)), currentProject: nil,
+                                audioLayers: self.liveAudioLayers()
                             )
                             exportModalInitialFormat = .imageSequence(.jpeg)
                             showingExportModal = true
@@ -395,6 +413,8 @@ struct CanvasTopBar: View {
                 } label: {
                     Image(systemName: "square.and.arrow.up")
                         .foregroundColor(.black)
+                        .padding(8)
+                        .contentShape(Rectangle())
                 }
                 .menuStyle(BorderlessButtonMenuStyle())
                 .fixedSize()
@@ -526,6 +546,8 @@ struct CanvasTopBar: View {
                     }
                     .frame(width: 20, height: 20)
                     .clipShape(Circle())
+                    .padding(8)
+                    .contentShape(Rectangle())
                 }
                 .menuStyle(BorderlessButtonMenuStyle())
                 .fixedSize()
@@ -554,14 +576,40 @@ struct CanvasTopBar: View {
                 asset: AVAsset(url: URL(fileURLWithPath: "")), // Empty asset as placeholder
                 canvasWidth: canvasWidth,
                 canvasHeight: canvasHeight,
+                project: project, // Pass the project to ExportModal
                 initialFormat: exportModalInitialFormat,
                 getAnimationController: liveAnimationController,
                 getCanvasElements: liveCanvasElements,
+                getAudioLayers: liveAudioLayers,
                 onDismiss: { 
                     showingExportModal = false
                     exportModalInitialFormat = .video // Reset to default for next time
                 }
             )
         }
+    }
+}
+
+// MARK: - Helper Extensions
+extension String {
+    /// Returns a cleaned project name for display by removing UUID suffixes and file extensions
+    func displayName() -> String {
+        var cleanName = self
+        
+        // Remove file extensions
+        if cleanName.hasSuffix(".mstory") {
+            cleanName = String(cleanName.dropLast(7))
+        }
+        
+        // Remove UUID patterns (like " 1234-5678-9abc-def0")
+        // This regex matches patterns like " " + UUID format
+        let uuidPattern = "\\s+[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        cleanName = cleanName.replacingOccurrences(of: uuidPattern, with: "", options: .regularExpression)
+        
+        // Remove numeric suffixes like " 1", " 2", etc. that are added for uniqueness
+        let numberPattern = "\\s+\\d+$"
+        cleanName = cleanName.replacingOccurrences(of: numberPattern, with: "", options: .regularExpression)
+        
+        return cleanName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 } 

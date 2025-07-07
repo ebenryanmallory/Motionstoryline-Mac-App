@@ -29,7 +29,8 @@ extension DesignCanvas {
                             duration: loadedTuple.duration,
                             canvasWidth: loadedTuple.canvasWidth,
                             canvasHeight: loadedTuple.canvasHeight,
-                            mediaAssets: loadedTuple.mediaAssets
+                            mediaAssets: loadedTuple.mediaAssets,
+                            audioLayers: loadedTuple.audioLayers
                         )
                         // If ProjectData struct is later updated to include version, metadata, colorProfiles, gridSettings as properties,
                         // they can be set here on projectDataInstance, e.g.:
@@ -79,7 +80,8 @@ extension DesignCanvas {
                 duration: loadedTuple.duration,
                 canvasWidth: loadedTuple.canvasWidth,
                 canvasHeight: loadedTuple.canvasHeight,
-                mediaAssets: loadedTuple.mediaAssets
+                mediaAssets: loadedTuple.mediaAssets,
+                audioLayers: loadedTuple.audioLayers
             )
 
             print("Project loaded successfully. Applying data...")

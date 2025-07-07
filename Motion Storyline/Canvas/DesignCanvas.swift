@@ -21,7 +21,7 @@ import os.log
 // - Utilities/MousePositionView.swift: Mouse position tracking
 // - UI Components/DesignToolbar.swift: UI controls and tools
 // - UI Components/TopBar.swift: Top navigation bar
-// - Canvas/CanvasExport.swift: Export functionality
+// - Services/CanvasExport.swift: Export functionality
 // - Canvas/DesignCanvas+ContextMenus.swift: Context menu extensions
 // - Canvas/DesignCanvas+ProjectSave.swift: Project save functionality
 // - Utilities/KeyEventMonitorController.swift: Keyboard event handling
@@ -76,6 +76,10 @@ struct DesignCanvas: View {
     @State private var timelineHeight: CGFloat = 200 // Start with a reasonable default height for visibility
     @State private var showAnimationPreview: Bool = true // Control if animation preview is shown
     
+    // Audio layer management
+    @StateObject internal var audioLayerManager = AudioLayerManager()
+    @State internal var audioLayers: [AudioLayer] = []
+    
     // Export state
     @State internal var isExporting = false
     @State internal var exportProgress: Float = 0
@@ -89,9 +93,40 @@ struct DesignCanvas: View {
     // Key event monitor for tracking space bar
     @StateObject private var keyMonitorController = KeyEventMonitorController()
     
+    // Preferences for canvas settings
+    @EnvironmentObject private var preferencesViewModel: PreferencesViewModel
+    
     // Canvas dimensions - HD aspect ratio (16:9)
     @State internal var canvasWidth: CGFloat = 1280
     @State internal var canvasHeight: CGFloat = 720
+    
+    // Computed property for aspect ratio text
+    private var aspectRatioText: String {
+        let ratio = canvasWidth / canvasHeight
+        let gcd = greatestCommonDivisor(Int(canvasWidth), Int(canvasHeight))
+        let simplifiedWidth = Int(canvasWidth) / gcd
+        let simplifiedHeight = Int(canvasHeight) / gcd
+        
+        // Check for common aspect ratios
+        if abs(ratio - 16.0/9.0) < 0.01 {
+            return "16:9"
+        } else if abs(ratio - 4.0/3.0) < 0.01 {
+            return "4:3"
+        } else if abs(ratio - 1.0) < 0.01 {
+            return "1:1"
+        } else if abs(ratio - 21.0/9.0) < 0.01 {
+            return "21:9"
+        } else if abs(ratio - 3.0/2.0) < 0.01 {
+            return "3:2"
+        } else {
+            return "\(simplifiedWidth):\(simplifiedHeight)"
+        }
+    }
+    
+    // Helper function to calculate greatest common divisor
+    private func greatestCommonDivisor(_ a: Int, _ b: Int) -> Int {
+        return b == 0 ? a : greatestCommonDivisor(b, a % b)
+    }
     
     // State variables for path drawing
 
@@ -265,6 +300,7 @@ struct DesignCanvas: View {
     private var topNavigationBar: some View {
         CanvasTopBar(
             projectName: appState.selectedProject?.name ?? "Motion Storyline",
+            project: appState.selectedProject, // Pass the full project
             onClose: {
                 // Check for unsaved changes before closing
                 handleCloseWithUnsavedChanges()
@@ -317,6 +353,7 @@ struct DesignCanvas: View {
             documentManager: documentManager,
             liveCanvasElements: { self.canvasElements },
             liveAnimationController: { self.animationController },
+            liveAudioLayers: { self.audioLayers },
             canvasWidth: Int(canvasWidth),
             canvasHeight: Int(canvasHeight)
         )
@@ -334,18 +371,30 @@ struct DesignCanvas: View {
                 .accessibilityLabel("Design Tools")
                 .accessibilityHint("Select tools for creating and editing canvas elements")
             
-            // Canvas dimensions indicator
-            Text("Canvas: \(Int(canvasWidth))×\(Int(canvasHeight)) (HD 16:9)")
-                .font(.caption)
-                .foregroundColor(.secondary)
-                .padding(.bottom, 6)
-                .accessibilityIdentifier("canvas-dimensions")
-                .accessibilityLabel("Canvas dimensions: \(Int(canvasWidth)) by \(Int(canvasHeight)) pixels, HD 16:9 aspect ratio")
+            // Canvas dimensions indicator with proper z-index positioning
+            HStack {
+                Text("Canvas: \(Int(canvasWidth))×\(Int(canvasHeight)) (\(aspectRatioText))")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(Color(NSColor.controlBackgroundColor))
+                            .opacity(0.8)
+                    )
+                    .accessibilityIdentifier("canvas-dimensions")
+                    .accessibilityLabel("Canvas dimensions: \(Int(canvasWidth)) by \(Int(canvasHeight)) pixels, \(aspectRatioText) aspect ratio")
+                
+                Spacer()
+            }
+            .padding(.bottom, 8)
+            .zIndex(10) // Ensure it appears above canvas background
             
             Divider() // Add visual separator between toolbar and canvas
         }
         // Enforce that toolbar section doesn't expand or get pushed by canvas
-        .frame(maxHeight: 90) // Increased fixed height for toolbar section
+        .frame(maxHeight: 100) // Increased fixed height for toolbar section to accommodate background
         .padding(.top, 4) // Add a little padding at the top to separate from TopBar
     }
     
@@ -434,6 +483,9 @@ struct DesignCanvas: View {
                 timelineOffset: $timelineOffset,
                 selectedElement: $selectedElement,
                 timelineScale: $timelineScale,
+                audioLayers: audioLayers,
+                audioLayerManager: audioLayerManager,
+                onRemoveAudioLayer: removeAudioLayer,
                 availableParentHeight: availableHeight
             )
             .frame(height: timelineHeight)
@@ -467,6 +519,16 @@ struct DesignCanvas: View {
             // Only initialize once to prevent duplicate setups
             guard !hasInitializedProject else { return }
             hasInitializedProject = true
+            
+            // Initialize canvas dimensions from preferences
+            canvasWidth = CGFloat(preferencesViewModel.canvasWidth)
+            canvasHeight = CGFloat(preferencesViewModel.canvasHeight)
+            
+            // Initialize grid settings from preferences
+            showGrid = preferencesViewModel.showGrid
+            gridSize = CGFloat(preferencesViewModel.gridSize)
+            // Only enable snap to grid if grid is visible
+            snapToGridEnabled = preferencesViewModel.showGrid && preferencesViewModel.snapToGrid
             
             // Setup key monitor for space bar panning
             keyMonitorController.setupMonitor(
@@ -518,6 +580,16 @@ struct DesignCanvas: View {
                 // Setup initial animations only for new projects
                 animationController.setup(duration: 3.0)
                 setupInitialAnimations()
+                
+                // Set animation controller for audio layer manager
+                audioLayerManager.setAnimationController(animationController)
+                
+                // Set up audio layer change callback for document tracking
+                audioLayerManager.onAudioLayerChanged = { actionName in
+                    Task { @MainActor in
+                        self.markDocumentAsChanged(actionName: actionName)
+                    }
+                }
                 
                 // Configure DocumentManager with current state
                 configureDocumentManager()
@@ -604,6 +676,48 @@ struct DesignCanvas: View {
                 autoSaveProject()
             }
         }
+        .onChange(of: preferencesViewModel.canvasWidth) { oldValue, newValue in
+            // Only update if this is a real change (not initialization)
+            if oldValue != newValue && hasInitializedProject {
+                canvasWidth = CGFloat(newValue)
+                markDocumentAsChanged(actionName: "Change Canvas Width")
+            }
+        }
+        .onChange(of: preferencesViewModel.canvasHeight) { oldValue, newValue in
+            // Only update if this is a real change (not initialization)
+            if oldValue != newValue && hasInitializedProject {
+                canvasHeight = CGFloat(newValue)
+                markDocumentAsChanged(actionName: "Change Canvas Height")
+            }
+        }
+        .onChange(of: preferencesViewModel.showGrid) { oldValue, newValue in
+            // Update grid visibility when preference changes
+            if oldValue != newValue && hasInitializedProject {
+                showGrid = newValue
+                // If grid is disabled, also disable snap to grid
+                if !newValue {
+                    snapToGridEnabled = false
+                } else {
+                    // If grid is enabled, restore snap to grid based on preference
+                    snapToGridEnabled = preferencesViewModel.snapToGrid
+                }
+                markDocumentAsChanged(actionName: "Change Grid Visibility")
+            }
+        }
+        .onChange(of: preferencesViewModel.gridSize) { oldValue, newValue in
+            // Update grid size when preference changes
+            if oldValue != newValue && hasInitializedProject {
+                gridSize = CGFloat(newValue)
+                markDocumentAsChanged(actionName: "Change Grid Size")
+            }
+        }
+        .onChange(of: preferencesViewModel.snapToGrid) { oldValue, newValue in
+            // Update snap to grid when preference changes (only if grid is visible)
+            if oldValue != newValue && hasInitializedProject && showGrid {
+                snapToGridEnabled = newValue
+                markDocumentAsChanged(actionName: "Change Snap to Grid")
+            }
+        }
 
         // Add the ExportModal sheet here
         .sheet(isPresented: $showingExportModal) {
@@ -612,8 +726,10 @@ struct DesignCanvas: View {
                     asset: asset,
                     canvasWidth: Int(canvasWidth),
                     canvasHeight: Int(canvasHeight),
+                    project: appState.selectedProject,
                     getAnimationController: { self.animationController },
                     getCanvasElements: { self.canvasElements },
+                    getAudioLayers: { self.audioLayers },
                     onDismiss: {
                         showingExportModal = false
                     }
@@ -635,9 +751,12 @@ struct DesignCanvas: View {
                 canvasElements.append(newElement)
                 handleElementSelection(newElement)
                 markDocumentAsChanged(actionName: "Add Media Element")
+            }, onAddAudioToTimeline: { audioLayer in
+                addAudioLayerToTimeline(audioLayer)
+                markDocumentAsChanged(actionName: "Add Audio Layer")
             }, onMediaAssetImported: {
                 markDocumentAsChanged(actionName: "Import Media Asset")
-            })
+            }, currentTimelineTime: animationController.currentTime)
                 .frame(width: 800, height: 600)
         }
         // Add AuthenticationView sheet for sign in
@@ -691,7 +810,12 @@ struct DesignCanvas: View {
     private var canvasBaseLayersView: some View {
         Group {
             // Grid background (bottom layer)
-            GridBackground(showGrid: showGrid, gridSize: gridSize)
+            GridBackground(
+                showGrid: showGrid,
+                gridSize: gridSize,
+                gridColor: preferencesViewModel.gridColor,
+                canvasBackgroundColor: preferencesViewModel.canvasBackgroundColor
+            )
                 .accessibilityIdentifier("canvas-grid")
                 .accessibilityLabel("Canvas Grid Background")
                 .accessibilityHidden(true) // Grid is decorative, hide from VoiceOver
@@ -1121,11 +1245,29 @@ struct DesignCanvas: View {
         self.canvasWidth = projectData.canvasWidth
         self.canvasHeight = projectData.canvasHeight
         
+        // Sync canvas dimensions with preferences to ensure consistency
+        preferencesViewModel.canvasWidth = Double(projectData.canvasWidth)
+        preferencesViewModel.canvasHeight = Double(projectData.canvasHeight)
+        print("📐 Synced canvas dimensions with preferences: \(projectData.canvasWidth)x\(projectData.canvasHeight)")
+        
+        // Update grid settings to match loaded preferences
+        showGrid = preferencesViewModel.showGrid
+        gridSize = CGFloat(preferencesViewModel.gridSize)
+        print("🎨 Synced grid settings with preferences: showGrid=\(showGrid), gridSize=\(gridSize)")
+        
         // Update the current project with loaded media assets
         if self.appState.selectedProject != nil {
             self.appState.selectedProject?.mediaAssets = projectData.mediaAssets
             print("Loaded \(projectData.mediaAssets.count) media assets into project")
         }
+        
+        // Load and apply audio layers
+        self.audioLayers = projectData.audioLayers
+        self.audioLayerManager.clearAllAudioLayers()
+        for audioLayer in projectData.audioLayers {
+            self.audioLayerManager.addAudioLayer(audioLayer)
+        }
+        print("Loaded \(projectData.audioLayers.count) audio layers into timeline")
         
         // Rebuild AnimationController state
         self.animationController.reset()
@@ -1289,6 +1431,16 @@ struct DesignCanvas: View {
         // Notify the animation controller that tracks have been updated
         self.animationController.objectWillChange.send()
         print("Successfully reconstructed \(projectData.tracks.count) animation tracks with all keyframes and easing functions.")
+        
+        // Set animation controller for audio layer manager
+        self.audioLayerManager.setAnimationController(self.animationController)
+        
+        // Set up audio layer change callback for document tracking
+        self.audioLayerManager.onAudioLayerChanged = { actionName in
+            Task { @MainActor in
+                self.markDocumentAsChanged(actionName: actionName)
+            }
+        }
 
         // Configure DocumentManager with the newly loaded state and URL
         // Note: documentManager.projectURL is already set by loadProject(from:)
@@ -1326,9 +1478,11 @@ struct DesignCanvas: View {
             canvasElements: self.canvasElements,
             animationController: self.animationController,
             canvasSize: CGSize(width: self.canvasWidth, height: self.canvasHeight),
-            currentProject: appState.selectedProject
+            currentProject: appState.selectedProject,
+            audioLayers: self.audioLayers,
+            preferencesViewModel: self.preferencesViewModel
         )
-        print("🔧 DocumentManager configured with \(canvasElements.count) elements, \(animationController.getAllTracks().count) tracks, hasUnsavedChanges: \(documentManager.hasUnsavedChanges)")
+        print("🔧 DocumentManager configured with \(canvasElements.count) elements, \(animationController.getAllTracks().count) tracks, \(audioLayers.count) audio layers, hasUnsavedChanges: \(documentManager.hasUnsavedChanges)")
     }
     
     internal func recordUndoState(actionName: String) {
@@ -1483,6 +1637,57 @@ struct DesignCanvas: View {
         // Force UI update by triggering objectWillChange
         isProgrammaticChange = true
         isProgrammaticChange = false
+    }
+    
+    // MARK: - Audio Management
+    
+    /// Adds an audio layer to the timeline and audio layer manager
+    internal func addAudioLayerToTimeline(_ audioLayer: AudioLayer) {
+        print("🎵 Adding audio layer to timeline: \(audioLayer.name)")
+        
+        // Check for duplicate audio at same start time (within 0.1 seconds)
+        let hasDuplicate = audioLayers.contains { existingLayer in
+            existingLayer.assetURL == audioLayer.assetURL && 
+            abs(existingLayer.startTime - audioLayer.startTime) < 0.1
+        }
+        
+        if hasDuplicate {
+            print("⚠️ Audio layer already exists at this timeline position. Skipping duplicate.")
+            return
+        }
+        
+        // Add to our audio layers array
+        audioLayers.append(audioLayer)
+        
+        // Add to the audio layer manager for playback
+        audioLayerManager.addAudioLayer(audioLayer)
+        
+        // Add to the Project model for persistence
+        appState.selectedProject?.addAudioLayer(audioLayer)
+        
+        print("✅ Audio layer added successfully. Total audio layers: \(audioLayers.count)")
+        
+        // Mark document as changed to ensure DocumentManager is updated with latest audio layers
+        markDocumentAsChanged(actionName: "Add Audio Layer")
+    }
+    
+    /// Removes an audio layer from the timeline
+    internal func removeAudioLayer(_ audioLayer: AudioLayer) {
+        print("🗑️ Removing audio layer: \(audioLayer.name)")
+        
+        // Remove from audio layers array
+        audioLayers.removeAll { $0.id == audioLayer.id }
+        
+        // Remove from audio layer manager
+        audioLayerManager.removeAudioLayer(withId: audioLayer.id)
+        
+        // Remove from Project model for persistence
+        appState.selectedProject?.removeAudioLayer(withId: audioLayer.id)
+        
+        print("✅ Audio layer removed. Remaining audio layers: \(audioLayers.count)")
+        
+        // Mark document as changed to ensure DocumentManager is updated with latest audio layers
+        markDocumentAsChanged(actionName: "Remove Audio Layer")
     }
     
     // MARK: - Animation Property Management
@@ -1668,12 +1873,15 @@ extension DesignCanvas {
         // This ensures we never lose user work
         isClosing = true
         
+        // Cancel any pending auto-save timer to prevent conflicts
+        autoSaveTimer?.invalidate()
+        
         // Auto-save the project before closing
         print("🔄 Auto-saving project before closing...")
         autoSaveProject()
         
         // Small delay to ensure save completes
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             self.performClose()
         }
     }
@@ -1691,16 +1899,19 @@ extension DesignCanvas {
         // Cancel any existing timer
         autoSaveTimer?.invalidate()
         
-        // Capture the values locally to avoid main actor isolation issues
-        let hasUnsavedChanges = documentManager.hasUnsavedChanges
-        let currentIsClosing = isClosing
-        
         // Schedule a new auto-save after a 3-second delay
-        autoSaveTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [self] _ in
+        autoSaveTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { _ in
+            
+            // Check current state at the time of execution, not when timer was set
+            let hasUnsavedChanges = self.documentManager.hasUnsavedChanges
+            let currentIsClosing = self.isClosing
+            
             // Only auto-save if we have unsaved changes and aren't closing
             if hasUnsavedChanges && !currentIsClosing {
                 print("⏰ Scheduled auto-save triggered")
                 self.autoSaveProject()
+            } else {
+                print("⏰ Scheduled auto-save skipped - hasUnsavedChanges: \(hasUnsavedChanges), isClosing: \(currentIsClosing)")
             }
         }
     }
@@ -1741,23 +1952,17 @@ extension DesignCanvas {
     
     /// Creates a default project file location for new projects
     private func createDefaultProjectFile() {
-        guard let projectsFolder = ensureProjectsDirectoryExists() else {
-            print("Could not create default project file: unable to create projects directory")
+        guard let project = appState.selectedProject else {
+            print("Could not create default project file: no selected project")
             return
         }
         
-        // Generate a filename based on the project name or a default
-        let projectName = appState.selectedProject?.name ?? "Untitled Project"
-        let sanitizedName = projectName.replacingOccurrences(of: "[^a-zA-Z0-9 ]", with: "", options: .regularExpression)
-        let baseFilename = sanitizedName.isEmpty ? "Untitled Project" : sanitizedName
-        
-        // Use exact project name - no auto-incrementing numbers
-        let filename = "\(baseFilename).storyline"
-        let saveURL = projectsFolder.appendingPathComponent(filename)
+        // Use the UUID-based URL construction for uniqueness
+        let saveURL = constructProjectURL(for: project)
         
         // Set the project URL for future saves
         documentManager.projectURL = saveURL
-        appState.currentProjectName = saveURL.deletingPathExtension().lastPathComponent
+        appState.currentProjectName = project.name // Use the actual project name, not the filename
         
         // Now actually save the project file
         let success = documentManager.saveWorkingFile()
@@ -1807,22 +2012,17 @@ extension DesignCanvas {
     
     /// Prepares a new project for auto-save by setting up a default project file URL
     private func prepareNewProjectForAutoSave() {
-        guard let projectsFolder = ensureProjectsDirectoryExists() else {
-            print("Could not prepare project for auto-save: unable to create projects directory")
+        guard let project = appState.selectedProject else {
+            print("Could not prepare project for auto-save: no selected project")
             return
         }
         
-        let projectName = appState.selectedProject?.name ?? "Untitled Project"
-        let sanitizedName = projectName.replacingOccurrences(of: "[^a-zA-Z0-9 ]", with: "", options: .regularExpression)
-        let baseFilename = sanitizedName.isEmpty ? "Untitled Project" : sanitizedName
-        
-        // Use exact project name - no auto-incrementing numbers
-        let filename = "\(baseFilename).storyline"
-        let saveURL = projectsFolder.appendingPathComponent(filename)
+        // Use the UUID-based URL construction for uniqueness
+        let saveURL = constructProjectURL(for: project)
         
         // Set the project URL for future saves
         documentManager.projectURL = saveURL
-        appState.currentProjectName = saveURL.deletingPathExtension().lastPathComponent
+        appState.currentProjectName = project.name // Use the actual project name, not the filename
         
         print("Prepared new project for auto-save at: \(saveURL.path)")
     }
@@ -1831,8 +2031,8 @@ extension DesignCanvas {
     private func loadProjectFromSelection(_ project: Project) {
         print("🔄 Loading project from selection: \(project.name)")
         
-        // Create the expected file path based on project name
-        let projectURL = constructProjectURL(for: project.name)
+        // Create the expected file path based on project UUID for uniqueness
+        let projectURL = constructProjectURL(for: project)
         
         // Check if the project file exists
         if FileManager.default.fileExists(atPath: projectURL.path) {
@@ -1853,7 +2053,8 @@ extension DesignCanvas {
                     duration: loadedTuple.duration,
                     canvasWidth: loadedTuple.canvasWidth,
                     canvasHeight: loadedTuple.canvasHeight,
-                    mediaAssets: loadedTuple.mediaAssets
+                    mediaAssets: loadedTuple.mediaAssets,
+                    audioLayers: loadedTuple.audioLayers
                 )
                 
                 print("✅ Successfully loaded project with \(loadedTuple.elements.count) elements")
@@ -1881,7 +2082,23 @@ extension DesignCanvas {
         }
     }
     
-    /// Constructs the expected file URL for a project name
+    /// Constructs the expected file URL for a project using its unique ID
+    private func constructProjectURL(for project: Project) -> URL {
+        // Ensure the projects directory exists and get its URL
+        guard let projectsFolder = ensureProjectsDirectoryExists() else {
+            fatalError("Could not access or create Motion Storyline Projects directory")
+        }
+        
+        // Use project UUID to ensure uniqueness, with human-readable name as prefix
+        let sanitizedName = project.name.replacingOccurrences(of: "[^a-zA-Z0-9 ]", with: "", options: .regularExpression)
+        let baseFilename = sanitizedName.isEmpty ? "Untitled Project" : sanitizedName
+        
+        // Create filename using both name and UUID for uniqueness
+        let filename = "\(baseFilename)_\(project.id.uuidString).storyline"
+        return projectsFolder.appendingPathComponent(filename)
+    }
+    
+    /// Legacy method for backward compatibility - constructs URL based on project name only
     private func constructProjectURL(for projectName: String) -> URL {
         // Ensure the projects directory exists and get its URL
         guard let projectsFolder = ensureProjectsDirectoryExists() else {
@@ -1907,9 +2124,9 @@ extension DesignCanvas {
         // Set default elements for new projects
         canvasElements = createDefaultCanvasElements()
         
-        // Reset canvas properties
-        canvasWidth = 1280
-        canvasHeight = 720
+        // Reset canvas properties using preferences
+        canvasWidth = CGFloat(preferencesViewModel.canvasWidth)
+        canvasHeight = CGFloat(preferencesViewModel.canvasHeight)
         zoom = 1.0
         viewportOffset = .zero
         selectedElementId = nil

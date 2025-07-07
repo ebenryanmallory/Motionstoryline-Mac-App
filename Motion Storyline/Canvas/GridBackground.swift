@@ -3,17 +3,19 @@ import SwiftUI
 struct GridBackground: View {
     var showGrid: Bool = true
     var gridSize: CGFloat = 20
+    var gridColor: Color = Color(white: 0.5, opacity: 0.2)
+    var canvasBackgroundColor: Color = Color(NSColor.windowBackgroundColor)
     var isPreviewMode: Bool = false
     let majorGridEvery: Int = 5
     
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Background - white in preview mode, system background otherwise
+                // Background - white in preview mode, custom background otherwise
                 if isPreviewMode {
                     Color.white
                 } else {
-                    Color(NSColor.windowBackgroundColor)
+                    canvasBackgroundColor
                 }
                 
                 if showGrid && !isPreviewMode {
@@ -33,7 +35,7 @@ struct GridBackground: View {
                             path.addLine(to: CGPoint(x: geometry.size.width, y: y))
                         }
                     }
-                    .stroke(Color(white: 0.5, opacity: 1.0).opacity(0.2), lineWidth: 0.5)
+                    .stroke(gridColor, lineWidth: 0.5)
                     
                     // Major grid lines
                     Path { path in
@@ -55,7 +57,7 @@ struct GridBackground: View {
                             }
                         }
                     }
-                    .stroke(Color(white: 0.5, opacity: 1.0).opacity(0.4), lineWidth: 1.0)
+                    .stroke(gridColor.opacity(0.4), lineWidth: 1.0)
                 }
                 
                 // Center crosshair - only show when not in preview mode
@@ -72,7 +74,7 @@ struct GridBackground: View {
                         path.move(to: CGPoint(x: centerX, y: 0))
                         path.addLine(to: CGPoint(x: centerX, y: geometry.size.height))
                     }
-                    .stroke(Color(red: 0.2, green: 0.5, blue: 0.9, opacity: 1.0).opacity(0.5), lineWidth: 1.0)
+                    .stroke(Color(red: 0.4, green: 0.4, blue: 0.4, opacity: 0.3), lineWidth: 1.0)
                 }
             }
         }
