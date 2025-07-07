@@ -31,23 +31,46 @@ class DocumentManager: ObservableObject {
     private var animationController: AnimationController?
     private var canvasSize: CGSize = CGSize(width: 1280, height: 720)
     private var currentProject: Project?
+    private var audioLayers: [AudioLayer] = []
+    private var preferencesViewModel: PreferencesViewModel?
+    
+    // Canvas size properties as single source of truth
+    @Published var canvasWidth: Double = 1280
+    @Published var canvasHeight: Double = 720
     
     // Public read-only access for debugging and validation
     var currentElementCount: Int { canvasElements.count }
     var currentTrackCount: Int { animationController?.getAllTracks().count ?? 0 }
+    var currentAudioLayerCount: Int { audioLayers.count }
+    var currentAudioLayers: [AudioLayer] { audioLayers }
     
     /// Set up the document manager with the current canvas state. This is typically called when DesignCanvas state changes.
     func configure(canvasElements: [CanvasElement], 
                   animationController: AnimationController,
                   canvasSize: CGSize,
-                  currentProject: Project? = nil) {
-        print("DocumentManager.configure called with \(canvasElements.count) elements")
+                  currentProject: Project? = nil,
+                  audioLayers: [AudioLayer] = [],
+                  preferencesViewModel: PreferencesViewModel? = nil) {
+        print("DocumentManager.configure called with \(canvasElements.count) elements and \(audioLayers.count) audio layers")
         
         self.canvasElements = canvasElements
         self.animationController = animationController
         self.canvasSize = canvasSize
         self.currentProject = currentProject
-        print("DocumentManager configured with \(canvasElements.count) elements and project: \(currentProject?.name ?? "None")")
+        self.audioLayers = audioLayers
+        self.preferencesViewModel = preferencesViewModel
+        
+        // Initialize canvas size properties as single source of truth
+        self.canvasWidth = Double(canvasSize.width)
+        self.canvasHeight = Double(canvasSize.height)
+        
+        print("🔧 DocumentManager configured with \(canvasElements.count) elements, \(animationController.getAllTracks().count) tracks, \(audioLayers.count) audio layers, canvas size: \(canvasSize), hasUnsavedChanges: \(hasUnsavedChanges)")
+    }
+    
+    /// Update only the audio layers without affecting other state
+    func updateAudioLayers(_ audioLayers: [AudioLayer]) {
+        self.audioLayers = audioLayers
+        print("DocumentManager audio layers updated: \(audioLayers.count) layers")
     }
     
     /// Export the timeline to a video or image sequence
@@ -111,7 +134,7 @@ class DocumentManager: ObservableObject {
     /// Updates `projectURL` for future exports.
     func exportProjectAs() -> Bool {
         // Debug check to make sure canvas elements are properly set
-        print("Initiating Export As... with \(canvasElements.count) canvas elements")
+        print("Initiating Export As... with \(canvasElements.count) canvas elements and \(audioLayers.count) audio layers")
         
         let savePanel = NSSavePanel()
         savePanel.canCreateDirectories = true
@@ -150,7 +173,7 @@ class DocumentManager: ObservableObject {
         
         if let url = projectURL {
             print("💾 Saving working file to: \(url.path)")
-            print("💾 Saving \(canvasElements.count) elements and \(animationController?.getAllTracks().count ?? 0) animation tracks")
+            print("💾 Saving \(canvasElements.count) elements, \(animationController?.getAllTracks().count ?? 0) animation tracks, and \(audioLayers.count) audio layers")
             
             if performSaveInternal(to: url) {
                 self.hasUnsavedChanges = false
@@ -174,7 +197,7 @@ class DocumentManager: ObservableObject {
             return false
         }
         
-        print("Exporting to existing project location: \(url.path) with \(canvasElements.count) elements")
+        print("Exporting to existing project location: \(url.path) with \(canvasElements.count) elements and \(audioLayers.count) audio layers")
         if performSaveInternal(to: url) {
             print("Project successfully exported to \(url.path)")
             return true
@@ -194,7 +217,7 @@ class DocumentManager: ObservableObject {
     /// Private helper function to perform the actual saving logic without showing a panel.
     private func performSaveInternal(to url: URL) -> Bool {
         // Debug check to make sure canvas elements are properly set
-        print("💾 Starting save operation with \(canvasElements.count) canvas elements")
+        print("💾 Starting save operation with \(canvasElements.count) canvas elements and \(audioLayers.count) audio layers")
         print("💾 Animation controller has \(animationController?.getAllTracks().count ?? 0) tracks")
         
         // Create project data structure
@@ -207,7 +230,7 @@ class DocumentManager: ObservableObject {
             return false
         }
         
-        print("💾 Created project data with \(projectData.elements.count) elements and \(projectData.tracks.count) tracks")
+        print("💾 Created project data with \(projectData.elements.count) elements, \(projectData.tracks.count) tracks, and \(projectData.audioLayers.count) audio layers")
         
         do {
             // Encode the project data as JSON
@@ -248,7 +271,8 @@ class DocumentManager: ObservableObject {
     
     /// Load a saved project from a file URL.
     /// Updates `projectURL` and resets `hasUnsavedChanges` on success.
-    func loadProject(from url: URL) throws -> (elements: [CanvasElement], tracksData: [TrackData], duration: Double, canvasWidth: CGFloat, canvasHeight: CGFloat, mediaAssets: [MediaAsset], projectName: String)? {
+    /// Also updates the PreferencesViewModel with the loaded canvas dimensions.
+    func loadProject(from url: URL) throws -> (elements: [CanvasElement], tracksData: [TrackData], duration: Double, canvasWidth: CGFloat, canvasHeight: CGFloat, mediaAssets: [MediaAsset], audioLayers: [AudioLayer], projectName: String)? {
         // Note: The NSOpenPanel logic is now handled by the caller (e.g., DesignCanvas)
         
         do {
@@ -269,6 +293,30 @@ class DocumentManager: ObservableObject {
             self.projectURL = url
             self.hasUnsavedChanges = false // Project is clean right after loading
             
+            // Update DocumentManager's canvas size properties as single source of truth
+            self.canvasWidth = Double(projectData.canvasWidth)
+            self.canvasHeight = Double(projectData.canvasHeight)
+            self.canvasSize = CGSize(width: projectData.canvasWidth, height: projectData.canvasHeight)
+            print("📐 Updated DocumentManager with loaded canvas dimensions: \(projectData.canvasWidth)x\(projectData.canvasHeight)")
+            
+            // Update preferences with loaded canvas preferences (grid settings, etc.)
+            if let preferencesViewModel = preferencesViewModel {
+                // Load canvas preferences if they exist
+                if let canvasPreferences = projectData.canvasPreferences {
+                    preferencesViewModel.showGrid = canvasPreferences.showGrid
+                    preferencesViewModel.gridSize = canvasPreferences.gridSize
+                    preferencesViewModel.gridColorR = canvasPreferences.gridColorR
+                    preferencesViewModel.gridColorG = canvasPreferences.gridColorG
+                    preferencesViewModel.gridColorB = canvasPreferences.gridColorB
+                    preferencesViewModel.gridColorA = canvasPreferences.gridColorA
+                    preferencesViewModel.canvasBgColorR = canvasPreferences.canvasBgColorR
+                    preferencesViewModel.canvasBgColorG = canvasPreferences.canvasBgColorG
+                    preferencesViewModel.canvasBgColorB = canvasPreferences.canvasBgColorB
+                    preferencesViewModel.canvasBgColorA = canvasPreferences.canvasBgColorA
+                    print("🎨 Updated preferences with loaded canvas preferences: showGrid=\(canvasPreferences.showGrid), gridSize=\(canvasPreferences.gridSize)")
+                }
+            }
+            
             // Configure the document manager with the loaded data if it's supposed to hold it directly
             // Or, ensure the caller (DesignCanvas) calls configure() with this data.
             // For now, DesignCanvas is responsible for calling configure().
@@ -277,7 +325,7 @@ class DocumentManager: ObservableObject {
             // self.animationController = ... // Rebuilding AnimationController is complex here, better done in DesignCanvas
 
             print("Project successfully loaded from \(url.path)")
-            return (projectData.elements, projectData.tracks, projectData.duration, projectData.canvasWidth, projectData.canvasHeight, projectData.mediaAssets, projectName)
+            return (projectData.elements, projectData.tracks, projectData.duration, projectData.canvasWidth, projectData.canvasHeight, projectData.mediaAssets, projectData.audioLayers, projectName)
         } catch {
             print("Error loading project: \(error.localizedDescription)")
             // Propagate the error so the caller can handle it
@@ -328,11 +376,14 @@ class DocumentManager: ObservableObject {
             fatalError("Failed to create asset for export")
         }
         
+        print("Creating ExportCoordinator with animation data and \(audioLayers.count) audio layers")
+        
         return ExportCoordinator(
             asset: asset, 
             animationController: animationController!,
             canvasElements: canvasElements,
-            canvasSize: canvasSize
+            canvasSize: canvasSize,
+            audioLayers: audioLayers
         )
     }
     
@@ -393,13 +444,18 @@ class DocumentManager: ObservableObject {
     private func createProjectData() -> ProjectData {
         var tracks: [TrackData] = []
         
-        // Debug info - print the number of canvas elements
-        print("Creating project data with \(canvasElements.count) canvas elements")
+        // Debug info - print the number of canvas elements and audio layers
+        print("Creating project data with \(canvasElements.count) canvas elements and \(audioLayers.count) audio layers")
+        
+        // Use DocumentManager's canvas size properties as single source of truth
+        let canvasWidth = CGFloat(self.canvasWidth)
+        let canvasHeight = CGFloat(self.canvasHeight)
+        print("📐 Using canvas dimensions from DocumentManager: \(canvasWidth)x\(canvasHeight)")
         
         // Get all animation tracks
         guard let animationController = animationController else {
             print("Warning: No animation controller available when saving")
-            return ProjectData(elements: canvasElements, tracks: [], duration: 5.0, canvasWidth: self.canvasSize.width, canvasHeight: self.canvasSize.height)
+            return ProjectData(elements: canvasElements, tracks: [], duration: 5.0, canvasWidth: canvasWidth, canvasHeight: canvasHeight, mediaAssets: currentProject?.mediaAssets ?? [], audioLayers: audioLayers)
         }
         
         let trackIds = animationController.getAllTracks()
@@ -504,18 +560,37 @@ class DocumentManager: ObservableObject {
             }
         }
         
+        // Create canvas preferences from the current preferences view model
+        var canvasPreferences: CanvasPreferences? = nil
+        if let preferencesViewModel = preferencesViewModel {
+            canvasPreferences = CanvasPreferences(
+                showGrid: preferencesViewModel.showGrid,
+                gridSize: preferencesViewModel.gridSize,
+                gridColorR: preferencesViewModel.gridColorR,
+                gridColorG: preferencesViewModel.gridColorG,
+                gridColorB: preferencesViewModel.gridColorB,
+                gridColorA: preferencesViewModel.gridColorA,
+                canvasBgColorR: preferencesViewModel.canvasBgColorR,
+                canvasBgColorG: preferencesViewModel.canvasBgColorG,
+                canvasBgColorB: preferencesViewModel.canvasBgColorB,
+                canvasBgColorA: preferencesViewModel.canvasBgColorA
+            )
+        }
+        
         // Create and return the project data
         let projectData = ProjectData(
             elements: canvasElements,
             tracks: tracks,
             duration: animationController.duration,
-            canvasWidth: self.canvasSize.width,
-            canvasHeight: self.canvasSize.height,
-            mediaAssets: currentProject?.mediaAssets ?? []
+            canvasWidth: canvasWidth,
+            canvasHeight: canvasHeight,
+            mediaAssets: currentProject?.mediaAssets ?? [],
+            audioLayers: audioLayers,
+            canvasPreferences: canvasPreferences
         )
         
         // Verification check
-        print("Project data created with \(projectData.elements.count) elements and \(projectData.tracks.count) tracks")
+        print("Project data created with \(projectData.elements.count) elements, \(projectData.tracks.count) tracks, and \(projectData.audioLayers.count) audio layers")
         
         return projectData
     }
@@ -678,6 +753,22 @@ struct ProjectData: Codable {
     var canvasWidth: CGFloat
     var canvasHeight: CGFloat
     var mediaAssets: [MediaAsset] = [] // Add media assets to project data
+    var audioLayers: [AudioLayer] = [] // Add audio layers to project data
+    var canvasPreferences: CanvasPreferences? = nil // Add canvas preferences
+}
+
+/// Canvas preferences data structure
+struct CanvasPreferences: Codable {
+    var showGrid: Bool
+    var gridSize: Double
+    var gridColorR: Double
+    var gridColorG: Double
+    var gridColorB: Double
+    var gridColorA: Double
+    var canvasBgColorR: Double
+    var canvasBgColorG: Double
+    var canvasBgColorB: Double
+    var canvasBgColorA: Double
 }
 
 /// Data structure for animation tracks

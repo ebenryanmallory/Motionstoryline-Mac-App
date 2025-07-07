@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import AVFoundation
 
 /// A view that displays and manages media assets in a project
 public struct MediaBrowserView: View {
@@ -13,6 +14,12 @@ public struct MediaBrowserView: View {
     @State private var isShowingDeleteAlert = false
     @State private var previewPlayer: AVPlayer?
     @State private var isPreviewPlaying = false
+    @State private var isDragging = false
+    @State private var dragOffset = CGSize.zero
+    @State private var draggedAsset: MediaAsset?
+    @State private var showSuccessNotification = false
+    @State private var notificationMessage = ""
+    @State private var isNotificationError = false
     var onAddElementToCanvas: ((CanvasElement) -> Void)?
     var onAddAudioToTimeline: ((AudioLayer) -> Void)?
     var onMediaAssetImported: (() -> Void)? // Callback for when media assets are imported
@@ -132,6 +139,27 @@ public struct MediaBrowserView: View {
                 }
             }
         }
+        .overlay(
+            Group {
+                if showSuccessNotification {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Image(systemName: isNotificationError ? "xmark.circle.fill" : "checkmark.circle.fill")
+                                .foregroundColor(isNotificationError ? .red : .green)
+                            Text(notificationMessage)
+                                .foregroundColor(.primary)
+                        }
+                        .padding()
+                        .background(Color(NSColor.controlBackgroundColor))
+                        .cornerRadius(8)
+                        .shadow(radius: 4)
+                        .padding(.bottom, 20)
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
+        )
         .sheet(isPresented: $isShowingImportSheet) {
             MediaImportView(projectName: project.name) { newAsset in
                 addAssetToProject(newAsset)
@@ -152,6 +180,15 @@ public struct MediaBrowserView: View {
         .onDisappear {
             // Stop any playing media when view disappears
             previewPlayer?.pause()
+        }
+        .onChange(of: showSuccessNotification) { isShowing in
+            if isShowing {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    withAnimation {
+                        showSuccessNotification = false
+                    }
+                }
+            }
         }
     }
     
@@ -175,15 +212,36 @@ public struct MediaBrowserView: View {
         let sortedAssets = sortAssets(filteredAssets)
         
         return List(sortedAssets, selection: $selectedAsset) { asset in
-            MediaAssetRow(asset: asset, isSelected: selectedAsset?.id == asset.id)
+            MediaAssetRow(
+                asset: asset, 
+                isSelected: selectedAsset?.id == asset.id,
+                isDragging: isDragging && draggedAsset?.id == asset.id,
+                dragOffset: draggedAsset?.id == asset.id ? dragOffset : .zero
+            )
                 .contentShape(Rectangle())
                 .onTapGesture {
                     selectedAsset = asset
                     setupPreviewPlayer(for: asset)
                 }
+                .gesture(
+                    DragGesture(coordinateSpace: .global)
+                        .onChanged { value in
+                            if !isDragging {
+                                isDragging = true
+                                draggedAsset = asset
+                            }
+                            dragOffset = value.translation
+                        }
+                        .onEnded { value in
+                            handleDragEnd(for: asset, at: value.location)
+                            isDragging = false
+                            draggedAsset = nil
+                            dragOffset = .zero
+                        }
+                )
                 .accessibilityIdentifier("media-asset-\(asset.id)")
                 .accessibilityLabel("\(asset.name), \(asset.type.rawValue)")
-                .accessibilityHint("Double tap to select and preview this \(asset.type.rawValue) file")
+                .accessibilityHint("Double tap to select and preview this \(asset.type.rawValue) file. Drag to add to canvas or timeline")
                 .accessibilityAddTraits(.isButton)
                 .contextMenu {
                     Button(action: {
@@ -200,16 +258,16 @@ public struct MediaBrowserView: View {
                         Button(action: {
                             let newElement: CanvasElement
                             let defaultPosition = CGPoint(x: 200, y: 200) // Or some other default
-                            let defaultSize = CGSize(width: 300, height: 200)
+                            let elementSize = asset.dimensions ?? CGSize(width: 300, height: 200)
 
                             if asset.type == .image {
-                                newElement = CanvasElement.image(at: defaultPosition, assetURL: asset.url, displayName: asset.name, size: defaultSize)
+                                newElement = CanvasElement.image(at: defaultPosition, assetURL: asset.url, displayName: asset.name, size: elementSize)
                             } else { // .video
                                 newElement = CanvasElement.video(
                                     at: defaultPosition, 
                                     assetURL: asset.url, 
                                     displayName: asset.name, 
-                                    size: defaultSize,
+                                    size: elementSize,
                                     videoDuration: asset.duration
                                 )
                             }
@@ -226,7 +284,22 @@ public struct MediaBrowserView: View {
                             // Create an audio layer from the asset
                             if let audioLayer = AudioLayer.from(mediaAsset: asset, startTime: currentTimelineTime) {
                                 onAddAudioToTimeline?(audioLayer)
+                                
+                                // Show success notification
+                                withAnimation {
+                                    notificationMessage = "\(asset.name) added to timeline"
+                                    isNotificationError = false
+                                    showSuccessNotification = true
+                                }
+                                
                                 dismiss() // Dismiss the browser after adding
+                            } else {
+                                // Show error notification if AudioLayer creation fails
+                                withAnimation {
+                                    notificationMessage = "Failed to add \(asset.name) to timeline"
+                                    isNotificationError = true
+                                    showSuccessNotification = true
+                                }
                             }
                         }) {
                             Label("Add to Timeline", systemImage: "timeline.selection")
@@ -568,12 +641,74 @@ public struct MediaBrowserView: View {
         formatter.timeStyle = .short
         return formatter.string(from: date)
     }
+    
+    private func handleDragEnd(for asset: MediaAsset, at location: CGPoint) {
+        // Handle drag and drop similar to the context menu actions
+        let defaultPosition = CGPoint(x: 200, y: 200)
+        let elementSize = asset.dimensions ?? CGSize(width: 300, height: 200)
+        
+        if asset.type == .video || asset.type == .image {
+            let newElement: CanvasElement
+            
+            if asset.type == .image {
+                newElement = CanvasElement.image(at: defaultPosition, assetURL: asset.url, displayName: asset.name, size: elementSize)
+            } else { // .video
+                newElement = CanvasElement.video(
+                    at: defaultPosition, 
+                    assetURL: asset.url, 
+                    displayName: asset.name, 
+                    size: elementSize,
+                    videoDuration: asset.duration
+                )
+            }
+            
+            onAddElementToCanvas?(newElement)
+            
+            // Show success notification
+            withAnimation {
+                notificationMessage = "\(asset.name) added to canvas"
+                isNotificationError = false
+                showSuccessNotification = true
+            }
+            
+        } else if asset.type == .audio {
+            // Create an audio layer from the asset
+            if let audioLayer = AudioLayer.from(mediaAsset: asset, startTime: currentTimelineTime) {
+                onAddAudioToTimeline?(audioLayer)
+                
+                // Show success notification
+                withAnimation {
+                    notificationMessage = "\(asset.name) added to timeline"
+                    isNotificationError = false
+                    showSuccessNotification = true
+                }
+            } else {
+                // Show error notification if AudioLayer creation fails
+                withAnimation {
+                    notificationMessage = "Failed to add \(asset.name) to timeline"
+                    isNotificationError = true
+                    showSuccessNotification = true
+                }
+            }
+        }
+        
+        // Note: We don't dismiss the media browser as per requirements
+    }
 }
 
 /// Row view for a media asset in the list
 struct MediaAssetRow: View {
     let asset: MediaAsset
     let isSelected: Bool
+    let isDragging: Bool
+    let dragOffset: CGSize
+    
+    init(asset: MediaAsset, isSelected: Bool, isDragging: Bool = false, dragOffset: CGSize = .zero) {
+        self.asset = asset
+        self.isSelected = isSelected
+        self.isDragging = isDragging
+        self.dragOffset = dragOffset
+    }
     
     var body: some View {
         HStack(spacing: 12) {
@@ -601,6 +736,11 @@ struct MediaAssetRow: View {
         }
         .padding(.vertical, 4)
         .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+        .opacity(isDragging ? 0.6 : 1.0)
+        .scaleEffect(isDragging ? 0.95 : 1.0)
+        .offset(dragOffset)
+        .shadow(radius: isDragging ? 8 : 0)
+        .animation(.easeInOut(duration: 0.15), value: isDragging)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)

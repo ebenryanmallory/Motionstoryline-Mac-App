@@ -30,6 +30,7 @@ class PreferencesViewModel: ObservableObject {
     @AppStorage("accentColorA") var accentColorA: Double = 1.0
     
     @AppStorage("showGrid") var showGrid: Bool = true
+    @AppStorage("snapToGrid") var snapToGrid: Bool = true
     @AppStorage("gridSize") var gridSize: Double = 16
     @AppStorage("gridColorR") var gridColorR: Double = 0.7
     @AppStorage("gridColorG") var gridColorG: Double = 0.7

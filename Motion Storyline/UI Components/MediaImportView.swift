@@ -274,7 +274,7 @@ public struct MediaImportView: View {
                     return
                 }
                 
-                // Store the file URL
+                // Store the file URL (keep security scoped resource active)
                 self.selectedFile = fileURL
                 
                 // Set default name from filename
@@ -315,8 +315,7 @@ public struct MediaImportView: View {
                     }
                 }
                 
-                // Remember to stop accessing the resource when done
-                fileURL.stopAccessingSecurityScopedResource()
+                // Note: We keep the security scoped resource active until import is complete
             }
         } catch {
             showAlert(message: "File selection failed: \(error.localizedDescription)")
@@ -357,68 +356,73 @@ public struct MediaImportView: View {
         
         do {
             // Copy the file to our app's documents directory
-            if fileURL.startAccessingSecurityScopedResource() {
-                try FileManager.default.copyItem(at: fileURL, to: destinationURL)
-                fileURL.stopAccessingSecurityScopedResource()
-                
-                importProgress = 0.7
-                
-                // Create the media asset
-                let asset = MediaAsset(
-                    name: assetName,
-                    type: selectedMediaType,
-                    url: destinationURL,
-                    duration: assetDuration,
-                    thumbnail: selectedMediaType == .video ? "video_thumbnail" : selectedMediaType == .audio ? "audio_thumbnail" : "image_thumbnail"
-                )
-                
-                // If extract audio is enabled and this is a video, also create an audio asset
-                if extractAudioTrack && selectedMediaType == .video, let currentAsset = self.currentAsset {
-                    Task {
-                        do {
-                            let audioURL = try await extractAudio(from: currentAsset, to: mediaDirectoryURL)
-                            let audioAsset = MediaAsset(
-                                name: "\(assetName) - Audio",
-                                type: .audio,
-                                url: audioURL,
-                                duration: assetDuration,
-                                thumbnail: "audio_thumbnail"
-                            )
+            try FileManager.default.copyItem(at: fileURL, to: destinationURL)
+            
+            // Now we can stop accessing the security scoped resource
+            fileURL.stopAccessingSecurityScopedResource()
+            
+            importProgress = 0.7
+            
+            // Create the media asset
+            let dimensions = MediaAsset.extractDimensions(from: destinationURL, type: selectedMediaType)
+            let asset = MediaAsset(
+                name: assetName,
+                type: selectedMediaType,
+                url: destinationURL,
+                duration: assetDuration,
+                thumbnail: selectedMediaType == .video ? "video_thumbnail" : selectedMediaType == .audio ? "audio_thumbnail" : "image_thumbnail",
+                width: dimensions?.width,
+                height: dimensions?.height
+            )
+            
+            // If extract audio is enabled and this is a video, also create an audio asset
+            if extractAudioTrack && selectedMediaType == .video, let currentAsset = self.currentAsset {
+                Task {
+                    do {
+                        let audioURL = try await extractAudio(from: currentAsset, to: mediaDirectoryURL)
+                        let audioAsset = MediaAsset(
+                            name: "\(assetName) - Audio",
+                            type: .audio,
+                            url: audioURL,
+                            duration: assetDuration,
+                            thumbnail: "audio_thumbnail",
+                            width: nil,
+                            height: nil
+                        )
+                        
+                        DispatchQueue.main.async {
+                            // Call the import handler for both assets
+                            self.onImport?(asset)
+                            self.onImport?(audioAsset)
                             
-                            DispatchQueue.main.async {
-                                // Call the import handler for both assets
-                                self.onImport?(asset)
-                                self.onImport?(audioAsset)
-                                
-                                self.importProgress = 1.0
-                                self.isImporting = false
-                                self.presentationMode.wrappedValue.dismiss()
-                            }
-                        } catch {
-                            DispatchQueue.main.async {
-                                // Still import the video even if audio extraction fails
-                                self.onImport?(asset)
-                                
-                                self.importProgress = 1.0
-                                self.isImporting = false
-                                self.presentationMode.wrappedValue.dismiss()
-                                
-                                self.showAlert(message: "Imported video, but failed to extract audio: \(error.localizedDescription)")
-                            }
+                            self.importProgress = 1.0
+                            self.isImporting = false
+                            self.presentationMode.wrappedValue.dismiss()
+                        }
+                    } catch {
+                        DispatchQueue.main.async {
+                            // Still import the video even if audio extraction fails
+                            self.onImport?(asset)
+                            
+                            self.importProgress = 1.0
+                            self.isImporting = false
+                            self.presentationMode.wrappedValue.dismiss()
+                            
+                            self.showAlert(message: "Imported video, but failed to extract audio: \(error.localizedDescription)")
                         }
                     }
-                } else {
-                    // Call the import handler
-                    self.onImport?(asset)
-                    
-                    importProgress = 1.0
-                    isImporting = false
-                    presentationMode.wrappedValue.dismiss()
                 }
             } else {
-                throw NSError(domain: "MediaImportView", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not access the file"])
+                // Call the import handler
+                self.onImport?(asset)
+                
+                importProgress = 1.0
+                isImporting = false
+                presentationMode.wrappedValue.dismiss()
             }
         } catch {
+            // Make sure to stop accessing the resource in case of error
+            fileURL.stopAccessingSecurityScopedResource()
             showAlert(message: "Failed to import media: \(error.localizedDescription)")
             isImporting = false
         }

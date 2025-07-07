@@ -14,6 +14,7 @@ struct Motion_StorylineApp: App {
     @StateObject private var appStateManager = AppStateManager.shared // Use the shared instance
     @StateObject private var documentManager = DocumentManager() // Add DocumentManager
     @StateObject private var authManager = AuthenticationManager() // Add Authentication Manager
+    @StateObject private var preferencesViewModel = PreferencesViewModel() // Add Preferences Manager
     @State private var clerk = Clerk.shared
     @Environment(\.scenePhase) private var scenePhase // Get scenePhase from environment
     @State private var isCreatingNewProject = false
@@ -59,6 +60,7 @@ struct Motion_StorylineApp: App {
                             .environmentObject(self.appStateManager)
                             .environmentObject(self.documentManager) // Add DocumentManager to environment
                             .environmentObject(self.authManager) // Add AuthManager to environment
+                            .environmentObject(self.preferencesViewModel) // Add PreferencesViewModel to environment
                             .onAppear {
                                 // We can set up any necessary state here if needed
                             }
@@ -93,6 +95,7 @@ struct Motion_StorylineApp: App {
                         )
                         .environmentObject(self.appStateManager)
                         .environmentObject(self.authManager)
+                        .environmentObject(self.preferencesViewModel)
                         .onAppear {
                             loadProjects()
                             updateStatusMessage()
@@ -316,8 +319,10 @@ struct Motion_StorylineApp: App {
         do {
             let decoder = JSONDecoder()
             recentProjects = try decoder.decode([Project].self, from: recentProjectsData)
+            print("✅ Successfully loaded \(recentProjects.count) recent projects")
         } catch {
-            print("Failed to load recent projects: \(error.localizedDescription)")
+            print("❌ Failed to load recent projects: \(error.localizedDescription)")
+            print("📝 Raw data size: \(recentProjectsData.count) bytes")
             recentProjects = []
         }
     }
@@ -327,8 +332,10 @@ struct Motion_StorylineApp: App {
         do {
             let decoder = JSONDecoder()
             userProjects = try decoder.decode([Project].self, from: userProjectsData)
+            print("✅ Successfully loaded \(userProjects.count) user projects")
         } catch {
-            print("Failed to load all projects: \(error.localizedDescription)")
+            print("❌ Failed to load all projects: \(error.localizedDescription)")
+            print("📝 Raw data size: \(userProjectsData.count) bytes")
             userProjects = []
         }
     }
@@ -409,7 +416,42 @@ struct Motion_StorylineApp: App {
     private func loadProjects() {
         loadRecentProjects()
         loadAllProjects()
+        
+        // If no projects exist, create some sample projects for testing
+        if recentProjects.isEmpty && userProjects.isEmpty {
+            print("🔧 No projects found. Creating sample projects for testing...")
+            createSampleProjects()
+        }
+        
         updateStatus()
+        
+        // Debug logging
+        print("📊 Loaded \(recentProjects.count) recent projects")
+        print("📊 Loaded \(userProjects.count) user projects")
+        print("📊 Status message: \(statusMessage)")
+    }
+    
+    // Create sample projects for testing
+    private func createSampleProjects() {
+        let sampleProjects = [
+            Project(name: "Sample Design Project", thumbnail: "design_thumbnail", lastModified: Date().addingTimeInterval(-3600), isStarred: true),
+            Project(name: "Mobile App Prototype", thumbnail: "prototype_thumbnail", lastModified: Date().addingTimeInterval(-7200), isStarred: false),
+            Project(name: "Component Library", thumbnail: "component_thumbnail", lastModified: Date().addingTimeInterval(-86400), isStarred: false)
+        ]
+        
+        for project in sampleProjects {
+            userProjects.append(project)
+            recentProjects.append(project)
+        }
+        
+        // Limit recent projects to 10
+        if recentProjects.count > 10 {
+            recentProjects = Array(recentProjects.prefix(10))
+        }
+        
+        // Save the sample projects
+        saveProjects()
+        print("✅ Created \(sampleProjects.count) sample projects")
     }
     
     // Update status message

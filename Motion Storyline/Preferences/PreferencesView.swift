@@ -21,15 +21,20 @@ enum PreferencesTab: String, CaseIterable, Identifiable {
 }
 
 struct PreferencesView: View {
-    @StateObject private var viewModel = PreferencesViewModel()
+    @EnvironmentObject private var viewModel: PreferencesViewModel
+    @EnvironmentObject private var documentManager: DocumentManager
     @State private var selectedTab: PreferencesTab = .appearance
     @Environment(\.presentationMode) var presentationMode
+    
+    // Temporary state for canvas dimensions (only applied when user saves)
+    @State private var tempCanvasWidth: Double = 1280
+    @State private var tempCanvasHeight: Double = 720
     
     var body: some View {
         VStack(spacing: 0) {
             TabView(selection: $selectedTab) {
             ScrollView {
-                AppearancePreferencesView(viewModel: viewModel)
+                AppearancePreferencesView(viewModel: viewModel, tempCanvasWidth: $tempCanvasWidth, tempCanvasHeight: $tempCanvasHeight)
                     .padding(20)
             }
             .tabItem {
@@ -62,11 +67,30 @@ struct PreferencesView: View {
             HStack {
                 Spacer()
                 Button("Done") {
+                    // Apply temporary canvas dimension changes directly to DocumentManager
+                    documentManager.canvasWidth = tempCanvasWidth
+                    documentManager.canvasHeight = tempCanvasHeight
+                    
+                    // Save the current project if it exists to persist canvas preferences
+                    if documentManager.projectURL != nil {
+                        let saveResult = documentManager.saveWorkingFile()
+                        if saveResult {
+                            print("✅ Canvas preferences saved to project")
+                        } else {
+                            print("⚠️ Failed to save canvas preferences to project")
+                        }
+                    }
+                    
                     presentationMode.wrappedValue.dismiss()
                 }
                 .keyboardShortcut(.defaultAction) // Allows Enter key to trigger it
             }
             .padding()
+        }
+        .onAppear {
+            // Initialize temporary values from DocumentManager as single source of truth
+            tempCanvasWidth = documentManager.canvasWidth
+            tempCanvasHeight = documentManager.canvasHeight
         }
     }
 }
@@ -75,6 +99,8 @@ struct PreferencesView: View {
 struct AppearancePreferencesView: View {
     @ObservedObject var viewModel: PreferencesViewModel
     @EnvironmentObject private var appState: AppStateManager
+    @Binding var tempCanvasWidth: Double
+    @Binding var tempCanvasHeight: Double
     
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -112,6 +138,10 @@ struct AppearancePreferencesView: View {
                     Toggle("Show grid by default", isOn: $viewModel.showGrid)
                         .padding(.vertical, 5)
                     
+                    Toggle("Snap to grid", isOn: $viewModel.snapToGrid)
+                        .disabled(!viewModel.showGrid)
+                        .padding(.vertical, 5)
+                    
                     HStack {
                         Text("Grid size:")
                         Slider(value: $viewModel.gridSize, in: 8...64, step: 8)
@@ -129,6 +159,33 @@ struct AppearancePreferencesView: View {
                     
                     ColorPicker("Canvas Background", selection: $viewModel.canvasBackgroundColor)
                         .padding(.vertical, 5)
+                    
+                    Divider()
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Canvas Dimensions")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        
+                        // Width control
+                        HStack {
+                            Text("Width:")
+                            Slider(value: $tempCanvasWidth, in: 320...3840, step: 1)
+                            Text("\(Int(tempCanvasWidth))")
+                                .frame(width: 50)
+                        }
+                        .padding(.vertical, 2)
+                        
+                        // Height control
+                        HStack {
+                            Text("Height:")
+                            Slider(value: $tempCanvasHeight, in: 240...2160, step: 1)
+                            Text("\(Int(tempCanvasHeight))")
+                                .frame(width: 50)
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .padding(.vertical, 5)
                 }
                 .padding()
             }
@@ -289,4 +346,5 @@ struct GeneralPreferencesView: View {
 #Preview {
     PreferencesView()
         .environmentObject(AppStateManager())
+        .environmentObject(PreferencesViewModel())
 } 
