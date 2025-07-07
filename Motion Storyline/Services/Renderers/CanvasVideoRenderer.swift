@@ -39,6 +39,12 @@ class CanvasVideoRenderer: @unchecked Sendable {
         /// ProRes profile for high-quality export (optional)
         let proResProfile: VideoExporter.ProResProfile?
         
+        /// Audio layers to include in the export (optional)
+        let audioLayers: [AudioLayer]?
+        
+        /// Whether to include audio in the export
+        let includeAudio: Bool
+        
         init(
             width: Int,
             height: Int,
@@ -47,7 +53,9 @@ class CanvasVideoRenderer: @unchecked Sendable {
             canvasWidth: CGFloat,
             canvasHeight: CGFloat,
             backgroundColor: CGColor = CGColor(red: 1, green: 1, blue: 1, alpha: 1),
-            proResProfile: VideoExporter.ProResProfile? = nil
+            proResProfile: VideoExporter.ProResProfile? = nil,
+            audioLayers: [AudioLayer]? = nil,
+            includeAudio: Bool = true
         ) {
             self.width = width
             self.height = height
@@ -57,6 +65,8 @@ class CanvasVideoRenderer: @unchecked Sendable {
             self.canvasHeight = canvasHeight
             self.backgroundColor = backgroundColor
             self.proResProfile = proResProfile
+            self.audioLayers = audioLayers
+            self.includeAudio = includeAudio
         }
     }
     
@@ -159,7 +169,7 @@ class CanvasVideoRenderer: @unchecked Sendable {
         let writerInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
         writerInput.expectsMediaDataInRealTime = false
         
-        // Create a pixel buffer adaptor - match CanvasRenderer exactly
+        // Create a pixel buffer adaptor - match CanvasImageRenderer exactly
         let attributes: [String: Any] = [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB,
             kCVPixelBufferWidthKey as String: configuration.width,
@@ -191,7 +201,7 @@ class CanvasVideoRenderer: @unchecked Sendable {
         
         assetWriter.startSession(atSourceTime: .zero)
         
-        // Bitmap info for context creation - match CanvasRenderer exactly
+        // Bitmap info for context creation - match CanvasImageRenderer exactly
         let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
         
         // Scale factor for positioning elements
@@ -252,7 +262,7 @@ class CanvasVideoRenderer: @unchecked Sendable {
                     context.setFillColor(configuration.backgroundColor)
                     context.fill(CGRect(x: 0, y: 0, width: configuration.width, height: configuration.height))
                     
-                    // Transform context to use top-left origin (same as CanvasRenderer)
+                    // Transform context to use top-left origin (same as CanvasImageRenderer)
                     context.translateBy(x: 0, y: CGFloat(configuration.height))
                     context.scaleBy(x: 1, y: -1)
                     
@@ -273,7 +283,7 @@ class CanvasVideoRenderer: @unchecked Sendable {
                         continue
                     }
                     
-                    // Create a pixel buffer - match CanvasRenderer format
+                    // Create a pixel buffer - match CanvasImageRenderer format
                     var pixelBuffer: CVPixelBuffer?
                     CVPixelBufferCreate(
                         kCFAllocatorDefault,
@@ -392,8 +402,59 @@ class CanvasVideoRenderer: @unchecked Sendable {
             throw NSError(domain: "MotionStoryline", code: 106, userInfo: [NSLocalizedDescriptionKey: "Temporary video file was not created successfully"])
         }
         
-        // Return the final asset
-        return AVURLAsset(url: temporaryVideoURL)
+        // Create the initial video asset
+        let videoAsset = AVURLAsset(url: temporaryVideoURL)
+        
+        // Add audio composition if audio layers are provided and audio is enabled
+        if configuration.includeAudio, let audioLayers = configuration.audioLayers, !audioLayers.isEmpty {
+            os_log("=== AUDIO EXPORT DEBUG START ===", log: CanvasVideoRenderer.logger, type: .info)
+            os_log("Adding audio composition to video with %d audio layers", log: CanvasVideoRenderer.logger, type: .info, audioLayers.count)
+            
+            // Debug: Log each audio layer details
+            for (index, audioLayer) in audioLayers.enumerated() {
+                os_log("[DEBUG] Audio Track %d:", log: CanvasVideoRenderer.logger, type: .info, index)
+                os_log("  - Name: %{public}@", log: CanvasVideoRenderer.logger, type: .info, audioLayer.name)
+                os_log("  - URL: %{public}@", log: CanvasVideoRenderer.logger, type: .info, audioLayer.assetURL.absoluteString)
+                os_log("  - Start Time: %.3f seconds", log: CanvasVideoRenderer.logger, type: .info, audioLayer.startTime)
+                os_log("  - Duration: %.3f seconds", log: CanvasVideoRenderer.logger, type: .info, audioLayer.duration)
+                os_log("  - Volume: %.2f", log: CanvasVideoRenderer.logger, type: .info, audioLayer.volume)
+                os_log("  - Is Muted: %{public}@", log: CanvasVideoRenderer.logger, type: .info, audioLayer.isMuted ? "YES" : "NO")
+                os_log("  - Should appear in export: %{public}@", log: CanvasVideoRenderer.logger, type: .info, !audioLayer.isMuted ? "YES" : "NO")
+                
+                // Check if file exists at URL
+                if FileManager.default.fileExists(atPath: audioLayer.assetURL.path) {
+                    os_log("  - File exists: YES", log: CanvasVideoRenderer.logger, type: .info)
+                } else {
+                    os_log("  - File exists: NO - FILE NOT FOUND!", log: CanvasVideoRenderer.logger, type: .error)
+                }
+                
+                // Verify audio asset can be loaded
+                let audioAsset = AVAsset(url: audioLayer.assetURL)
+                do {
+                    let isPlayable = try await audioAsset.load(.isPlayable)
+                    os_log("  - Audio asset is playable: %{public}@", log: CanvasVideoRenderer.logger, type: .info, isPlayable ? "YES" : "NO")
+                    
+                    let audioTracks = try await audioAsset.loadTracks(withMediaType: .audio)
+                    os_log("  - Audio tracks found: %d", log: CanvasVideoRenderer.logger, type: .info, audioTracks.count)
+                    
+                    if let firstTrack = audioTracks.first {
+                        let trackDuration = try await firstTrack.load(.timeRange).duration
+                        os_log("  - Track duration: %.3f seconds", log: CanvasVideoRenderer.logger, type: .info, trackDuration.seconds)
+                    }
+                } catch {
+                    os_log("  - Error loading audio asset: %{public}@", log: CanvasVideoRenderer.logger, type: .error, error.localizedDescription)
+                }
+            }
+            
+            os_log("=== AUDIO EXPORT DEBUG END ===", log: CanvasVideoRenderer.logger, type: .info)
+            
+            // Use CanvasAudioRenderer to compose audio with video
+            let audioRenderer = CanvasAudioRenderer()
+            return try await audioRenderer.composeAudio(with: videoAsset, audioLayers: audioLayers, videoDuration: configuration.duration)
+        }
+        
+        // Return the video-only asset
+        return videoAsset
     }
     
     // MARK: - Helper Methods
@@ -514,7 +575,7 @@ class CanvasVideoRenderer: @unchecked Sendable {
             context.fillEllipse(in: rect)
             
         case .text:
-            // Handle text rendering with proper coordinate system handling (same as CanvasRenderer)
+            // Handle text rendering with proper coordinate system handling (same as CanvasImageRenderer)
             let fontSize = element.fontSize
             
             // Create paragraph style based on text alignment
@@ -592,7 +653,7 @@ class CanvasVideoRenderer: @unchecked Sendable {
             context.restoreGState() // Restore to globally Y-flipped state
             
         case .image:
-            // Handle image elements with proper coordinate system handling (same as CanvasRenderer)
+            // Handle image elements with proper coordinate system handling (same as CanvasImageRenderer)
             if let assetURL = element.assetURL, assetURL.isFileURL {
                 // Use NSImage for consistent image loading and handling
                 if let image = NSImage(contentsOfFile: assetURL.path) {
@@ -636,46 +697,12 @@ class CanvasVideoRenderer: @unchecked Sendable {
             }
             
         case .video:
-            // Handle video elements with proper coordinate system handling (same as CanvasRenderer)
-            if let assetURL = element.assetURL, assetURL.isFileURL {
-                let asset = AVAsset(url: assetURL)
-                let imageGenerator = AVAssetImageGenerator(asset: asset)
-                imageGenerator.appliesPreferredTrackTransform = true
-                imageGenerator.requestedTimeToleranceBefore = .zero
-                imageGenerator.requestedTimeToleranceAfter = .zero
-                
-                // Calculate video time based on current export time and element's video start time
-                // This ensures videos play correctly during export
-                let videoTime = max(0, currentTime - element.videoStartTime)
-                let cmTime = CMTime(seconds: videoTime, preferredTimescale: 600)
-                
-                do {
-                    let cgImage = try imageGenerator.copyCGImage(at: cmTime, actualTime: nil)
-                    
-                    // Draw the video frame with proper coordinate system handling
-                    let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
-                    NSGraphicsContext.saveGraphicsState()
-                    NSGraphicsContext.current = nsContext
-                    
-                    context.saveGState()
-                    context.translateBy(x: rect.origin.x, y: rect.origin.y + rect.size.height)
-                    context.scaleBy(x: 1, y: -1)
-                    
-                    let localImageDrawRect = CGRect(origin: .zero, size: rect.size)
-                    context.draw(cgImage, in: localImageDrawRect)
-                    
-                    NSGraphicsContext.restoreGraphicsState()
-                    context.restoreGState()
-                } catch {
-                    // Fallback placeholder for videos
-                    context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
-                    context.fill(rect)
-                }
-            } else {
-                // Fallback placeholder for videos
-                context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
-                context.fill(rect)
-            }
+            VideoFrameExtractor.extractAndDrawVideoFrame(
+                element: element,
+                currentTime: currentTime,
+                rect: rect,
+                context: context
+            )
         }
         
         // Restore the context state

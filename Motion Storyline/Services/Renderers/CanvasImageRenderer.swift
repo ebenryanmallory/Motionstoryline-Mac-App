@@ -5,7 +5,7 @@ import SwiftUI
 import AVFoundation
 
 // Service for rendering canvas elements to a CGImage
-class CanvasRenderer {
+class CanvasImageRenderer {
     /// Renders the given canvas elements to a CGImage at the specified size and scale factor.
     /// - Parameters:
     ///   - elements: The array of CanvasElement to render.
@@ -51,10 +51,10 @@ class CanvasRenderer {
         let xOffset = (CGFloat(width) - size.width * scaleFactor) / 2
         let yOffset = (CGFloat(height) - size.height * scaleFactor) / 2
         
-        print("[CanvasRenderer] Rendering \(elements.count) elements to \(width)x\(height) canvas")
+        print("[CanvasImageRenderer] Rendering \(elements.count) elements to \(width)x\(height) canvas")
         for (idx, element) in elements.enumerated() {
             // Log only essential element information, focusing on color
-            print("[CanvasRenderer] Element #\(idx): type=\(element.type), color=\(element.color)")
+            print("[CanvasImageRenderer] Element #\(idx): type=\(element.type), color=\(element.color)")
             
             let scaledSize = CGSize(
                 width: element.size.width * scaleFactor,
@@ -97,8 +97,8 @@ class CanvasRenderer {
                 context.saveGState()
                 
                 // Log text element details for debugging
-                print("[CanvasRenderer] Text element content: '\(element.text)'")
-                print("[CanvasRenderer] Text element rect: \(rect)")
+                print("[CanvasImageRenderer] Text element content: '\(element.text)'")
+                print("[CanvasImageRenderer] Text element rect: \(rect)")
                 
                 let textColor = convertSwiftUIColorToCGColor(element.color)
                 
@@ -180,7 +180,7 @@ class CanvasRenderer {
                 context.restoreGState() // Restore to globally Y-flipped state
 
                 // Debug: output the final text rendering position (original textRect)
-                print("[CanvasRenderer] Text intended at (top-left of bounding box): \(textRect)")
+                print("[CanvasImageRenderer] Text intended at (top-left of bounding box): \(textRect)")
             case .image:
                 if let assetURL = element.assetURL, assetURL.isFileURL {
                     // Ensure the URL is a file URL before trying to create NSImage from path
@@ -218,59 +218,28 @@ class CanvasRenderer {
                         NSGraphicsContext.restoreGraphicsState() // Restore NSGraphicsContext state
                         context.restoreGState() // Restore CGContext to globally flipped, rotated CTM
 
-                        print("[CanvasRenderer] Drew image from: \(assetURL.path) intended for canvas rect: \(rect)")
+                        print("[CanvasImageRenderer] Drew image from: \(assetURL.path) intended for canvas rect: \(rect)")
                     } else {
-                        print("[CanvasRenderer] Failed to load image from: \(assetURL.path)")
+                        print("[CanvasImageRenderer] Failed to load image from: \(assetURL.path)")
                         // Optionally draw a placeholder if image loading fails
                     }
                 } else {
-                    print("[CanvasRenderer] Image element has no valid file assetURL: \(String(describing: element.assetURL))")
+                    print("[CanvasImageRenderer] Image element has no valid file assetURL: \(String(describing: element.assetURL))")
                 }
                 break
             case .video:
+                VideoFrameExtractor.extractAndDrawVideoFrame(
+                    element: element,
+                    currentTime: currentTime,
+                    rect: rect,
+                    context: context
+                )
+                
                 if let assetURL = element.assetURL, assetURL.isFileURL {
-                    // For video elements, we need to extract a frame at the current time
-                    let asset = AVAsset(url: assetURL)
-                    let imageGenerator = AVAssetImageGenerator(asset: asset)
-                    imageGenerator.appliesPreferredTrackTransform = true
-                    imageGenerator.requestedTimeToleranceBefore = .zero
-                    imageGenerator.requestedTimeToleranceAfter = .zero
-                    
-                    // Calculate video time based on current timeline time and element's video start time
-                    // This ensures videos play correctly during timeline playback and export
                     let videoTime = max(0, currentTime - element.videoStartTime)
-                    let cmTime = CMTime(seconds: videoTime, preferredTimescale: 600)
-                    
-                    do {
-                        let cgImage = try imageGenerator.copyCGImage(at: cmTime, actualTime: nil)
-                        
-                        // Draw the video frame similar to how images are handled
-                        let nsContext = NSGraphicsContext(cgContext: context, flipped: false)
-                        NSGraphicsContext.saveGraphicsState()
-                        NSGraphicsContext.current = nsContext
-                        
-                        context.saveGState()
-                        context.translateBy(x: rect.origin.x, y: rect.origin.y + rect.size.height)
-                        context.scaleBy(x: 1, y: -1)
-                        
-                        let localImageDrawRect = CGRect(origin: .zero, size: rect.size)
-                        context.draw(cgImage, in: localImageDrawRect)
-                        
-                        NSGraphicsContext.restoreGraphicsState()
-                        context.restoreGState()
-                        
-                        print("[CanvasRenderer] Drew video frame from: \(assetURL.path) at video time: \(videoTime) (timeline: \(currentTime), start: \(element.videoStartTime))")
-                    } catch {
-                        print("[CanvasRenderer] Failed to extract video frame: \(error)")
-                        // Draw placeholder if frame extraction fails
-                        context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
-                        context.fill(rect)
-                    }
+                    print("[CanvasImageRenderer] Drew video frame from: \(assetURL.path) at video time: \(videoTime) (timeline: \(currentTime), start: \(element.videoStartTime))")
                 } else {
-                    print("[CanvasRenderer] Video element has no valid file assetURL: \(String(describing: element.assetURL))")
-                    // Draw placeholder
-                    context.setFillColor(CGColor(gray: 0.8, alpha: 1.0))
-                    context.fill(rect)
+                    print("[CanvasImageRenderer] Video element has no valid file assetURL: \(String(describing: element.assetURL))")
                 }
                 break
             }
