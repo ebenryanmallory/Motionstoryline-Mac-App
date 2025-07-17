@@ -34,7 +34,8 @@ extension DesignCanvas {
             
             // Update project name in app state
             if success {
-                appState.currentProjectName = url.lastPathComponent
+                let rawName = url.lastPathComponent
+                appState.currentProjectName = appState.cleanProjectName(rawName)
                 showSaveSuccessNotification()
             }
         }

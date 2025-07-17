@@ -76,6 +76,11 @@ struct DesignCanvas: View {
     @State private var timelineHeight: CGFloat = 200 // Start with a reasonable default height for visibility
     @State private var showAnimationPreview: Bool = true // Control if animation preview is shown
     
+    // Animation property manager
+    private var animationPropertyManager: AnimationPropertyManager {
+        AnimationPropertyManager(animationController: animationController)
+    }
+    
     // Audio layer management
     @StateObject internal var audioLayerManager = AudioLayerManager()
     @State internal var audioLayers: [AudioLayer] = []
@@ -99,6 +104,12 @@ struct DesignCanvas: View {
     // Canvas dimensions - HD aspect ratio (16:9)
     @State internal var canvasWidth: CGFloat = 1280
     @State internal var canvasHeight: CGFloat = 720
+    
+    // CRITICAL: Store the original project URL for restoration during save operations
+    // This prevents filename mismatches that cause changes not to persist between sessions
+    // The URL is stored when a project is loaded and used to restore the correct projectURL
+    // when it gets cleared by DocumentManager configuration operations
+    @State private var originalProjectURL: URL?
     
     // Computed property for aspect ratio text
     private var aspectRatioText: String {
@@ -516,270 +527,66 @@ struct DesignCanvas: View {
     private var mainContentViewWithModifiers: some View {
         mainContentView
         .onAppear {
-            // Only initialize once to prevent duplicate setups
-            guard !hasInitializedProject else { return }
-            hasInitializedProject = true
-            
-            // Initialize canvas dimensions from preferences
-            canvasWidth = CGFloat(preferencesViewModel.canvasWidth)
-            canvasHeight = CGFloat(preferencesViewModel.canvasHeight)
-            
-            // Initialize grid settings from preferences
-            showGrid = preferencesViewModel.showGrid
-            gridSize = CGFloat(preferencesViewModel.gridSize)
-            // Only enable snap to grid if grid is visible
-            snapToGridEnabled = preferencesViewModel.showGrid && preferencesViewModel.snapToGrid
-            
-            // Setup key monitor for space bar panning
-            keyMonitorController.setupMonitor(
-                onSpaceDown: {
-                    // When space bar is pressed, change cursor and enable pan mode
-                    isSpaceBarPressed = true
-                    NSCursor.openHand.set()
-                },
-                onSpaceUp: {
-                    // When space bar is released, restore cursor and disable pan mode
-                    isSpaceBarPressed = false
-                    // Reset to default cursor based on current tool
-                    if selectedTool == .select {
-                        NSCursor.arrow.set()
-                    } else if selectedTool == .rectangle || selectedTool == .ellipse {
-                        NSCursor.crosshair.set()
-                    }
-                }
-            )
-            
-            // Setup canvas keyboard shortcuts
-            keyMonitorController.setupCanvasKeyboardShortcuts(
-                zoomIn: zoomIn,
-                zoomOut: zoomOut,
-                resetZoom: resetZoom,
-                saveProject: { 
-                    print("💾 Manual save triggered via keyboard shortcut")
-                    self.autoSaveProject() 
-                },
-                deleteSelectedElement: {
-                    if let elementId = selectedElementId {
-                        recordStateBeforeChange(actionName: "Delete Element")
-                        canvasElements.removeAll(where: { $0.id == elementId })
-                        selectedElementId = nil
-                        markDocumentAsChanged(actionName: "Delete Element")
-                    }
-                }
-            )
-            
-            // Check if we have a selected project and load it
-            if let selectedProject = appState.selectedProject {
-                print("🎯 Loading project from selection on appear: \(selectedProject.name)")
-                loadProjectFromSelection(selectedProject)
-            } else {
-                print("🆕 No selected project, setting up new project with default elements")
-                // Set up default elements and animations for a new project
-                canvasElements = createDefaultCanvasElements()
-                
-                // Setup initial animations only for new projects
-                animationController.setup(duration: 3.0)
-                setupInitialAnimations()
-                
-                // Set animation controller for audio layer manager
-                audioLayerManager.setAnimationController(animationController)
-                
-                // Set up audio layer change callback for document tracking
-                audioLayerManager.onAudioLayerChanged = { actionName in
-                    Task { @MainActor in
-                        self.markDocumentAsChanged(actionName: actionName)
-                    }
-                }
-                
-                // Configure DocumentManager with current state
-                configureDocumentManager()
-                
-                // Prepare new project for auto-saving
-                prepareNewProjectForAutoSave()
-            }
-            
-            // Register undo/redo actions with AppStateManager
-            appState.registerUndoRedoActions(
-                undo: performUndo,
-                redo: performRedo,
-                canUndoPublisher: undoRedoManager.$canUndo.eraseToAnyPublisher(),
-                canRedoPublisher: undoRedoManager.$canRedo.eraseToAnyPublisher(),
-                hasUnsavedChangesPublisher: documentManager.$hasUnsavedChanges.eraseToAnyPublisher(),
-                currentProjectURLPublisher: documentManager.$projectURL.eraseToAnyPublisher()
-            )
+            handleViewAppear()
         }
         .onChange(of: selectedElementId) { oldValue, newValue in
-            // Update selectedElement based on the selected ID
-            if let elementId = newValue {
-                selectedElement = canvasElements.first(where: { $0.id == elementId })
-            } else {
-                selectedElement = nil
-            }
+            handleSelectedElementIdChange(oldValue: oldValue, newValue: newValue)
         }
         .onChange(of: selectedElement) { oldValue, newValue in
-            // Skip if this is a programmatic change (e.g., during drag operations)
-            guard !isProgrammaticChange else { return }
-            
-            // Update the corresponding element in canvasElements when selectedElement is modified
-            print("🔍 Selected element changed: \(String(describing: newValue?.displayName))")
-            print("🔍 Timeline height: \(timelineHeight), Preview enabled: \(showAnimationPreview)")
-            
-            // Only update if the element actually changed and avoid circular updates
-            if let updatedElement = newValue,
-               let index = canvasElements.firstIndex(where: { $0.id == updatedElement.id }) {
-                
-                // Check if the element actually changed to avoid unnecessary updates
-                let currentElement = canvasElements[index]
-                let hasChanged = currentElement.position != updatedElement.position ||
-                                currentElement.size != updatedElement.size ||
-                                currentElement.rotation != updatedElement.rotation ||
-                                currentElement.opacity != updatedElement.opacity ||
-                                currentElement.color != updatedElement.color ||
-                                currentElement.text != updatedElement.text ||
-                                currentElement.textAlignment != updatedElement.textAlignment ||
-                                currentElement.fontSize != updatedElement.fontSize ||
-                                currentElement.displayName != updatedElement.displayName
-                
-                if hasChanged {
-                    // Record state before making changes
-                    recordStateBeforeChange(actionName: "Update Element Properties")
-                    
-                    // Update the element in the canvas elements array
-                    canvasElements[index] = updatedElement
-                    
-                    // Mark document as changed for property changes
-                    markDocumentAsChanged(actionName: "Update Element Properties")
-                }
-            }
+            handleSelectedElementChange(oldValue: oldValue, newValue: newValue)
+        }
+        .onChange(of: appState.selectedProject) { oldValue, newValue in
+            print("🔄 Selected project changed from \(oldValue?.name ?? "none") to \(newValue?.name ?? "none")")
+            loadCurrentProject()
         }
         .onDisappear {
-            // Cancel any pending auto-save timer
-            autoSaveTimer?.invalidate()
-            autoSaveTimer = nil
-            
-            // Teardown key monitor when view disappears
-            keyMonitorController.teardownMonitor()
-            
-            // Clear undo/redo actions from AppStateManager
-            appState.clearUndoRedoActions()
-            
-            // Auto-save if there are unsaved changes and we're not in the middle of a close operation
-            if documentManager.hasUnsavedChanges && !isClosing {
-                print("🔄 Auto-saving project on view disappear...")
-                autoSaveProject()
-            }
+            handleViewDisappear()
         }
-        .onChange(of: appState.scenePhase) { oldPhase, newPhase in
-            // Auto-save when app goes to background
-            if newPhase == .background && documentManager.hasUnsavedChanges {
-                print("🔄 App going to background, auto-saving project...")
-                autoSaveProject()
-            }
-        }
-        .onChange(of: preferencesViewModel.canvasWidth) { oldValue, newValue in
-            // Only update if this is a real change (not initialization)
-            if oldValue != newValue && hasInitializedProject {
-                canvasWidth = CGFloat(newValue)
-                markDocumentAsChanged(actionName: "Change Canvas Width")
-            }
-        }
-        .onChange(of: preferencesViewModel.canvasHeight) { oldValue, newValue in
-            // Only update if this is a real change (not initialization)
-            if oldValue != newValue && hasInitializedProject {
-                canvasHeight = CGFloat(newValue)
-                markDocumentAsChanged(actionName: "Change Canvas Height")
-            }
-        }
-        .onChange(of: preferencesViewModel.showGrid) { oldValue, newValue in
-            // Update grid visibility when preference changes
-            if oldValue != newValue && hasInitializedProject {
-                showGrid = newValue
-                // If grid is disabled, also disable snap to grid
-                if !newValue {
-                    snapToGridEnabled = false
-                } else {
-                    // If grid is enabled, restore snap to grid based on preference
-                    snapToGridEnabled = preferencesViewModel.snapToGrid
-                }
-                markDocumentAsChanged(actionName: "Change Grid Visibility")
-            }
-        }
-        .onChange(of: preferencesViewModel.gridSize) { oldValue, newValue in
-            // Update grid size when preference changes
-            if oldValue != newValue && hasInitializedProject {
-                gridSize = CGFloat(newValue)
-                markDocumentAsChanged(actionName: "Change Grid Size")
-            }
-        }
-        .onChange(of: preferencesViewModel.snapToGrid) { oldValue, newValue in
-            // Update snap to grid when preference changes (only if grid is visible)
-            if oldValue != newValue && hasInitializedProject && showGrid {
-                snapToGridEnabled = newValue
-                markDocumentAsChanged(actionName: "Change Snap to Grid")
-            }
-        }
-
-        // Add the ExportModal sheet here
-        .sheet(isPresented: $showingExportModal) {
-            if let asset = currentExportAsset {
-                ExportModal(
-                    asset: asset,
-                    canvasWidth: Int(canvasWidth),
-                    canvasHeight: Int(canvasHeight),
-                    project: appState.selectedProject,
-                    getAnimationController: { self.animationController },
-                    getCanvasElements: { self.canvasElements },
-                    getAudioLayers: { self.audioLayers },
-                    onDismiss: {
-                        showingExportModal = false
-                    }
-                )
-            }
-        }
-        // Add CameraRecordingView sheet for camera button
-        .sheet(isPresented: $showCameraView) {
-            CameraRecordingView(isPresented: $showCameraView)
-                .frame(width: 480, height: 360)
-        }
-        // Add MediaBrowserView sheet for media button
-        .sheet(isPresented: $showMediaBrowser) {
-            let projectBinding = Binding<Project>(
-                get: { appState.selectedProject ?? Project(name: "Untitled", thumbnail: "placeholder", lastModified: Date()) },
-                set: { appState.selectedProject = $0 }
-            )
-            MediaBrowserView(project: projectBinding, onAddElementToCanvas: { newElement in
+        .modifier(AppStateChangeModifier(
+            appState: appState,
+            documentManager: documentManager,
+            autoSaveProject: autoSaveProject
+        ))
+        .modifier(PreferencesChangeModifier(
+            preferencesViewModel: preferencesViewModel,
+            documentManager: documentManager,
+            hasInitializedProject: hasInitializedProject,
+            canvasWidth: $canvasWidth,
+            canvasHeight: $canvasHeight,
+            showGrid: $showGrid,
+            gridSize: $gridSize,
+            snapToGridEnabled: $snapToGridEnabled,
+            markDocumentAsChanged: markDocumentAsChanged
+        ))
+        .modifier(SheetModifier(
+            showingExportModal: $showingExportModal,
+            showCameraView: $showCameraView,
+            showMediaBrowser: $showMediaBrowser,
+            showAuthenticationView: $showAuthenticationView,
+            currentExportAsset: currentExportAsset,
+            canvasWidth: Int(canvasWidth),
+            canvasHeight: Int(canvasHeight),
+            appState: appState,
+            animationController: animationController,
+            canvasElements: canvasElements,
+            audioLayers: audioLayers,
+            authManager: authManager,
+            addElementToCanvas: { newElement in
                 canvasElements.append(newElement)
                 handleElementSelection(newElement)
                 markDocumentAsChanged(actionName: "Add Media Element")
-            }, onAddAudioToTimeline: { audioLayer in
+            },
+            addAudioToTimeline: { audioLayer in
                 addAudioLayerToTimeline(audioLayer)
                 markDocumentAsChanged(actionName: "Add Audio Layer")
-            }, onMediaAssetImported: {
+            },
+            onMediaAssetImported: {
                 markDocumentAsChanged(actionName: "Import Media Asset")
-            }, currentTimelineTime: animationController.currentTime)
-                .frame(width: 800, height: 600)
-        }
-        // Add AuthenticationView sheet for sign in
-        .sheet(isPresented: $showAuthenticationView) {
-            AuthenticationView()
-                .environmentObject(authManager)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
+            },
+            currentTimelineTime: animationController.currentTime
+        ))
         .overlay {
-            // Show export progress overlay when exporting
-            if isExporting {
-                // Export progress view placeholder
-                VStack {
-                    ProgressView(value: exportProgress)
-                        .padding()
-                    Text("Exporting... \(Int(exportProgress * 100))%")
-                }
-                .frame(width: 200)
-                .padding()
-                .background(Color(.windowBackgroundColor))
-                .cornerRadius(8)
-            }
+            exportProgressOverlay
         }
     }
     // MARK: - View Components
@@ -1245,20 +1052,17 @@ struct DesignCanvas: View {
         self.canvasWidth = projectData.canvasWidth
         self.canvasHeight = projectData.canvasHeight
         
-        // Sync canvas dimensions with preferences to ensure consistency
-        preferencesViewModel.canvasWidth = Double(projectData.canvasWidth)
-        preferencesViewModel.canvasHeight = Double(projectData.canvasHeight)
-        print("📐 Synced canvas dimensions with preferences: \(projectData.canvasWidth)x\(projectData.canvasHeight)")
+        // Set canvas dimensions in document model as single source of truth
+        documentManager.canvasWidth = Double(projectData.canvasWidth)
+        documentManager.canvasHeight = Double(projectData.canvasHeight)
         
         // Update grid settings to match loaded preferences
         showGrid = preferencesViewModel.showGrid
         gridSize = CGFloat(preferencesViewModel.gridSize)
-        print("🎨 Synced grid settings with preferences: showGrid=\(showGrid), gridSize=\(gridSize)")
         
         // Update the current project with loaded media assets
         if self.appState.selectedProject != nil {
             self.appState.selectedProject?.mediaAssets = projectData.mediaAssets
-            print("Loaded \(projectData.mediaAssets.count) media assets into project")
         }
         
         // Load and apply audio layers
@@ -1442,13 +1246,14 @@ struct DesignCanvas: View {
             }
         }
 
-        // Configure DocumentManager with the newly loaded state and URL
-        // Note: documentManager.projectURL is already set by loadProject(from:)
+        // Configure DocumentManager with the newly loaded state
+        // The projectURL is preserved during this configuration
         configureDocumentManager()
 
         // Update AppState
         if let projectURL = documentManager.projectURL {
-            appState.currentProjectName = projectURL.deletingPathExtension().lastPathComponent
+            let rawName = projectURL.deletingPathExtension().lastPathComponent
+            appState.currentProjectName = appState.cleanProjectName(rawName)
             print("Project name set to: \(appState.currentProjectName)")
         }
         appState.currentProjectURLToLoad = nil // Clear the request to load this URL
@@ -1486,8 +1291,28 @@ struct DesignCanvas: View {
     }
     
     internal func recordUndoState(actionName: String) {
+        // CRITICAL: Restore projectURL if it was cleared by previous operations
+        // This prevents save failures that cause changes not to persist between sessions
+        if documentManager.projectURL == nil {
+            if let originalURL = originalProjectURL {
+                // Use the original URL from when the project was loaded
+                documentManager.projectURL = originalURL
+            } else if let selectedProject = appState.selectedProject {
+                // Fallback: reconstruct URL from selectedProject (maintains original structure)
+                documentManager.projectURL = constructProjectURL(for: selectedProject)
+            }
+        }
+        
+        // Preserve the projectURL around DocumentManager configuration
+        let preservedProjectURL = documentManager.projectURL
+        
         // Ensure DocumentManager has the latest state before capturing
         configureDocumentManager()
+        
+        // Restore the projectURL if it was cleared during configuration
+        if documentManager.projectURL == nil && preservedProjectURL != nil {
+            documentManager.projectURL = preservedProjectURL
+        }
         
         // Use DocumentManager's method to get consistent state format
         guard let stateData = documentManager.getCurrentProjectStateData() else {
@@ -1522,9 +1347,29 @@ struct DesignCanvas: View {
             return 
         }
         
+        // CRITICAL: Restore projectURL if it was cleared by previous operations
+        // This prevents save failures that cause changes not to persist between sessions
+        if documentManager.projectURL == nil {
+            if let originalURL = originalProjectURL {
+                // Use the original URL from when the project was loaded
+                documentManager.projectURL = originalURL
+            } else if let selectedProject = appState.selectedProject {
+                // Fallback: reconstruct URL from selectedProject (maintains original structure)
+                documentManager.projectURL = constructProjectURL(for: selectedProject)
+            }
+        }
+        
+        // Preserve the projectURL around DocumentManager configuration
+        let preservedProjectURL = documentManager.projectURL
+        
         // Update the document manager with the current state FIRST
         // This ensures the DocumentManager always has the latest data for auto-save
         configureDocumentManager()
+        
+        // Restore the projectURL if it was cleared during configuration
+        if documentManager.projectURL == nil && preservedProjectURL != nil {
+            documentManager.projectURL = preservedProjectURL
+        }
         
         // Then mark the document as having unsaved changes
         documentManager.hasUnsavedChanges = true
@@ -1632,7 +1477,7 @@ struct DesignCanvas: View {
         }
         
         // Update inspector and animation data
-        updateAnimationPropertiesForSelectedElement(selectedElement)
+        animationPropertyManager.updateAnimationPropertiesForSelectedElement(selectedElement, canvasElements: $canvasElements)
         
         // Force UI update by triggering objectWillChange
         isProgrammaticChange = true
@@ -1643,194 +1488,67 @@ struct DesignCanvas: View {
     
     /// Adds an audio layer to the timeline and audio layer manager
     internal func addAudioLayerToTimeline(_ audioLayer: AudioLayer) {
-        print("🎵 Adding audio layer to timeline: \(audioLayer.name)")
+        // Use the enhanced AudioLayerManager method
+        audioLayerManager.addAudioLayerToTimeline(
+            audioLayer,
+            project: &appState.selectedProject,
+            markChanged: { actionName in
+                self.markDocumentAsChanged(actionName: actionName)
+            }
+        )
         
-        // Check for duplicate audio at same start time (within 0.1 seconds)
-        let hasDuplicate = audioLayers.contains { existingLayer in
-            existingLayer.assetURL == audioLayer.assetURL && 
-            abs(existingLayer.startTime - audioLayer.startTime) < 0.1
-        }
-        
-        if hasDuplicate {
-            print("⚠️ Audio layer already exists at this timeline position. Skipping duplicate.")
-            return
-        }
-        
-        // Add to our audio layers array
-        audioLayers.append(audioLayer)
-        
-        // Add to the audio layer manager for playback
-        audioLayerManager.addAudioLayer(audioLayer)
-        
-        // Add to the Project model for persistence
-        appState.selectedProject?.addAudioLayer(audioLayer)
-        
-        print("✅ Audio layer added successfully. Total audio layers: \(audioLayers.count)")
-        
-        // Mark document as changed to ensure DocumentManager is updated with latest audio layers
-        markDocumentAsChanged(actionName: "Add Audio Layer")
+        // Update local audioLayers array to stay in sync
+        audioLayers = audioLayerManager.audioLayers
     }
     
     /// Removes an audio layer from the timeline
     internal func removeAudioLayer(_ audioLayer: AudioLayer) {
-        print("🗑️ Removing audio layer: \(audioLayer.name)")
+        // Use the enhanced AudioLayerManager method
+        audioLayerManager.removeAudioLayerFromTimeline(
+            audioLayer,
+            project: &appState.selectedProject,
+            markChanged: { actionName in
+                self.markDocumentAsChanged(actionName: actionName)
+            }
+        )
         
-        // Remove from audio layers array
-        audioLayers.removeAll { $0.id == audioLayer.id }
-        
-        // Remove from audio layer manager
-        audioLayerManager.removeAudioLayer(withId: audioLayer.id)
-        
-        // Remove from Project model for persistence
-        appState.selectedProject?.removeAudioLayer(withId: audioLayer.id)
-        
-        print("✅ Audio layer removed. Remaining audio layers: \(audioLayers.count)")
-        
-        // Mark document as changed to ensure DocumentManager is updated with latest audio layers
-        markDocumentAsChanged(actionName: "Remove Audio Layer")
+        // Update local audioLayers array to stay in sync
+        audioLayers = audioLayerManager.audioLayers
     }
     
-    // MARK: - Animation Property Management
+    // MARK: - Element Deletion Management
     
-    /// Updates the animation properties when an element is selected
-    func updateAnimationPropertiesForSelectedElement(_ element: CanvasElement?) {
-        guard let element = element else { return }
+    /// Centralized function to delete an element and clean up all associated animation tracks
+    /// This function should be called from all element deletion entry points
+    /// - Parameters:
+    ///   - elementId: The ID of the element to delete
+    ///   - actionName: The name of the action for undo/redo tracking
+    internal func deleteElementAndCleanupTracks(elementId: UUID, actionName: String) {
+        // Record state before deletion for undo/redo
+        recordStateBeforeChange(actionName: actionName)
         
-        print("Updating animation properties for: \(element.displayName)")
+        // Remove element from canvas
+        canvasElements.removeAll { $0.id == elementId }
         
-        // Create a unique ID prefix for this element's properties
-        let idPrefix = element.id.uuidString
+        // Clean up all animation tracks associated with this element
+        cleanupAnimationTracksForElement(elementId: elementId)
         
-        // Capture self strongly for use in closures
-        let canvas = self
-        
-        // Position track
-        let positionTrackId = "\(idPrefix)_position"
-        if canvas.animationController.getTrack(id: positionTrackId) as? KeyframeTrack<CGPoint> == nil {
-            let track = canvas.animationController.addTrack(id: positionTrackId) { [canvas] (newPosition: CGPoint) in
-                if let index = canvas.canvasElements.firstIndex(where: { $0.id == element.id }) {
-                    canvas.canvasElements[index].position = newPosition
-                }
-            }
-            // Add initial keyframe at time 0 with current element position
-            track.add(keyframe: Keyframe(time: 0.0, value: element.position))
-        } else if let track = canvas.animationController.getTrack(id: positionTrackId) as? KeyframeTrack<CGPoint> {
-            // Update the initial keyframe with current element position if it exists
-            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
-                track.removeKeyframe(at: 0.0)
-                track.add(keyframe: Keyframe(time: 0.0, value: element.position, easingFunction: existingKeyframe.easingFunction))
-            } else {
-                track.add(keyframe: Keyframe(time: 0.0, value: element.position))
-            }
+        // Clear selection if this element was selected
+        if selectedElementId == elementId {
+            selectedElementId = nil
         }
         
-        // Size track (using width as the animatable property for simplicity)
-        let sizeTrackId = "\(idPrefix)_size"
-        if canvas.animationController.getTrack(id: sizeTrackId) as? KeyframeTrack<CGSize> == nil {
-            let track = canvas.animationController.addTrack(id: sizeTrackId) { [canvas] (newSize: CGSize) in
-                if let index = canvas.canvasElements.firstIndex(where: { $0.id == element.id }) {
-                    // If aspect ratio is locked, maintain it
-                    if canvas.canvasElements[index].isAspectRatioLocked {
-                        let ratio = canvas.canvasElements[index].size.height / canvas.canvasElements[index].size.width
-                        canvas.canvasElements[index].size = CGSize(width: newSize.width, height: newSize.width * ratio)
-                    } else {
-                        canvas.canvasElements[index].size = newSize
-                    }
-                }
-            }
-            // Add initial keyframe at time 0 with current element size
-            track.add(keyframe: Keyframe(time: 0.0, value: element.size))
-        } else if let track = canvas.animationController.getTrack(id: sizeTrackId) as? KeyframeTrack<CGSize> {
-            // Update the initial keyframe with current element size if it exists
-            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
-                track.removeKeyframe(at: 0.0)
-                track.add(keyframe: Keyframe(time: 0.0, value: element.size, easingFunction: existingKeyframe.easingFunction))
-            } else {
-                track.add(keyframe: Keyframe(time: 0.0, value: element.size))
-            }
-        }
+        // Mark document as changed
+        markDocumentAsChanged(actionName: actionName)
         
-        // Rotation track
-        let rotationTrackId = "\(idPrefix)_rotation"
-        if canvas.animationController.getTrack(id: rotationTrackId) as? KeyframeTrack<Double> == nil {
-            let track = canvas.animationController.addTrack(id: rotationTrackId) { [canvas] (newRotation: Double) in
-                if let index = canvas.canvasElements.firstIndex(where: { $0.id == element.id }) {
-                    canvas.canvasElements[index].rotation = newRotation
-                }
-            }
-            // Add initial keyframe at time 0 with current element rotation
-            track.add(keyframe: Keyframe(time: 0.0, value: element.rotation))
-        } else if let track = canvas.animationController.getTrack(id: rotationTrackId) as? KeyframeTrack<Double> {
-            // Update the initial keyframe with current element rotation if it exists
-            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
-                track.removeKeyframe(at: 0.0)
-                track.add(keyframe: Keyframe(time: 0.0, value: element.rotation, easingFunction: existingKeyframe.easingFunction))
-            } else {
-                track.add(keyframe: Keyframe(time: 0.0, value: element.rotation))
-            }
-        }
-        
-        // Color track
-        let colorTrackId = "\(idPrefix)_color"
-        if canvas.animationController.getTrack(id: colorTrackId) as? KeyframeTrack<Color> == nil {
-            let track = canvas.animationController.addTrack(id: colorTrackId) { [canvas] (newColor: Color) in
-                if let index = canvas.canvasElements.firstIndex(where: { $0.id == element.id }) {
-                    canvas.canvasElements[index].color = newColor
-                }
-            }
-            // Add initial keyframe at time 0 with current element color
-            track.add(keyframe: Keyframe(time: 0.0, value: element.color))
-        } else if let track = canvas.animationController.getTrack(id: colorTrackId) as? KeyframeTrack<Color> {
-            // Update the initial keyframe with current element color if it exists
-            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
-                track.removeKeyframe(at: 0.0)
-                track.add(keyframe: Keyframe(time: 0.0, value: element.color, easingFunction: existingKeyframe.easingFunction))
-            } else {
-                track.add(keyframe: Keyframe(time: 0.0, value: element.color))
-            }
-        }
-        
-        // Opacity track
-        let opacityTrackId = "\(idPrefix)_opacity"
-        if canvas.animationController.getTrack(id: opacityTrackId) as? KeyframeTrack<Double> == nil {
-            let track = canvas.animationController.addTrack(id: opacityTrackId) { [canvas] (newOpacity: Double) in
-                if let index = canvas.canvasElements.firstIndex(where: { $0.id == element.id }) {
-                    canvas.canvasElements[index].opacity = newOpacity
-                }
-            }
-            // Add initial keyframe at time 0 with current element opacity
-            track.add(keyframe: Keyframe(time: 0.0, value: element.opacity))
-        } else if let track = canvas.animationController.getTrack(id: opacityTrackId) as? KeyframeTrack<Double> {
-            // Update the initial keyframe with current element opacity if it exists
-            if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
-                track.removeKeyframe(at: 0.0)
-                track.add(keyframe: Keyframe(time: 0.0, value: element.opacity, easingFunction: existingKeyframe.easingFunction))
-            } else {
-                track.add(keyframe: Keyframe(time: 0.0, value: element.opacity))
-            }
-        }
-        
-        // Font size track (only for text elements)
-        if element.type == .text {
-            let fontSizeTrackId = "\(idPrefix)_fontSize"
-            if canvas.animationController.getTrack(id: fontSizeTrackId) as? KeyframeTrack<CGFloat> == nil {
-                let track = canvas.animationController.addTrack(id: fontSizeTrackId) { [canvas] (newFontSize: CGFloat) in
-                    if let index = canvas.canvasElements.firstIndex(where: { $0.id == element.id }) {
-                        canvas.canvasElements[index].fontSize = max(8, min(200, newFontSize)) // Constrain between 8pt and 200pt
-                    }
-                }
-                // Add initial keyframe at time 0 with current element font size
-                track.add(keyframe: Keyframe(time: 0.0, value: element.fontSize))
-            } else if let track = canvas.animationController.getTrack(id: fontSizeTrackId) as? KeyframeTrack<CGFloat> {
-                // Update the initial keyframe with current element font size if it exists
-                if let existingKeyframe = track.allKeyframes.first(where: { $0.time == 0.0 }) {
-                    track.removeKeyframe(at: 0.0)
-                    track.add(keyframe: Keyframe(time: 0.0, value: element.fontSize, easingFunction: existingKeyframe.easingFunction))
-                } else {
-                    track.add(keyframe: Keyframe(time: 0.0, value: element.fontSize))
-                }
-            }
-        }
+        print("🗑️ Element deleted and \(actionName) completed. Animation tracks cleaned up for element: \(elementId)")
+    }
+    
+    /// Removes all animation tracks associated with a specific element
+    /// - Parameter elementId: The ID of the element whose tracks should be removed
+    private func cleanupAnimationTracksForElement(elementId: UUID) {
+        // Use the AnimationController's built-in cleanup method
+        animationController.removeTracksForElement(elementId: elementId)
     }
 }
 
@@ -2059,16 +1777,22 @@ extension DesignCanvas {
                 
                 print("✅ Successfully loaded project with \(loadedTuple.elements.count) elements")
                 
-                        // Apply the loaded project data
-        applyProjectData(projectData: projectDataInstance)
-        
-        // The DocumentManager.loadProject() should have set projectURL correctly
-        // No additional setup needed since we use a single URL
-        
-        // Update project name in AppState
-        appState.selectedProject?.name = loadedTuple.projectName
-        
-        print("🎯 Project '\(project.name)' loaded successfully from file")
+                // CRITICAL: Store the original project URL for restoration during save operations
+                // This prevents filename mismatches that cause changes not to persist between sessions
+                originalProjectURL = projectURL
+                
+                // CRITICAL: Set DocumentManager projectURL before applying data
+                // This ensures auto-save operations use the correct project file
+                documentManager.projectURL = projectURL
+                
+                // Apply the loaded project data
+                applyProjectData(projectData: projectDataInstance)
+                
+                // IMPORTANT: Do NOT modify appState.selectedProject?.name here!
+                // The selectedProject must maintain its original structure for URL reconstruction.
+                // Display names are handled separately in the TopBar using cleanProjectName().
+                
+                print("🎯 Project '\(project.name)' loaded successfully from file")
                 
             } catch {
                 print("❌ Error loading project file: \(error.localizedDescription)")
@@ -2124,9 +1848,9 @@ extension DesignCanvas {
         // Set default elements for new projects
         canvasElements = createDefaultCanvasElements()
         
-        // Reset canvas properties using preferences
-        canvasWidth = CGFloat(preferencesViewModel.canvasWidth)
-        canvasHeight = CGFloat(preferencesViewModel.canvasHeight)
+        // Reset canvas properties using document manager
+        canvasWidth = CGFloat(documentManager.canvasWidth)
+        canvasHeight = CGFloat(documentManager.canvasHeight)
         zoom = 1.0
         viewportOffset = .zero
         selectedElementId = nil
@@ -2139,8 +1863,9 @@ extension DesignCanvas {
         // Set up initial animations for default elements
         setupInitialAnimations()
         
-        // Clear document manager state
-        documentManager.projectURL = nil
+        // Set up document manager with the correct project URL for this new project
+        let projectURL = constructProjectURL(for: project)
+        documentManager.projectURL = projectURL
         documentManager.hasUnsavedChanges = false
         
         // Configure DocumentManager with the new state
@@ -2183,4 +1908,286 @@ private func elementAccessibilityValue(for element: CanvasElement) -> String {
     }
     
     return valueComponents.joined(separator: ", ")
+}
+
+// MARK: - Extracted Methods for View Modifiers
+
+extension DesignCanvas {
+    private func handleViewAppear() {
+        // Perform one-time initialization
+        if !hasInitializedProject {
+            hasInitializedProject = true
+            
+            canvasWidth = CGFloat(documentManager.canvasWidth)
+            canvasHeight = CGFloat(documentManager.canvasHeight)
+            
+            showGrid = preferencesViewModel.showGrid
+            gridSize = CGFloat(preferencesViewModel.gridSize)
+            snapToGridEnabled = preferencesViewModel.showGrid && preferencesViewModel.snapToGrid
+            
+            keyMonitorController.setupMonitor(
+                onSpaceDown: {
+                    isSpaceBarPressed = true
+                    NSCursor.openHand.set()
+                },
+                onSpaceUp: {
+                    isSpaceBarPressed = false
+                    if selectedTool == .select {
+                        NSCursor.arrow.set()
+                    } else if selectedTool == .rectangle || selectedTool == .ellipse {
+                        NSCursor.crosshair.set()
+                    }
+                }
+            )
+            
+            keyMonitorController.setupCanvasKeyboardShortcuts(
+                zoomIn: zoomIn,
+                zoomOut: zoomOut,
+                resetZoom: resetZoom,
+                saveProject: { 
+                    print("💾 Manual save triggered via keyboard shortcut")
+                    self.autoSaveProject() 
+                },
+                deleteSelectedElement: {
+                    if let elementId = selectedElementId {
+                        deleteElementAndCleanupTracks(elementId: elementId, actionName: "Delete Element")
+                    }
+                }
+            )
+            
+            appState.registerUndoRedoActions(
+                undo: performUndo,
+                redo: performRedo,
+                canUndoPublisher: undoRedoManager.$canUndo.eraseToAnyPublisher(),
+                canRedoPublisher: undoRedoManager.$canRedo.eraseToAnyPublisher(),
+                hasUnsavedChangesPublisher: documentManager.$hasUnsavedChanges.eraseToAnyPublisher(),
+                currentProjectURLPublisher: documentManager.$projectURL.eraseToAnyPublisher()
+            )
+        }
+        
+        // Load project data every time we appear (this was the fix for the bug)
+        loadCurrentProject()
+    }
+    
+    private func loadCurrentProject() {
+        if let selectedProject = appState.selectedProject {
+            print("🎯 Loading project from selection: \(selectedProject.name)")
+            loadProjectFromSelection(selectedProject)
+        } else {
+            print("🆕 No selected project, setting up new project with default elements")
+            canvasElements = createDefaultCanvasElements()
+            
+            animationController.setup(duration: 3.0)
+            setupInitialAnimations()
+            
+            audioLayerManager.setAnimationController(animationController)
+            
+            audioLayerManager.onAudioLayerChanged = { actionName in
+                Task { @MainActor in
+                    self.markDocumentAsChanged(actionName: actionName)
+                }
+            }
+            
+            configureDocumentManager()
+            // Note: prepareNewProjectForAutoSave() removed here because there's no selectedProject
+            // The project URL will be set when a project is actually selected or created
+        }
+    }
+    
+    private func handleViewDisappear() {
+        autoSaveTimer?.invalidate()
+        autoSaveTimer = nil
+        
+        keyMonitorController.teardownMonitor()
+        appState.clearUndoRedoActions()
+        
+        if documentManager.hasUnsavedChanges && !isClosing {
+            print("🔄 Auto-saving project on view disappear...")
+            autoSaveProject()
+        }
+    }
+    
+    private func handleSelectedElementIdChange(oldValue: UUID?, newValue: UUID?) {
+        if let elementId = newValue {
+            selectedElement = canvasElements.first(where: { $0.id == elementId })
+        } else {
+            selectedElement = nil
+        }
+    }
+    
+    private func handleSelectedElementChange(oldValue: CanvasElement?, newValue: CanvasElement?) {
+        guard !isProgrammaticChange else { return }
+        
+        print("🔍 Selected element changed: \(String(describing: newValue?.displayName))")
+        print("🔍 Timeline height: \(timelineHeight), Preview enabled: \(showAnimationPreview)")
+        
+        if let updatedElement = newValue,
+           let index = canvasElements.firstIndex(where: { $0.id == updatedElement.id }) {
+            
+            let currentElement = canvasElements[index]
+            let hasChanged = currentElement.position != updatedElement.position ||
+                            currentElement.size != updatedElement.size ||
+                            currentElement.rotation != updatedElement.rotation ||
+                            currentElement.opacity != updatedElement.opacity ||
+                            currentElement.color != updatedElement.color ||
+                            currentElement.text != updatedElement.text ||
+                            currentElement.textAlignment != updatedElement.textAlignment ||
+                            currentElement.fontSize != updatedElement.fontSize ||
+                            currentElement.displayName != updatedElement.displayName
+            
+            if hasChanged {
+                recordStateBeforeChange(actionName: "Update Element Properties")
+                canvasElements[index] = updatedElement
+                markDocumentAsChanged(actionName: "Update Element Properties")
+            }
+        }
+    }
+    
+    private var exportProgressOverlay: some View {
+        Group {
+            if isExporting {
+                VStack {
+                    ProgressView(value: exportProgress)
+                        .padding()
+                    Text("Exporting... \(Int(exportProgress * 100))%")
+                }
+                .frame(width: 200)
+                .padding()
+                .background(Color(.windowBackgroundColor))
+                .cornerRadius(8)
+            }
+        }
+    }
+}
+
+// MARK: - View Modifiers
+
+struct AppStateChangeModifier: ViewModifier {
+    let appState: AppStateManager
+    let documentManager: DocumentManager
+    let autoSaveProject: () -> Void
+    
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: appState.scenePhase) { oldPhase, newPhase in
+                if newPhase == .background && documentManager.hasUnsavedChanges {
+                    print("🔄 App going to background, auto-saving project...")
+                    autoSaveProject()
+                }
+            }
+    }
+}
+
+struct PreferencesChangeModifier: ViewModifier {
+    let preferencesViewModel: PreferencesViewModel
+    let documentManager: DocumentManager
+    let hasInitializedProject: Bool
+    @Binding var canvasWidth: CGFloat
+    @Binding var canvasHeight: CGFloat
+    @Binding var showGrid: Bool
+    @Binding var gridSize: CGFloat
+    @Binding var snapToGridEnabled: Bool
+    let markDocumentAsChanged: (String) -> Void
+    
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: documentManager.canvasWidth) { oldValue, newValue in
+                if oldValue != newValue && hasInitializedProject {
+                    canvasWidth = CGFloat(newValue)
+                    markDocumentAsChanged("Change Canvas Width")
+                }
+            }
+            .onChange(of: documentManager.canvasHeight) { oldValue, newValue in
+                if oldValue != newValue && hasInitializedProject {
+                    canvasHeight = CGFloat(newValue)
+                    markDocumentAsChanged("Change Canvas Height")
+                }
+            }
+            .onChange(of: preferencesViewModel.showGrid) { oldValue, newValue in
+                if oldValue != newValue && hasInitializedProject {
+                    showGrid = newValue
+                    if !newValue {
+                        snapToGridEnabled = false
+                    } else {
+                        snapToGridEnabled = preferencesViewModel.snapToGrid
+                    }
+                    markDocumentAsChanged("Change Grid Visibility")
+                }
+            }
+            .onChange(of: preferencesViewModel.gridSize) { oldValue, newValue in
+                if oldValue != newValue && hasInitializedProject {
+                    gridSize = CGFloat(newValue)
+                    markDocumentAsChanged("Change Grid Size")
+                }
+            }
+            .onChange(of: preferencesViewModel.snapToGrid) { oldValue, newValue in
+                if oldValue != newValue && hasInitializedProject && showGrid {
+                    snapToGridEnabled = newValue
+                    markDocumentAsChanged("Change Snap to Grid")
+                }
+            }
+    }
+}
+
+struct SheetModifier: ViewModifier {
+    @Binding var showingExportModal: Bool
+    @Binding var showCameraView: Bool
+    @Binding var showMediaBrowser: Bool
+    @Binding var showAuthenticationView: Bool
+    let currentExportAsset: AVAsset?
+    let canvasWidth: Int
+    let canvasHeight: Int
+    let appState: AppStateManager
+    let animationController: AnimationController
+    let canvasElements: [CanvasElement]
+    let audioLayers: [AudioLayer]
+    let authManager: AuthenticationManager
+    let addElementToCanvas: (CanvasElement) -> Void
+    let addAudioToTimeline: (AudioLayer) -> Void
+    let onMediaAssetImported: () -> Void
+    let currentTimelineTime: TimeInterval
+    
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: $showingExportModal) {
+                if let asset = currentExportAsset {
+                    ExportModal(
+                        asset: asset,
+                        canvasWidth: canvasWidth,
+                        canvasHeight: canvasHeight,
+                        project: appState.selectedProject,
+                        getAnimationController: { animationController },
+                        getCanvasElements: { canvasElements },
+                        getAudioLayers: { audioLayers },
+                        onDismiss: {
+                            showingExportModal = false
+                        }
+                    )
+                }
+            }
+            .sheet(isPresented: $showCameraView) {
+                CameraRecordingView(isPresented: $showCameraView)
+                    .frame(width: 480, height: 360)
+            }
+            .sheet(isPresented: $showMediaBrowser) {
+                let projectBinding = Binding<Project>(
+                    get: { appState.selectedProject ?? Project(name: "Untitled", thumbnail: "placeholder", lastModified: Date()) },
+                    set: { appState.selectedProject = $0 }
+                )
+                MediaBrowserView(
+                    project: projectBinding,
+                    onAddElementToCanvas: addElementToCanvas,
+                    onAddAudioToTimeline: addAudioToTimeline,
+                    onMediaAssetImported: onMediaAssetImported,
+                    currentTimelineTime: currentTimelineTime
+                )
+                .frame(width: 800, height: 600)
+            }
+            .sheet(isPresented: $showAuthenticationView) {
+                AuthenticationView()
+                    .environmentObject(authManager)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+    }
 }

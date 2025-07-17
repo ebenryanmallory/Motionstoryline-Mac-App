@@ -601,10 +601,18 @@ extension String {
             cleanName = String(cleanName.dropLast(7))
         }
         
-        // Remove UUID patterns (like " 1234-5678-9abc-def0")
-        // This regex matches patterns like " " + UUID format
-        let uuidPattern = "\\s+[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
-        cleanName = cleanName.replacingOccurrences(of: uuidPattern, with: "", options: .regularExpression)
+        // Remove UUID patterns - handle multiple formats:
+        // Pattern 1: " 1234-5678-9abc-def0" (space + UUID)
+        let spaceUuidPattern = "\\s+[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        cleanName = cleanName.replacingOccurrences(of: spaceUuidPattern, with: "", options: .regularExpression)
+        
+        // Pattern 2: "_1234-5678-9abc-def0" (underscore + UUID)
+        let underscoreUuidPattern = "_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        cleanName = cleanName.replacingOccurrences(of: underscoreUuidPattern, with: "", options: .regularExpression)
+        
+        // Pattern 3: Any UUID at the end with various separators
+        let generalUuidPattern = "[\\s_-]+[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+        cleanName = cleanName.replacingOccurrences(of: generalUuidPattern, with: "", options: .regularExpression)
         
         // Remove numeric suffixes like " 1", " 2", etc. that are added for uniqueness
         let numberPattern = "\\s+\\d+$"

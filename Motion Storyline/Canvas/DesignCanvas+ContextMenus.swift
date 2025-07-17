@@ -79,13 +79,21 @@ extension DesignCanvas {
                 Divider()
                 
                 Button(action: { [self] in
-                    // Clear canvas (remove all elements)
+                    // Clear canvas (remove all elements and animation tracks)
                     self.recordStateBeforeChange(actionName: "Clear Canvas")
                     
-                    // Show confirmation dialog (in a real app)
+                    // Clear all elements
                     self.canvasElements.removeAll()
+                    
+                    // Clear all animation tracks since no elements remain
+                    self.animationController.clearAllTracks()
+                    
+                    // Clear selection
                     self.selectedElementId = nil
+                    
                     self.markDocumentAsChanged(actionName: "Clear Canvas")
+                    
+                    print("🧹 Canvas cleared. All elements and animation tracks removed.")
                 }) {
                     Label("Clear Canvas", systemImage: "xmark.square")
                 }
@@ -232,12 +240,8 @@ extension DesignCanvas {
             }
             
             Button(action: { [self] in
-                // Delete the element
-                self.recordStateBeforeChange(actionName: "Delete Element")
-                
-                self.canvasElements.removeAll(where: { $0.id == element.id })
-                self.selectedElementId = nil
-                self.markDocumentAsChanged(actionName: "Delete Element")
+                // Delete the element using centralized function
+                self.deleteElementAndCleanupTracks(elementId: element.id, actionName: "Delete Element")
             }) {
                 Label("Delete", systemImage: "trash")
             }

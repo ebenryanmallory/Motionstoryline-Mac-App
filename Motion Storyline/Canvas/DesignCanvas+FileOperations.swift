@@ -117,7 +117,8 @@ extension DesignCanvas {
 
         if self.documentManager.saveWorkingFile() {
             if let projectURL = self.documentManager.projectURL {
-                self.appState.currentProjectName = projectURL.deletingPathExtension().lastPathComponent
+                let rawName = projectURL.deletingPathExtension().lastPathComponent
+                self.appState.currentProjectName = self.appState.cleanProjectName(rawName)
                 print("Working file saved successfully. Name: \(self.appState.currentProjectName)")
             }
             self.showSaveSuccessNotification()

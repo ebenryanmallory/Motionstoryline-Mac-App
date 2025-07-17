@@ -191,11 +191,13 @@ struct SelectionOverlay: View {
     let rotation: Double
     var isAspectRatioLocked: Bool = false
     
+    @State private var hoveredHandles: Set<ResizeHandle.Position> = []
+    @State private var initialSize: CGSize = .zero
+    @State private var isAnyHandleHovered: Bool = false
+    
     // Handle positions
     private let handleSize: CGFloat = 6
-    private let rotationHandleSize: CGFloat = 8
     private let outlineOffset: CGFloat = 4 // Offset for the selection border
-    private let rotationHandleOffset: CGFloat = 24 // Distance from the top of the element
     
     var body: some View {
         ZStack {
@@ -204,71 +206,135 @@ struct SelectionOverlay: View {
                 .stroke(Color(red: 0.4, green: 0.4, blue: 0.4, opacity: 0.6), lineWidth: 1)
                 .frame(width: size.width + 2*outlineOffset, height: size.height + 2*outlineOffset)
             
-            // Corner handles
+            // Corner handles - only visible on hover
             Group {
                 // Top-left
-                ResizeHandle(position: .topLeft, size: handleSize)
-                    .position(x: -outlineOffset, y: -outlineOffset)
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                handleResize(value: value, corner: .topLeft)
+                ResizeHandle(
+                    position: .topLeft, 
+                    size: handleSize, 
+                    onHover: { hovering in
+                        if hovering {
+                            hoveredHandles.insert(.topLeft)
+                            if !isAnyHandleHovered {
+                                isAnyHandleHovered = true
                             }
-                    )
+                        } else {
+                            hoveredHandles.remove(.topLeft)
+                            if hoveredHandles.isEmpty {
+                                isAnyHandleHovered = false
+                            }
+                        }
+                    }
+                )
+                .position(x: -outlineOffset - handleSize/2, y: -outlineOffset - handleSize/2)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            handleResize(value: value, corner: .topLeft)
+                        }
+                        .onEnded { _ in
+                            initialSize = .zero
+                        }
+                )
                 
                 // Top-right
-                ResizeHandle(position: .topRight, size: handleSize)
-                    .position(x: size.width + outlineOffset, y: -outlineOffset)
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                handleResize(value: value, corner: .topRight)
+                ResizeHandle(
+                    position: .topRight, 
+                    size: handleSize, 
+                    onHover: { hovering in
+                        if hovering {
+                            hoveredHandles.insert(.topRight)
+                            if !isAnyHandleHovered {
+                                isAnyHandleHovered = true
                             }
-                    )
+                        } else {
+                            hoveredHandles.remove(.topRight)
+                            if hoveredHandles.isEmpty {
+                                isAnyHandleHovered = false
+                            }
+                        }
+                    }
+                )
+                .position(x: size.width + outlineOffset + handleSize/2, y: -outlineOffset - handleSize/2)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            handleResize(value: value, corner: .topRight)
+                        }
+                        .onEnded { _ in
+                            initialSize = .zero
+                        }
+                )
                 
                 // Bottom-left
-                ResizeHandle(position: .bottomLeft, size: handleSize)
-                    .position(x: -outlineOffset, y: size.height + outlineOffset)
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                handleResize(value: value, corner: .bottomLeft)
+                ResizeHandle(
+                    position: .bottomLeft, 
+                    size: handleSize, 
+                    onHover: { hovering in
+                        if hovering {
+                            hoveredHandles.insert(.bottomLeft)
+                            if !isAnyHandleHovered {
+                                isAnyHandleHovered = true
                             }
-                    )
+                        } else {
+                            hoveredHandles.remove(.bottomLeft)
+                            if hoveredHandles.isEmpty {
+                                isAnyHandleHovered = false
+                            }
+                        }
+                    }
+                )
+                .position(x: -outlineOffset - handleSize/2, y: size.height + outlineOffset + handleSize/2)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            handleResize(value: value, corner: .bottomLeft)
+                        }
+                        .onEnded { _ in
+                            initialSize = .zero
+                        }
+                )
                 
                 // Bottom-right
-                ResizeHandle(position: .bottomRight, size: handleSize)
-                    .position(x: size.width + outlineOffset, y: size.height + outlineOffset)
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                handleResize(value: value, corner: .bottomRight)
+                ResizeHandle(
+                    position: .bottomRight, 
+                    size: handleSize, 
+                    onHover: { hovering in
+                        if hovering {
+                            hoveredHandles.insert(.bottomRight)
+                            if !isAnyHandleHovered {
+                                isAnyHandleHovered = true
                             }
-                    )
-                
-                // Rotation handle (top-center)
-                ResizeHandle(position: .topCenter, size: rotationHandleSize)
-                    .position(x: size.width / 2, y: -rotationHandleOffset)
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                handleRotate(value: value)
+                        } else {
+                            hoveredHandles.remove(.bottomRight)
+                            if hoveredHandles.isEmpty {
+                                isAnyHandleHovered = false
                             }
-                    )
-                
-                // Line connecting center to rotation handle
-                Path { path in
-                    path.move(to: CGPoint(x: size.width / 2, y: -outlineOffset))
-                    path.addLine(to: CGPoint(x: size.width / 2, y: -rotationHandleOffset + rotationHandleSize/2))
-                }
-                .stroke(Color(red: 0.4, green: 0.4, blue: 0.4, opacity: 0.6), lineWidth: 1)
+                        }
+                    }
+                )
+                .position(x: size.width + outlineOffset + handleSize/2, y: size.height + outlineOffset + handleSize/2)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            handleResize(value: value, corner: .bottomRight)
+                        }
+                        .onEnded { _ in
+                            initialSize = .zero
+                        }
+                )
             }
         }
         .frame(width: size.width, height: size.height) // Frame the whole overlay to match element size
     }
     
     private func handleResize(value: DragGesture.Value, corner: ResizeHandle.Position) {
-        // Calculate the change in size based on the drag
+        // Store initial size on first drag
+        if initialSize == .zero {
+            initialSize = size
+        }
+        
+        // Calculate the change in size based on the drag translation
         let deltaX = value.translation.width
         let deltaY = value.translation.height
         
@@ -278,24 +344,26 @@ struct SelectionOverlay: View {
         
         switch corner {
         case .topLeft:
-            newWidth = max(20, size.width - deltaX)
-            newHeight = max(20, size.height - deltaY)
+            // Dragging top-left: moving left increases width, moving up increases height
+            newWidth = max(20, initialSize.width - deltaX)
+            newHeight = max(20, initialSize.height - deltaY)
         case .topRight:
-            newWidth = max(20, size.width + deltaX)
-            newHeight = max(20, size.height - deltaY)
+            // Dragging top-right: moving right increases width, moving up increases height
+            newWidth = max(20, initialSize.width + deltaX)
+            newHeight = max(20, initialSize.height - deltaY)
         case .bottomLeft:
-            newWidth = max(20, size.width - deltaX)
-            newHeight = max(20, size.height + deltaY)
+            // Dragging bottom-left: moving left increases width, moving down increases height
+            newWidth = max(20, initialSize.width - deltaX)
+            newHeight = max(20, initialSize.height + deltaY)
         case .bottomRight:
-            newWidth = max(20, size.width + deltaX)
-            newHeight = max(20, size.height + deltaY)
-        default:
-            return
+            // Dragging bottom-right: moving right increases width, moving down increases height
+            newWidth = max(20, initialSize.width + deltaX)
+            newHeight = max(20, initialSize.height + deltaY)
         }
         
         // If aspect ratio is locked, maintain the ratio
         if isAspectRatioLocked {
-            let originalRatio = size.width / size.height
+            let originalRatio = initialSize.width / initialSize.height
             
             // Decide which dimension to prioritize based on the drag direction
             let useWidth = abs(deltaX) > abs(deltaY)
@@ -359,37 +427,36 @@ struct SelectionOverlay: View {
 
 // Resize handle component
 struct ResizeHandle: View {
-    enum Position {
-        case topLeft, topRight, bottomLeft, bottomRight, topCenter
+    enum Position: Hashable {
+        case topLeft, topRight, bottomLeft, bottomRight
     }
     
     let position: Position
     let size: CGFloat
+    let onHover: ((Bool) -> Void)?
+    
+    init(position: Position, size: CGFloat, onHover: ((Bool) -> Void)? = nil) {
+        self.position = position
+        self.size = size
+        self.onHover = onHover
+    }
     
     var body: some View {
-        Group {
-            if position == .topCenter {
-                // Special handle for rotation
-                Circle()
-                    .fill(Color(red: 0.98, green: 0.98, blue: 0.98, opacity: 0.95))
-                    .frame(width: size, height: size)
-                    .overlay(
-                        Circle()
-                            .stroke(Color(red: 0.4, green: 0.4, blue: 0.4, opacity: 0.6), lineWidth: 1)
-                    )
-                    .shadow(color: Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 0.1), radius: 0.5, x: 0, y: 0.5)
-            } else {
-                // Regular resize handles
-                Rectangle()
-                    .fill(Color(red: 0.98, green: 0.98, blue: 0.98, opacity: 0.95))
-                    .frame(width: size, height: size)
-                    .overlay(
-                        Rectangle()
-                            .stroke(Color(red: 0.4, green: 0.4, blue: 0.4, opacity: 0.6), lineWidth: 1)
-                    )
-                    .shadow(color: Color(red: 0.0, green: 0.0, blue: 0.0, opacity: 0.1), radius: 0.5, x: 0, y: 0.5)
+        // Invisible hit area for resize cursor and drag detection
+        Rectangle()
+            .fill(Color.clear)
+            .frame(width: size + 8, height: size + 8)
+            .onHover { hovering in
+                onHover?(hovering)
             }
-        }
+            .onContinuousHover { phase in
+                switch phase {
+                case .active:
+                    NSCursor.crosshair.set()
+                case .ended:
+                    NSCursor.arrow.set()
+                }
+            }
     }
 }
 

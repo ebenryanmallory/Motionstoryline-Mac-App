@@ -22,6 +22,14 @@ class AppStateManager: ObservableObject {
     @Published var currentTimelineScale: Double = 1.0
     @Published var currentTimelineOffset: Double = 0.0
     @Published var currentProjectName: String = "Untitled Project"
+    
+    // Helper function to clean project names by removing UUID suffix
+    func cleanProjectName(_ rawName: String) -> String {
+        // Remove UUID pattern: _XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
+        let uuidPattern = "_[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$"
+        let cleanedName = rawName.replacingOccurrences(of: uuidPattern, with: "", options: .regularExpression)
+        return cleanedName.isEmpty ? rawName : cleanedName
+    }
     @Published var currentProjectURLToLoad: URL? = nil
     @Published var isShowingOpenDialog: Bool = false
 
