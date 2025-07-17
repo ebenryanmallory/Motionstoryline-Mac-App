@@ -7,6 +7,7 @@ import Combine
 
 /// Ruler component for the timeline
 struct TimelineRuler: View {
+    let animationController: AnimationController
     let duration: Double
     @Binding var currentTime: Double
     let scale: Double
@@ -109,6 +110,8 @@ struct TimelineRuler: View {
                                 .sink { _ in
                                     // Apply the latest value during the throttle interval
                                     self.currentTime = self.throttledTime
+                                    // Trigger animation execution during scrubbing
+                                    self.animationController.updateAnimatedProperties()
                                 }
                         }
                         
@@ -138,6 +141,8 @@ struct TimelineRuler: View {
                         }
 
                         currentTime = adjustedTime
+                        // Trigger animation execution at the final scrubbed position
+                        animationController.updateAnimatedProperties()
                     }
             )
             .gesture(
@@ -538,6 +543,7 @@ struct TimelineView: View {
                 
                 // Timeline ruler
                 TimelineRuler(
+                    animationController: animationController,
                     duration: animationController.duration,
                     currentTime: $animationController.currentTime,
                     scale: timelineScale,

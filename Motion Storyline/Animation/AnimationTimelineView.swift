@@ -83,6 +83,7 @@ struct AnimationTimelineView: View {
             VStack(spacing: 4) {
                 // Timeline ruler
                 TimelineRuler(
+                    animationController: animationController,
                     duration: animationController.duration,
                     currentTime: $animationController.currentTime,
                     scale: timelineScale,

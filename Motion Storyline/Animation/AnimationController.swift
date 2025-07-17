@@ -641,6 +641,30 @@ public class AnimationController: ObservableObject {
         propertyUpdateCallbacks.removeAll()
         print("AnimationController DEBUG: Cleared all \(trackCount) tracks")
     }
+    
+    /// Remove all animation tracks associated with a specific element
+    /// - Parameter elementId: The ID of the element whose tracks should be removed
+    public func removeTracksForElement(elementId: UUID) {
+        let elementIdString = elementId.uuidString
+        let allTracks = getAllTracks()
+        
+        // Find all tracks that belong to this element (they start with the element ID)
+        let tracksToRemove = allTracks.filter { trackId in
+            trackId.hasPrefix(elementIdString)
+        }
+        
+        // Remove each track
+        for trackId in tracksToRemove {
+            removeTrack(id: trackId)
+        }
+        
+        print("AnimationController: Removed \(tracksToRemove.count) tracks for element: \(elementIdString)")
+        
+        // Log the specific tracks that were removed for debugging
+        if !tracksToRemove.isEmpty {
+            print("   Removed tracks: \(tracksToRemove.joined(separator: ", "))")
+        }
+    }
 
     /// Get all tracks with their IDs and keyframes
     public func getAllTracksWithKeyframes() -> [(id: String, keyframes: [KeyframeProtocol])] {
