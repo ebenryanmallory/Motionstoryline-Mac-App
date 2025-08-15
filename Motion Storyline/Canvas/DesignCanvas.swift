@@ -59,10 +59,11 @@ struct DesignCanvas: View {
     @State private var isBreakingAspectRatio = false
     @State private var aspectRatioInfoVisible = false
     
-    // Grid settings that will be passed to CanvasContentView
+    // Grid & rulers settings
     @State internal var showGrid: Bool = true
     @State internal var gridSize: CGFloat = 20
     @State internal var snapToGridEnabled: Bool = true
+    @State internal var showRulers: Bool = false
     
     // Navigation state
     @Environment(\.presentationMode) private var presentationMode
@@ -145,7 +146,18 @@ struct DesignCanvas: View {
     // Media management
     @State private var showMediaBrowser = false
     @State private var showCameraView = false
+    @State private var showScreenRecordingView = false
+    @State private var showRecordingPicker = false
     @State private var showAuthenticationView = false
+    
+    // Recording settings
+    @State private var recordingIncludeMicrophone = true
+    @State private var recordingCountdown = true
+    
+    // Notification state
+    @State private var showSuccessNotification = false
+    @State private var notificationMessage = ""
+    @State private var isNotificationError = false
     
     // Export modal state
     @State internal var showingExportModal = false
@@ -283,11 +295,32 @@ struct DesignCanvas: View {
     var body: some View {
         ZStack {
             mainContentViewWithModifiers
+            
+            // Success notification overlay
+            if showSuccessNotification {
+                VStack {
+                    Spacer()
+                    HStack {
+                        Image(systemName: isNotificationError ? "xmark.circle.fill" : "checkmark.circle.fill")
+                            .foregroundColor(isNotificationError ? .red : .green)
+                        Text(notificationMessage)
+                            .foregroundColor(.primary)
+                    }
+                    .padding()
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .cornerRadius(8)
+                    .shadow(radius: 4)
+                    .padding(.bottom, 20)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         // Add command handlers for saving
         .onCommand(#selector(NSDocument.save(_:))) {
-            // Save project implementation
-            print("Save command triggered")
+            handleSaveWorkingFile()
+        }
+        .onCommand(#selector(NSDocument.saveAs(_:))) {
+            handleExportProjectAs()
         }
     }
     
@@ -317,7 +350,7 @@ struct DesignCanvas: View {
                 handleCloseWithUnsavedChanges()
             },
             onCameraRecord: {
-                showCameraView = true
+                showRecordingPicker = true
             },
             onMediaLibrary: {
                 showMediaBrowser = true
@@ -349,7 +382,7 @@ struct DesignCanvas: View {
             onUndo: performUndo,
             onRedo: performRedo,
             showGrid: Binding<Bool>(get: { self.showGrid }, set: { self.showGrid = $0 }),
-            showRulers: Binding<Bool>(get: { true }, set: { _ in }),  // Placeholder binding
+            showRulers: Binding<Bool>(get: { self.showRulers }, set: { self.showRulers = $0 }),
             isInspectorVisible: $isInspectorVisible,
             onSave: {
                 handleSaveWorkingFile()
@@ -539,6 +572,15 @@ struct DesignCanvas: View {
             print("🔄 Selected project changed from \(oldValue?.name ?? "none") to \(newValue?.name ?? "none")")
             loadCurrentProject()
         }
+        .onChange(of: showSuccessNotification) { oldValue, isShowing in
+            if isShowing {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    withAnimation {
+                        showSuccessNotification = false
+                    }
+                }
+            }
+        }
         .onDisappear {
             handleViewDisappear()
         }
@@ -561,8 +603,12 @@ struct DesignCanvas: View {
         .modifier(SheetModifier(
             showingExportModal: $showingExportModal,
             showCameraView: $showCameraView,
+            showScreenRecordingView: $showScreenRecordingView,
+            showRecordingPicker: $showRecordingPicker,
             showMediaBrowser: $showMediaBrowser,
             showAuthenticationView: $showAuthenticationView,
+            recordingIncludeMicrophone: $recordingIncludeMicrophone,
+            recordingCountdown: $recordingCountdown,
             currentExportAsset: currentExportAsset,
             canvasWidth: Int(canvasWidth),
             canvasHeight: Int(canvasHeight),
@@ -612,6 +658,20 @@ struct DesignCanvas: View {
                 .strokeBorder(Color.gray.opacity(0.3), lineWidth: 1)
                 .background(Color(NSColor.windowBackgroundColor))
         )
+        // Accept drops from the media browser (plain text JSON payload or file URL)
+        .onDrop(of: [UTType.plainText, UTType.fileURL], delegate: MediaAssetDropDelegate(
+            performAdd: { newElement in
+                canvasElements.append(newElement)
+                handleElementSelection(newElement)
+                markDocumentAsChanged(actionName: "Add Media Element (Drop)")
+            },
+            computeCanvasPosition: { point in
+                // Convert drop point from view space into canvas coordinate space by inverting transforms
+                let unoffsetX = point.x - viewportOffset.width
+                let unoffsetY = point.y - viewportOffset.height
+                return CGPoint(x: unoffsetX / zoom, y: unoffsetY / zoom)
+            }
+        ))
     }
     
     private var canvasBaseLayersView: some View {
@@ -1946,7 +2006,7 @@ extension DesignCanvas {
                 resetZoom: resetZoom,
                 saveProject: { 
                     print("💾 Manual save triggered via keyboard shortcut")
-                    self.autoSaveProject() 
+                    self.handleSaveWorkingFile()
                 },
                 deleteSelectedElement: {
                     if let elementId = selectedElementId {
@@ -1954,6 +2014,58 @@ extension DesignCanvas {
                     }
                 }
             )
+
+            // Wire global Delete command to post a notification that the canvas listens for
+            appState.deleteAction = {
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("DeleteSelectedCanvasElement"),
+                    object: nil
+                )
+            }
+
+            // Wire clipboard and file actions
+            appState.cutAction = { [self] in cutSelectedElement() }
+            appState.copyAction = { [self] in copySelectedElement() }
+            appState.pasteAction = { [self] in pasteElement() }
+            appState.selectAllAction = { [self] in selectAllElements() }
+            appState.saveAction = { [self] in handleSaveWorkingFile() }
+            appState.saveAsAction = { [self] in handleExportProjectAs() }
+            appState.openProjectAction = { [self] in openProject() }
+            // Listen for new screen recordings and import into project
+            NotificationCenter.default.addObserver(forName: Notification.Name("NewScreenRecordingAvailable"), object: nil, queue: .main) { notification in
+                guard var project = self.appState.selectedProject else { return }
+                if let userInfo = notification.userInfo, let url = userInfo["url"] as? URL {
+                    let name = url.lastPathComponent
+                    let dimensions = MediaAsset.extractDimensions(from: url, type: .video)
+                    let asset = MediaAsset(
+                        name: name,
+                        type: .video,
+                        url: url,
+                        duration: AVAsset(url: url).duration.seconds,
+                        thumbnail: "video_thumbnail",
+                        width: dimensions?.width,
+                        height: dimensions?.height
+                    )
+                    project.addMediaAsset(asset)
+                    self.appState.selectedProject = project
+                    // Mark as changed and optionally show media browser
+                    self.markDocumentAsChanged(actionName: "Import Screen Recording")
+                    
+                    // Show success notification
+                    withAnimation {
+                        self.notificationMessage = "Screen recording saved and added to Media Browser"
+                        self.isNotificationError = false
+                        self.showSuccessNotification = true
+                    }
+                }
+            }
+
+            // Listen for global delete notifications and perform deletion when applicable
+            NotificationCenter.default.addObserver(forName: NSNotification.Name("DeleteSelectedCanvasElement"), object: nil, queue: .main) { _ in
+                if let elementId = self.selectedElementId {
+                    self.deleteElementAndCleanupTracks(elementId: elementId, actionName: "Delete Element")
+                }
+            }
             
             appState.registerUndoRedoActions(
                 undo: performUndo,
@@ -2004,6 +2116,55 @@ extension DesignCanvas {
         if documentManager.hasUnsavedChanges && !isClosing {
             print("🔄 Auto-saving project on view disappear...")
             autoSaveProject()
+        }
+    }
+
+    // MARK: - Clipboard Operations (basic single-element semantics)
+    private func copySelectedElement() {
+        guard let elementId = selectedElementId,
+              let element = canvasElements.first(where: { $0.id == elementId }) else { return }
+        do {
+            let data = try JSONEncoder().encode(element)
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setData(data, forType: .string)
+            print("📋 Copied element \(element.displayName)")
+        } catch {
+            print("Failed to encode element for copy: \(error)")
+        }
+    }
+
+    private func cutSelectedElement() {
+        guard let elementId = selectedElementId,
+              let element = canvasElements.first(where: { $0.id == elementId }) else { return }
+        copySelectedElement()
+        deleteElementAndCleanupTracks(elementId: elementId, actionName: "Cut Element")
+        print("✂️ Cut element \(element.displayName)")
+    }
+
+    private func pasteElement() {
+        let pasteboard = NSPasteboard.general
+        guard let data = pasteboard.data(forType: .string) else { return }
+        do {
+            var element = try JSONDecoder().decode(CanvasElement.self, from: data)
+            recordStateBeforeChange(actionName: "Paste Element")
+            element.id = UUID()
+            // Offset pasted element slightly for visibility
+            element.position = CGPoint(x: element.position.x + 20, y: element.position.y + 20)
+            element.displayName = "Copy of \(element.displayName)"
+            canvasElements.append(element)
+            handleElementSelection(element)
+            markDocumentAsChanged(actionName: "Paste Element")
+            print("📎 Pasted element \(element.displayName)")
+        } catch {
+            print("Failed to decode element from pasteboard: \(error)")
+        }
+    }
+
+    private func selectAllElements() {
+        // For now, select the first element to indicate selection. Extend to multi-select if needed.
+        if let first = canvasElements.first {
+            handleElementSelection(first)
         }
     }
     
@@ -2132,8 +2293,12 @@ struct PreferencesChangeModifier: ViewModifier {
 struct SheetModifier: ViewModifier {
     @Binding var showingExportModal: Bool
     @Binding var showCameraView: Bool
+    @Binding var showScreenRecordingView: Bool
+    @Binding var showRecordingPicker: Bool
     @Binding var showMediaBrowser: Bool
     @Binding var showAuthenticationView: Bool
+    @Binding var recordingIncludeMicrophone: Bool
+    @Binding var recordingCountdown: Bool
     let currentExportAsset: AVAsset?
     let canvasWidth: Int
     let canvasHeight: Int
@@ -2166,8 +2331,42 @@ struct SheetModifier: ViewModifier {
                 }
             }
             .sheet(isPresented: $showCameraView) {
-                CameraRecordingView(isPresented: $showCameraView)
-                    .frame(width: 480, height: 360)
+                CameraRecordingView(
+                    isPresented: $showCameraView,
+                    includeMicrophone: recordingIncludeMicrophone,
+                    countdown: recordingCountdown
+                )
+                .frame(width: 480, height: 360)
+            }
+            .sheet(isPresented: $showScreenRecordingView) {
+                ScreenRecordingView(
+                    isPresented: $showScreenRecordingView,
+                    includeMicrophone: recordingIncludeMicrophone,
+                    countdown: recordingCountdown
+                )
+                .frame(width: 720, height: 520)
+            }
+            .sheet(isPresented: $showRecordingPicker) {
+                RecordingPickerSheet(
+                    onScreen: { includeMicrophone, countdown in
+                        recordingIncludeMicrophone = includeMicrophone
+                        recordingCountdown = countdown
+                        showScreenRecordingView = true
+                    },
+                    onCamera: { includeMicrophone, countdown in
+                        recordingIncludeMicrophone = includeMicrophone
+                        recordingCountdown = countdown
+                        showCameraView = true
+                    },
+                    onBoth: { includeMicrophone, countdown in
+                        recordingIncludeMicrophone = includeMicrophone
+                        recordingCountdown = countdown
+                        // For now open screen recording; camera overlay handled later via coordinator
+                        showScreenRecordingView = true
+                        showCameraView = true
+                    },
+                    isPresented: $showRecordingPicker
+                )
             }
             .sheet(isPresented: $showMediaBrowser) {
                 let projectBinding = Binding<Project>(
@@ -2189,5 +2388,97 @@ struct SheetModifier: ViewModifier {
                     .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
+    }
+}
+
+// MARK: - Drop Support
+private struct MediaAssetDropDelegate: DropDelegate {
+    let performAdd: (CanvasElement) -> Void
+    let computeCanvasPosition: (CGPoint) -> CGPoint
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [UTType.plainText, UTType.fileURL])
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let dropLocationInView = info.location
+        let canvasPoint = computeCanvasPosition(dropLocationInView)
+
+        // Try JSON payload first (from MediaBrowserView)
+        if let provider = info.itemProviders(for: [UTType.plainText]).first {
+            provider.loadDataRepresentation(forTypeIdentifier: UTType.plainText.identifier) { data, _ in
+                guard let data = data else { return }
+                do {
+                    struct DragPayload: Codable {
+                        let name: String
+                        let type: String
+                        let url: String
+                        let duration: Double?
+                        let width: Double?
+                        let height: Double?
+                    }
+                    let payload = try JSONDecoder().decode(DragPayload.self, from: data)
+                    guard let url = URL(string: payload.url) else { return }
+                    let size = CGSize(
+                        width: payload.width != nil ? CGFloat(payload.width!) : 300,
+                        height: payload.height != nil ? CGFloat(payload.height!) : 200
+                    )
+                    let element: CanvasElement
+                    if payload.type.lowercased() == "image" {
+                        element = CanvasElement.image(at: canvasPoint, assetURL: url, displayName: payload.name, size: size)
+                    } else if payload.type.lowercased() == "video" || payload.type.lowercased() == "cameraRecording" {
+                        element = CanvasElement.video(at: canvasPoint, assetURL: url, displayName: payload.name, size: size, videoDuration: payload.duration)
+                    } else {
+                        return
+                    }
+                    DispatchQueue.main.async {
+                        performAdd(element)
+                    }
+                } catch {
+                    // Fallback to fileURL route below if JSON fails
+                    tryFileURLProviders(info: info, canvasPoint: canvasPoint)
+                }
+            }
+            return true
+        }
+
+        // Fallback: file URL (drop from Finder or other sources)
+        return tryFileURLProviders(info: info, canvasPoint: canvasPoint)
+    }
+
+    @discardableResult
+    private func tryFileURLProviders(info: DropInfo, canvasPoint: CGPoint) -> Bool {
+        guard let fileProvider = info.itemProviders(for: [UTType.fileURL]).first else { return false }
+        fileProvider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { (item, error) in
+            guard error == nil else { return }
+            var url: URL?
+            if let data = item as? Data, let str = String(data: data, encoding: .utf8) {
+                url = URL(string: str)
+            } else if let nsurl = item as? NSURL {
+                url = nsurl as URL
+            } else if let u = item as? URL {
+                url = u
+            }
+            guard let fileURL = url else { return }
+            let filename = fileURL.lastPathComponent
+            let type = UTType(filenameExtension: fileURL.pathExtension)
+            let isImage = type?.conforms(to: .image) ?? false
+            let isVideo = type?.conforms(to: .movie) ?? false
+            let size = CGSize(width: 300, height: 200)
+            let element: CanvasElement?
+            if isImage {
+                element = CanvasElement.image(at: canvasPoint, assetURL: fileURL, displayName: filename, size: size)
+            } else if isVideo {
+                element = CanvasElement.video(at: canvasPoint, assetURL: fileURL, displayName: filename, size: size)
+            } else {
+                element = nil
+            }
+            if let element = element {
+                DispatchQueue.main.async {
+                    performAdd(element)
+                }
+            }
+        }
+        return true
     }
 }

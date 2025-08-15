@@ -155,7 +155,6 @@ extension DesignCanvas {
             }) {
                 Label("Center Content", systemImage: "arrow.up.left.and.down.right.magnifyingglass")
             }
-            .keyboardShortcut(KeyEquivalent("a"), modifiers: [.command])
             
             Button(action: { [self] in
                 // Zoom in on the canvas
