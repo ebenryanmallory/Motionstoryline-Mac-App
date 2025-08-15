@@ -6,6 +6,8 @@ struct CameraRecordingView: View {
     @State private var showingSettings = false
     @State private var isFullScreen = false
     @Binding var isPresented: Bool
+    var includeMicrophone: Bool = true
+    var countdown: Bool = true
     @State private var isViewReady = false
     @State private var permissionChecked = false
     
@@ -140,7 +142,7 @@ struct CameraRecordingView: View {
                     if cameraManager.isRecording {
                         cameraManager.stopRecording()
                     } else {
-                        cameraManager.startRecording()
+                        cameraManager.startRecording(includeMicrophone: includeMicrophone)
                     }
                 }) {
                     ZStack {

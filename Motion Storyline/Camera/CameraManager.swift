@@ -110,21 +110,8 @@ class CameraManager: NSObject, ObservableObject {
                 )
             }
             
-            // Add audio input if authorized
-            if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized {
-                if let audioDevice = AVCaptureDevice.default(for: .audio) {
-                    do {
-                        let audioInput = try AVCaptureDeviceInput(device: audioDevice)
-                        if session.canAddInput(audioInput) {
-                            session.addInput(audioInput)
-                            print("Added audio input")
-                        }
-                    } catch {
-                        print("Could not add audio input: \(error)")
-                        // Continue without audio if it fails
-                    }
-                }
-            }
+            // Skip audio input for now - only add when user explicitly starts recording
+            // This prevents unnecessary microphone permission requests when loading projects
             
             // Add video output
             let movieOutput = AVCaptureMovieFileOutput()
@@ -178,8 +165,13 @@ class CameraManager: NSObject, ObservableObject {
         }
     }
     
-    func startRecording() {
+    func startRecording(includeMicrophone: Bool = true) {
         guard let videoOutput = videoOutput, !isRecording else { return }
+        
+        // Add audio input when starting recording if user has granted permission and microphone is enabled
+        if includeMicrophone {
+            setupAudioInputForRecording()
+        }
         
         // Create a temporary file URL for the recording
         let tempDir = FileManager.default.temporaryDirectory
@@ -196,6 +188,34 @@ class CameraManager: NSObject, ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             self.recordingTime += 0.1
+        }
+    }
+    
+    private func setupAudioInputForRecording() {
+        guard let session = captureSession else { return }
+        
+        // Only add audio input if authorized and not already added
+        if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized {
+            // Check if audio input is already added
+            let hasAudioInput = session.inputs.contains { input in
+                guard let deviceInput = input as? AVCaptureDeviceInput else { return false }
+                return deviceInput.device.hasMediaType(.audio)
+            }
+            
+            if !hasAudioInput, let audioDevice = AVCaptureDevice.default(for: .audio) {
+                do {
+                    session.beginConfiguration()
+                    let audioInput = try AVCaptureDeviceInput(device: audioDevice)
+                    if session.canAddInput(audioInput) {
+                        session.addInput(audioInput)
+                        print("Added audio input for recording")
+                    }
+                    session.commitConfiguration()
+                } catch {
+                    session.commitConfiguration()
+                    print("Could not add audio input for recording: \(error)")
+                }
+            }
         }
     }
     
