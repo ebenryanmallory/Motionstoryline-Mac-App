@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import AVFoundation
 
 enum AppAppearance: Int, CaseIterable {
     case system = 0
@@ -59,6 +60,31 @@ class PreferencesViewModel: ObservableObject {
     
     @AppStorage("enableHardwareAcceleration") var enableHardwareAcceleration: Bool = true
     @AppStorage("timelineCacheSize") var timelineCacheSize: Double = 500
+    
+    // MARK: - Recording Settings
+    @AppStorage("defaultIncludeMicrophone") var defaultIncludeMicrophone: Bool = true
+    @AppStorage("defaultCountdown") var defaultCountdown: Bool = true
+    
+    // Permission status (computed properties)
+    var cameraPermissionStatus: AVAuthorizationStatus {
+        AVCaptureDevice.authorizationStatus(for: .video)
+    }
+    
+    var microphonePermissionStatus: AVAuthorizationStatus {
+        AVCaptureDevice.authorizationStatus(for: .audio)
+    }
+    
+    var screenRecordingPermissionStatus: String {
+        // Screen recording permission check is more complex on macOS
+        // We'll use a simple string representation for now
+        if #available(macOS 11.0, *) {
+            // On macOS 11+, we can check if screen recording is authorized
+            // This is a simplified check - actual implementation would be more robust
+            return "System Managed"
+        } else {
+            return "Not Available"
+        }
+    }
     
     // MARK: - Computed Properties
     var accentColor: Color {
@@ -122,5 +148,37 @@ class PreferencesViewModel: ObservableObject {
         // This is a placeholder for the actual implementation
         let notificationCenter = NotificationCenter.default
         notificationCenter.post(name: Notification.Name("ClearCacheNotification"), object: nil)
+    }
+    
+    func openSystemSettings() {
+        if let settingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy") {
+            NSWorkspace.shared.open(settingsURL)
+        }
+    }
+    
+    func permissionStatusText(_ status: AVAuthorizationStatus) -> String {
+        switch status {
+        case .authorized:
+            return "✅ Granted"
+        case .denied, .restricted:
+            return "❌ Denied"
+        case .notDetermined:
+            return "⚠️ Not Requested"
+        @unknown default:
+            return "❓ Unknown"
+        }
+    }
+    
+    func permissionStatusColor(_ status: AVAuthorizationStatus) -> Color {
+        switch status {
+        case .authorized:
+            return .green
+        case .denied, .restricted:
+            return .red
+        case .notDetermined:
+            return .orange
+        @unknown default:
+            return .gray
+        }
     }
 } 

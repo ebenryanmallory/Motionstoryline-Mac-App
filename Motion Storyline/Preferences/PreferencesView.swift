@@ -3,6 +3,7 @@ import AppKit
 
 enum PreferencesTab: String, CaseIterable, Identifiable {
     case appearance = "Appearance"
+    case recording = "Recording"
     case export = "Export"
     case general = "General"
     
@@ -12,6 +13,8 @@ enum PreferencesTab: String, CaseIterable, Identifiable {
         switch self {
         case .appearance:
             return "paintbrush"
+        case .recording:
+            return "video"
         case .export:
             return "square.and.arrow.up"
         case .general:
@@ -41,6 +44,15 @@ struct PreferencesView: View {
                 Label(PreferencesTab.appearance.rawValue, systemImage: PreferencesTab.appearance.icon)
             }
             .tag(PreferencesTab.appearance)
+            
+            ScrollView {
+                RecordingPreferencesView(viewModel: viewModel)
+                    .padding(20)
+            }
+            .tabItem {
+                Label(PreferencesTab.recording.rawValue, systemImage: PreferencesTab.recording.icon)
+            }
+            .tag(PreferencesTab.recording)
             
             ScrollView {
                 ExportPreferencesView(viewModel: viewModel)
@@ -334,6 +346,81 @@ struct GeneralPreferencesView: View {
                         viewModel.clearCache()
                     }
                     .padding(.vertical, 5)
+                }
+                .padding()
+            }
+            
+            Spacer()
+        }
+    }
+}
+
+// MARK: - Recording Preferences
+struct RecordingPreferencesView: View {
+    @ObservedObject var viewModel: PreferencesViewModel
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Recording")
+                .font(.title)
+                .fontWeight(.semibold)
+            
+            GroupBox(label: Text("Default Settings")) {
+                VStack(alignment: .leading, spacing: 15) {
+                    Toggle("Include microphone in recordings", isOn: $viewModel.defaultIncludeMicrophone)
+                        .padding(.vertical, 5)
+                    
+                    Toggle("3-second countdown before recording", isOn: $viewModel.defaultCountdown)
+                        .padding(.vertical, 5)
+                }
+                .padding()
+            }
+            
+            GroupBox(label: Text("Permissions Status")) {
+                VStack(alignment: .leading, spacing: 15) {
+                    HStack {
+                        Image(systemName: "camera")
+                            .frame(width: 20)
+                        Text("Camera:")
+                        Spacer()
+                        Text(viewModel.permissionStatusText(viewModel.cameraPermissionStatus))
+                            .foregroundColor(viewModel.permissionStatusColor(viewModel.cameraPermissionStatus))
+                    }
+                    .padding(.vertical, 2)
+                    
+                    HStack {
+                        Image(systemName: "mic")
+                            .frame(width: 20)
+                        Text("Microphone:")
+                        Spacer()
+                        Text(viewModel.permissionStatusText(viewModel.microphonePermissionStatus))
+                            .foregroundColor(viewModel.permissionStatusColor(viewModel.microphonePermissionStatus))
+                    }
+                    .padding(.vertical, 2)
+                    
+                    HStack {
+                        Image(systemName: "display")
+                            .frame(width: 20)
+                        Text("Screen Recording:")
+                        Spacer()
+                        Text(viewModel.screenRecordingPermissionStatus)
+                            .foregroundColor(.blue)
+                    }
+                    .padding(.vertical, 2)
+                    
+                    Divider()
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("If any permissions are denied, recording features may not work properly.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        Button("Open System Settings") {
+                            viewModel.openSystemSettings()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                    .padding(.top, 5)
                 }
                 .padding()
             }

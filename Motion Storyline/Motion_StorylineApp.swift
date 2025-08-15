@@ -95,6 +95,7 @@ struct Motion_StorylineApp: App {
                         )
                         .environmentObject(self.appStateManager)
                         .environmentObject(self.authManager)
+                        .environmentObject(self.documentManager)
                         .environmentObject(self.preferencesViewModel)
                         .onAppear {
                             loadProjects()
@@ -160,8 +161,24 @@ struct Motion_StorylineApp: App {
             print("Scene phase changed from \(oldPhase) to: \(newPhase)")
             self.appStateManager.scenePhase = newPhase
         }
-        .windowToolbarStyle(.unified)
-        .commands {
+            .windowToolbarStyle(.unified)
+            .commands {
+            CommandMenu("File") {
+                Button("Open Project…") {
+                    self.appStateManager.openProjectAction?()
+                }
+                .keyboardShortcut("o", modifiers: [.command])
+
+                Divider()
+                Button("Save") {
+                    self.appStateManager.saveAction?()
+                }
+                .keyboardShortcut("s", modifiers: .command)
+                Button("Save As…") {
+                    self.appStateManager.saveAsAction?()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+            }
             CommandMenu("Edit") {
                 Button("Undo") {
                     self.appStateManager.undoAction?()
@@ -177,15 +194,17 @@ struct Motion_StorylineApp: App {
                 
                 // Standard edit items (can be implemented later)
                 Divider()
-                Button("Cut") { /* TODO: Implement Cut */ }
+                Button("Cut") { self.appStateManager.cutAction?() }
                     .keyboardShortcut("x", modifiers: .command)
-                Button("Copy") { /* TODO: Implement Copy */ }
+                Button("Copy") { self.appStateManager.copyAction?() }
                     .keyboardShortcut("c", modifiers: .command)
-                Button("Paste") { /* TODO: Implement Paste */ }
+                Button("Paste") { self.appStateManager.pasteAction?() }
                     .keyboardShortcut("v", modifiers: .command)
-                Button("Delete") { /* TODO: Implement Delete (e.g., selected element) */ }
+                Button("Delete") {
+                    self.appStateManager.deleteAction?()
+                }
                     .keyboardShortcut(.delete, modifiers: []) // Backspace/Delete key
-                Button("Select All") { /* TODO: Implement Select All */ }
+                Button("Select All") { self.appStateManager.selectAllAction?() }
                     .keyboardShortcut("a", modifiers: .command)
             }
 
@@ -205,6 +224,30 @@ struct Motion_StorylineApp: App {
                     }
                 }
                 .keyboardShortcut("n", modifiers: [.command])
+            }
+            
+            CommandMenu("Debug") {
+                Button("Run Permission Diagnostic") {
+                    PermissionDebugger.performFullDiagnostic()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+                
+                Button("Test Basic Permissions") {
+                    CaptureTestUtility.testBasicPermissions()
+                }
+                
+                Button("Run End-to-End Capture Test") {
+                    CaptureTestUtility.performEndToEndTest()
+                }
+                
+                Divider()
+                
+                Button("Test Screen Recording") {
+                    let recorder = ScreenCaptureKitRecorder()
+                    recorder.requestPermissionsIfNeeded { granted in
+                        print("🧪 [TEST] Permission result: \(granted)")
+                    }
+                }
             }
             
             CommandGroup(replacing: .help) {

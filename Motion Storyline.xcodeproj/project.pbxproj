@@ -33,9 +33,22 @@
 		E4B8EF082D6DD2A90095FBAF /* Motion StorylineUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Motion StorylineUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		E48B73362E4EA6D000DFFDBC /* Exceptions for "Motion Storyline" folder in "Motion Storyline" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Motion-Storyline-Info.plist",
+			);
+			target = E4B8EEEC2D6DD2A60095FBAF /* Motion Storyline */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		E4B8EEEF2D6DD2A60095FBAF /* Motion Storyline */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				E48B73362E4EA6D000DFFDBC /* Exceptions for "Motion Storyline" folder in "Motion Storyline" target */,
+			);
 			path = "Motion Storyline";
 			sourceTree = "<group>";
 		};
@@ -417,11 +430,13 @@
 				DEVELOPMENT_ASSET_PATHS = "\"Motion Storyline/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Motion-Storyline-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Motion Storyline";
 				INFOPLIST_KEY_CFBundleName = "Motion Storyline";
 				INFOPLIST_KEY_NSCameraUsageDescription = "This app requires camera access to record video for your projects.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025. All rights reserved.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app requires microphone access to record audio for your videos.";
+				INFOPLIST_KEY_NSScreenRecordingUsageDescription = "This app requires screen recording permission to capture screen content for your video projects.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -447,11 +462,13 @@
 				DEVELOPMENT_ASSET_PATHS = "\"Motion Storyline/Preview Content\"";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Motion-Storyline-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Motion Storyline";
 				INFOPLIST_KEY_CFBundleName = "Motion Storyline";
 				INFOPLIST_KEY_NSCameraUsageDescription = "This app requires camera access to record video for your projects.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2025. All rights reserved.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "This app requires microphone access to record audio for your videos.";
+				INFOPLIST_KEY_NSScreenRecordingUsageDescription = "This app requires screen recording permission to capture screen content for your video projects.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",

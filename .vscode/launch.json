@@ -1,0 +1,22 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Motion Storyline}",
+            "name": "Debug MotionStoryline",
+            "program": "${workspaceFolder:Motion Storyline}/.build/debug/MotionStoryline",
+            "preLaunchTask": "swift: Build Debug MotionStoryline"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:Motion Storyline}",
+            "name": "Release MotionStoryline",
+            "program": "${workspaceFolder:Motion Storyline}/.build/release/MotionStoryline",
+            "preLaunchTask": "swift: Build Release MotionStoryline"
+        }
+    ]
+}

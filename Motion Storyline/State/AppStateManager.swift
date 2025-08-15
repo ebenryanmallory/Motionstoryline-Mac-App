@@ -39,6 +39,16 @@ class AppStateManager: ObservableObject {
     @Published var canRedo: Bool = false
     var undoAction: (() -> Void)?
     var redoAction: (() -> Void)?
+    // Edit actions
+    var deleteAction: (() -> Void)?
+    var cutAction: (() -> Void)?
+    var copyAction: (() -> Void)?
+    var pasteAction: (() -> Void)?
+    var selectAllAction: (() -> Void)?
+    // File actions
+    var saveAction: (() -> Void)?
+    var saveAsAction: (() -> Void)?
+    var openProjectAction: (() -> Void)?
     private var cancellables = Set<AnyCancellable>()
     
     func navigateToHome() {
@@ -155,6 +165,14 @@ class AppStateManager: ObservableObject {
     func clearUndoRedoActions() {
         self.undoAction = nil
         self.redoAction = nil
+        self.deleteAction = nil
+        self.cutAction = nil
+        self.copyAction = nil
+        self.pasteAction = nil
+        self.selectAllAction = nil
+        self.saveAction = nil
+        self.saveAsAction = nil
+        self.openProjectAction = nil
         self.canUndo = false
         self.canRedo = false
         self.hasUnsavedChanges = false

@@ -1,6 +1,8 @@
 import SwiftUI
 import AVKit
 import AVFoundation
+import AppKit
+import UniformTypeIdentifiers
 
 /// A view that displays and manages media assets in a project
 public struct MediaBrowserView: View {
@@ -14,9 +16,6 @@ public struct MediaBrowserView: View {
     @State private var isShowingDeleteAlert = false
     @State private var previewPlayer: AVPlayer?
     @State private var isPreviewPlaying = false
-    @State private var isDragging = false
-    @State private var dragOffset = CGSize.zero
-    @State private var draggedAsset: MediaAsset?
     @State private var showSuccessNotification = false
     @State private var notificationMessage = ""
     @State private var isNotificationError = false
@@ -213,32 +212,27 @@ public struct MediaBrowserView: View {
         
         return List(sortedAssets, selection: $selectedAsset) { asset in
             MediaAssetRow(
-                asset: asset, 
-                isSelected: selectedAsset?.id == asset.id,
-                isDragging: isDragging && draggedAsset?.id == asset.id,
-                dragOffset: draggedAsset?.id == asset.id ? dragOffset : .zero
+                asset: asset,
+                isSelected: selectedAsset?.id == asset.id
             )
                 .contentShape(Rectangle())
                 .onTapGesture {
                     selectedAsset = asset
                     setupPreviewPlayer(for: asset)
                 }
-                .gesture(
-                    DragGesture(coordinateSpace: .global)
-                        .onChanged { value in
-                            if !isDragging {
-                                isDragging = true
-                                draggedAsset = asset
-                            }
-                            dragOffset = value.translation
-                        }
-                        .onEnded { value in
-                            handleDragEnd(for: asset, at: value.location)
-                            isDragging = false
-                            draggedAsset = nil
-                            dragOffset = .zero
-                        }
-                )
+                // Native drag source to allow dropping onto the canvas behind the sheet
+                .onDrag {
+                    createDragItemProvider(for: asset)
+                }
+                // Subtle hover cue to indicate draggability
+                .onHover { hovering in
+                    if hovering {
+                        NSCursor.openHand.push()
+                    } else {
+                        NSCursor.pop()
+                    }
+                }
+                .help("Drag onto the canvas to add this asset")
                 .accessibilityIdentifier("media-asset-\(asset.id)")
                 .accessibilityLabel("\(asset.name), \(asset.type.rawValue)")
                 .accessibilityHint("Double tap to select and preview this \(asset.type.rawValue) file. Drag to add to canvas or timeline")
@@ -272,7 +266,13 @@ public struct MediaBrowserView: View {
                                 )
                             }
                             onAddElementToCanvas?(newElement)
-                            dismiss() // Dismiss the browser after adding
+                            
+                            // Show success notification
+                            withAnimation {
+                                notificationMessage = "\(asset.name) added to canvas"
+                                isNotificationError = false
+                                showSuccessNotification = true
+                            }
                         }) {
                             Label("Add to Canvas", systemImage: "plus.square.on.square")
                         }
@@ -292,7 +292,6 @@ public struct MediaBrowserView: View {
                                     showSuccessNotification = true
                                 }
                                 
-                                dismiss() // Dismiss the browser after adding
                             } else {
                                 // Show error notification if AudioLayer creation fails
                                 withAnimation {
@@ -314,6 +313,38 @@ public struct MediaBrowserView: View {
         .accessibilityIdentifier("media-assets-list")
         .accessibilityLabel("Media Assets List")
         .accessibilityHint("List of imported media files. Select an item to preview it.")
+    }
+
+    // MARK: - Drag Support
+    private func createDragItemProvider(for asset: MediaAsset) -> NSItemProvider {
+        struct DragPayload: Codable {
+            let name: String
+            let type: String
+            let url: String
+            let duration: Double?
+            let width: Double?
+            let height: Double?
+        }
+        let payload = DragPayload(
+            name: asset.name,
+            type: asset.type.rawValue,
+            url: asset.url.absoluteString,
+            duration: asset.duration,
+            width: asset.dimensions.map { Double($0.width) },
+            height: asset.dimensions.map { Double($0.height) }
+        )
+        let encoder = JSONEncoder()
+        let jsonData = (try? encoder.encode(payload)) ?? Data()
+        let provider = NSItemProvider()
+        // Provide a plain-text JSON payload and also the file URL for compatibility
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.plainText.identifier, visibility: .all) { completion in
+            completion(jsonData, nil)
+            return nil
+        }
+        provider.registerItem(forTypeIdentifier: UTType.fileURL.identifier, loadHandler: { completion, expectedClass, options in
+            completion?(asset.url as NSURL, nil)
+        })
+        return provider
     }
     
     private func mediaPreviewView(asset: MediaAsset, width: CGFloat) -> some View {
@@ -642,72 +673,17 @@ public struct MediaBrowserView: View {
         return formatter.string(from: date)
     }
     
-    private func handleDragEnd(for asset: MediaAsset, at location: CGPoint) {
-        // Handle drag and drop similar to the context menu actions
-        let defaultPosition = CGPoint(x: 200, y: 200)
-        let elementSize = asset.dimensions ?? CGSize(width: 300, height: 200)
-        
-        if asset.type == .video || asset.type == .image {
-            let newElement: CanvasElement
-            
-            if asset.type == .image {
-                newElement = CanvasElement.image(at: defaultPosition, assetURL: asset.url, displayName: asset.name, size: elementSize)
-            } else { // .video
-                newElement = CanvasElement.video(
-                    at: defaultPosition, 
-                    assetURL: asset.url, 
-                    displayName: asset.name, 
-                    size: elementSize,
-                    videoDuration: asset.duration
-                )
-            }
-            
-            onAddElementToCanvas?(newElement)
-            
-            // Show success notification
-            withAnimation {
-                notificationMessage = "\(asset.name) added to canvas"
-                isNotificationError = false
-                showSuccessNotification = true
-            }
-            
-        } else if asset.type == .audio {
-            // Create an audio layer from the asset
-            if let audioLayer = AudioLayer.from(mediaAsset: asset, startTime: currentTimelineTime) {
-                onAddAudioToTimeline?(audioLayer)
-                
-                // Show success notification
-                withAnimation {
-                    notificationMessage = "\(asset.name) added to timeline"
-                    isNotificationError = false
-                    showSuccessNotification = true
-                }
-            } else {
-                // Show error notification if AudioLayer creation fails
-                withAnimation {
-                    notificationMessage = "Failed to add \(asset.name) to timeline"
-                    isNotificationError = true
-                    showSuccessNotification = true
-                }
-            }
-        }
-        
-        // Note: We don't dismiss the media browser as per requirements
-    }
+    // Removed manual handleDragEnd; native system drag-and-drop now handles adding to canvas/timeline
 }
 
 /// Row view for a media asset in the list
 struct MediaAssetRow: View {
     let asset: MediaAsset
     let isSelected: Bool
-    let isDragging: Bool
-    let dragOffset: CGSize
     
-    init(asset: MediaAsset, isSelected: Bool, isDragging: Bool = false, dragOffset: CGSize = .zero) {
+    init(asset: MediaAsset, isSelected: Bool) {
         self.asset = asset
         self.isSelected = isSelected
-        self.isDragging = isDragging
-        self.dragOffset = dragOffset
     }
     
     var body: some View {
@@ -736,11 +712,11 @@ struct MediaAssetRow: View {
         }
         .padding(.vertical, 4)
         .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
-        .opacity(isDragging ? 0.6 : 1.0)
-        .scaleEffect(isDragging ? 0.95 : 1.0)
-        .offset(dragOffset)
-        .shadow(radius: isDragging ? 8 : 0)
-        .animation(.easeInOut(duration: 0.15), value: isDragging)
+        .opacity(1.0) // Removed isDragging and dragOffset
+        .scaleEffect(1.0) // Removed isDragging and dragOffset
+        .offset(CGSize.zero) // Removed isDragging and dragOffset
+        .shadow(radius: 0) // Removed isDragging and dragOffset
+        .animation(.easeInOut(duration: 0.15), value: isSelected) // Changed animation value
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
