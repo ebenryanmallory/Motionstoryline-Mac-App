@@ -33,22 +33,9 @@
 		E4B8EF082D6DD2A90095FBAF /* Motion StorylineUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Motion StorylineUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		E48B73362E4EA6D000DFFDBC /* Exceptions for "Motion Storyline" folder in "Motion Storyline" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				"Motion-Storyline-Info.plist",
-			);
-			target = E4B8EEEC2D6DD2A60095FBAF /* Motion Storyline */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		E4B8EEEF2D6DD2A60095FBAF /* Motion Storyline */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				E48B73362E4EA6D000DFFDBC /* Exceptions for "Motion Storyline" folder in "Motion Storyline" target */,
-			);
 			path = "Motion Storyline";
 			sourceTree = "<group>";
 		};
