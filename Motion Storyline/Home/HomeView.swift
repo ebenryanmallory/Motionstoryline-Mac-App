@@ -191,6 +191,7 @@ struct HomeView: View {
                             .foregroundColor(.secondary)
                             .accessibilityHidden(true)
                         TextField("Search files...", text: $searchText)
+                            .textFieldStyle(.plain)
                             .frame(width: 200)
                             .accessibilityLabel("Search files")
                             .onChange(of: searchText) { oldValue, newValue in
@@ -232,180 +233,8 @@ struct HomeView: View {
                         )
                     }
                     
-                    // User menu
-                    Button(action: { isShowingUserMenu.toggle() }) {
-                        Group {
-                            if authManager.isAuthenticationAvailable && authManager.isAuthenticated,
-                               let imageUrl = authManager.user?.imageUrl {
-                                AsyncImage(url: URL(string: imageUrl)) { image in
-                                    image
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    Image(systemName: "person.circle.fill")
-                                        .font(.title2)
-                                        .foregroundColor(.primary)
-                                }
-                            } else {
-                                Image(systemName: "person.circle.fill")
-                                    .font(.title2)
-                                    .foregroundColor(.primary)
-                            }
-                        }
-                        .frame(width: 28, height: 28)
-                        .clipShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("User Menu")
-                    .accessibilityHint("Access profile and settings")
-                    .popover(isPresented: $isShowingUserMenu) {
-                        VStack(alignment: .leading, spacing: 12) {
-                            if !authManager.isAuthenticationAvailable || authManager.isOfflineMode {
-                                // Offline mode menu
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "person.circle.fill")
-                                            .font(.title)
-                                            .foregroundColor(.gray)
-                                            .frame(width: 40, height: 40)
-                                        
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Offline Mode")
-                                                .font(.headline)
-                                                .lineLimit(1)
-                                            
-                                            Text("Authentication unavailable")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                        
-                                        Spacer()
-                                    }
-                                    
-                                    Divider()
-                                    
-                                    Button("Sign In", action: {
-                                        isShowingUserMenu = false
-                                        if authManager.isAuthenticationAvailable {
-                                            isShowingAuthenticationView = true
-                                        } else {
-                                            Task {
-                                                await authManager.retryAuthentication()
-                                            }
-                                        }
-                                    })
-                                    .disabled(authManager.isLoading)
-                                    .accessibilityHint("Try to sign in")
-                                    
-                                    Button("Settings", action: {
-                                        isShowingUserMenu = false
-                                        isShowingPreferencesSheet = true
-                                    })
-                                    .accessibilityHint("Open application settings")
-                                }
-                            } else if authManager.isAuthenticated {
-                                // Authenticated user menu
-                                HStack(spacing: 12) {
-                                    Group {
-                                        if let imageUrl = authManager.user?.imageUrl {
-                                            AsyncImage(url: URL(string: imageUrl)) { image in
-                                                image
-                                                    .resizable()
-                                                    .aspectRatio(contentMode: .fill)
-                                            } placeholder: {
-                                                Image(systemName: "person.circle.fill")
-                                                    .font(.title)
-                                                    .foregroundColor(.gray)
-                                            }
-                                        } else {
-                                            Image(systemName: "person.circle.fill")
-                                                .font(.title)
-                                                .foregroundColor(.gray)
-                                        }
-                                    }
-                                    .frame(width: 40, height: 40)
-                                    .clipShape(Circle())
-                                    
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(userDisplayName)
-                                            .font(.headline)
-                                            .lineLimit(1)
-                                        
-                                        Text(authManager.user?.primaryEmailAddress?.emailAddress ?? "")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                            .lineLimit(1)
-                                    }
-                                    
-                                    Spacer()
-                                }
-                                
-                                Divider()
-                                
-                                Button("Profile", action: {
-                                    isShowingUserMenu = false
-                                    isShowingUserProfileView = true
-                                })
-                                .accessibilityHint("View your profile")
-                                
-                                Button("Settings", action: {
-                                    isShowingUserMenu = false
-                                    isShowingPreferencesSheet = true
-                                })
-                                .accessibilityHint("Open application settings")
-                                
-                                Divider()
-                                
-                                Button("Sign Out", action: {
-                                    isShowingUserMenu = false
-                                    Task {
-                                        await authManager.signOut()
-                                    }
-                                })
-                                .accessibilityHint("Sign out of your account")
-                            } else {
-                                // Not authenticated but auth is available
-                                VStack(alignment: .leading, spacing: 12) {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: "person.circle")
-                                            .font(.title)
-                                            .foregroundColor(.gray)
-                                            .frame(width: 40, height: 40)
-                                        
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text("Not Signed In")
-                                                .font(.headline)
-                                                .lineLimit(1)
-                                            
-                                            Text("Sign in to sync your projects")
-                                                .font(.caption)
-                                                .foregroundColor(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                        
-                                        Spacer()
-                                    }
-                                    
-                                    Divider()
-                                    
-                                    Button("Sign In", action: {
-                                        isShowingUserMenu = false
-                                        isShowingAuthenticationView = true
-                                    })
-                                    .accessibilityHint("Sign in to your account")
-                                    
-                                    Button("Settings", action: {
-                                        isShowingUserMenu = false
-                                        isShowingPreferencesSheet = true
-                                    })
-                                    .accessibilityHint("Open application settings")
-                                }
-                            }
-                        }
-                        .padding()
-                        .frame(width: 250)
-                    }
+                    // Auth controls (Clerk)
+                    AuthControls()
                 }
                 .padding()
                 .background(designHeaderBg)
@@ -445,7 +274,12 @@ struct HomeView: View {
                         .accessibilityLabel("Status: \(statusMessage)")
                     
                     // New project button
-                    Button(action: { isCreatingNewProject = true }) {
+                    Button(action: {
+                        // Ensure template lock is not applied for manual new project
+                        appState.pendingTemplateID = nil
+                        selectedTemplateType = ""
+                        isCreatingNewProject = true
+                    }) {
                         Label("New Project", systemImage: "plus")
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -573,33 +407,31 @@ struct HomeView: View {
                                 .padding(.horizontal, 24)
                             
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 220, maximum: 280), spacing: 20)], spacing: 20) {
-                                TemplateCard(name: "Mobile App", type: "Design", id: "mobile-app-template")
+                                TemplateCard(name: "Grid Template", type: "Design", id: "grid-template")
+                                    .onTapGesture {
+                                        // Preselect a sensible default project type; can be adjusted later
+                                        selectedTemplateType = "Design"
+                                        // Mark the selected template for seeding
+                                        appState.pendingTemplateID = "grid-template"
+                                        isCreatingNewProject = true
+                                    }
+                                    .accessibilityIdentifier("grid-template")
+
+                                TemplateCard(name: "Hero Title", type: "Design", id: "hero-template")
                                     .onTapGesture {
                                         selectedTemplateType = "Design"
+                                        appState.pendingTemplateID = "hero-template"
                                         isCreatingNewProject = true
                                     }
-                                    .accessibilityIdentifier("mobile-app-template")
-                                
-                                TemplateCard(name: "Website", type: "Prototype", id: "website-template")
+                                    .accessibilityIdentifier("hero-template")
+
+                                TemplateCard(name: "Video Showcase", type: "Design", id: "video-showcase-template")
                                     .onTapGesture {
-                                        selectedTemplateType = "Prototype"
+                                        selectedTemplateType = "Design"
+                                        appState.pendingTemplateID = "video-showcase-template"
                                         isCreatingNewProject = true
                                     }
-                                    .accessibilityIdentifier("website-template")
-                                
-                                TemplateCard(name: "Component Library", type: "Component Library", id: "component-library-template")
-                                    .onTapGesture {
-                                        selectedTemplateType = "Component Library"
-                                        isCreatingNewProject = true
-                                    }
-                                    .accessibilityIdentifier("component-library-template")
-                                
-                                TemplateCard(name: "Style Guide", type: "Style Guide", id: "style-guide-template")
-                                    .onTapGesture {
-                                        selectedTemplateType = "Style Guide"
-                                        isCreatingNewProject = true
-                                    }
-                                    .accessibilityIdentifier("style-guide-template")
+                                    .accessibilityIdentifier("video-showcase-template")
                             }
                             .padding(.horizontal, 24)
                         }
@@ -614,21 +446,12 @@ struct HomeView: View {
         .sheet(isPresented: $isShowingPreferencesSheet) {
             PreferencesView()
         }
-        .sheet(isPresented: $isShowingAuthenticationView) {
-            AuthenticationView()
-                .environmentObject(authManager)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: $isShowingUserProfileView) {
-            UserProfileView()
-                .environmentObject(authManager)
-        }
         .sheet(isPresented: $isCreatingNewProject) {
             NewProjectSheet(
                 isPresented: $isCreatingNewProject,
                 initialProjectType: selectedTemplateType,
-                existingProjectNames: userProjects.map { $0.name }
+                existingProjectNames: userProjects.map { $0.name },
+                lockProjectType: appState.pendingTemplateID != nil
             ) { name, type in
                 // Save the template type for the editor to use for identifiers
                 _ = selectedTemplateType

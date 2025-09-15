@@ -126,8 +126,22 @@ extension DesignCanvas {
         // Create the expected file path based on project UUID for uniqueness
         let projectURL = constructProjectURL(for: project)
         
+        // Attempt to seed from a pending template if no file exists yet
+        var fileExists = FileManager.default.fileExists(atPath: projectURL.path)
+        if !fileExists, let templateID = appState.pendingTemplateID {
+            do {
+                try TemplateRegistry.writeTemplate(id: templateID, to: projectURL)
+                fileExists = FileManager.default.fileExists(atPath: projectURL.path)
+                print("🧩 Seeded project from template: \(templateID)")
+            } catch {
+                print("⚠️ Failed to seed template (\(templateID)): \(error.localizedDescription)")
+            }
+            // Clear the pending flag regardless of success to avoid repeated attempts
+            appState.pendingTemplateID = nil
+        }
+
         // Check if the project file exists
-        if FileManager.default.fileExists(atPath: projectURL.path) {
+        if fileExists {
             print("📁 Found existing project file at: \(projectURL.path)")
             
             // Load the existing project file

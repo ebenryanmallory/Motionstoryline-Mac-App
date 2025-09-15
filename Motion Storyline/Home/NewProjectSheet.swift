@@ -1,23 +1,27 @@
 import SwiftUI
 
 struct NewProjectSheet: View {
+    @EnvironmentObject private var appState: AppStateManager
     @Binding var isPresented: Bool
     let onCreateProject: (String, String) -> Void
     let initialProjectType: String
     let existingProjectNames: [String]
+    let lockProjectType: Bool
     
     @State private var projectName = ""
     @State private var selectedProjectType = 0
     @State private var nameValidationMessage = ""
     @State private var isNameValid = true
     
-    let projectTypes = ["Design", "Prototype", "Component Library", "Style Guide"]
+    // Project types available when not launched from a template
+    let projectTypes = ["Design", "Component Library"]
     
-    init(isPresented: Binding<Bool>, initialProjectType: String = "", existingProjectNames: [String] = [], onCreateProject: @escaping (String, String) -> Void) {
+    init(isPresented: Binding<Bool>, initialProjectType: String = "", existingProjectNames: [String] = [], lockProjectType: Bool = false, onCreateProject: @escaping (String, String) -> Void) {
         self._isPresented = isPresented
         self.onCreateProject = onCreateProject
         self.initialProjectType = initialProjectType
         self.existingProjectNames = existingProjectNames
+        self.lockProjectType = lockProjectType
         
         // Set the initial selected project type based on the template
         let typeIndex = projectTypes.firstIndex(of: initialProjectType) ?? 0
@@ -42,24 +46,26 @@ struct NewProjectSheet: View {
                 .accessibilityLabel("Close")
             }
             
-            // Project type selection
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Project Type")
-                    .font(.headline)
-                
-                HStack(spacing: 16) {
-                    ForEach(projectTypes.indices, id: \.self) { index in
-                        ProjectTypeCard(
-                            name: projectTypes[index],
-                            isSelected: selectedProjectType == index
-                        )
-                        .onTapGesture {
-                            selectedProjectType = index
+            // Project type selection (hidden if launched from a template)
+            if !lockProjectType {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Project Type")
+                        .font(.headline)
+                    
+                    HStack(spacing: 16) {
+                        ForEach(projectTypes.indices, id: \.self) { index in
+                            ProjectTypeCard(
+                                name: projectTypes[index],
+                                isSelected: selectedProjectType == index
+                            )
+                            .onTapGesture {
+                                selectedProjectType = index
+                            }
+                            .id("project-type-\(projectTypes[index].lowercased().replacingOccurrences(of: " ", with: "-"))")
+                            .accessibilityIdentifier(selectedProjectType == index ? 
+                                "selected-project-type-\(projectTypes[index].lowercased().replacingOccurrences(of: " ", with: "-"))" : 
+                                "project-type-\(projectTypes[index].lowercased().replacingOccurrences(of: " ", with: "-"))")
                         }
-                        .id("project-type-\(projectTypes[index].lowercased().replacingOccurrences(of: " ", with: "-"))")
-                        .accessibilityIdentifier(selectedProjectType == index ? 
-                            "selected-project-type-\(projectTypes[index].lowercased().replacingOccurrences(of: " ", with: "-"))" : 
-                            "project-type-\(projectTypes[index].lowercased().replacingOccurrences(of: " ", with: "-"))")
                     }
                 }
             }
@@ -91,6 +97,8 @@ struct NewProjectSheet: View {
                 Spacer()
                 
                 Button("Cancel") {
+                    // If the sheet was opened from a template, clear the pending flag
+                    appState.pendingTemplateID = nil
                     isPresented = false
                 }
                 .keyboardShortcut(.escape)
@@ -98,7 +106,8 @@ struct NewProjectSheet: View {
                 
                 Button("Create") {
                     let finalName = getFinalProjectName()
-                    onCreateProject(finalName, projectTypes[selectedProjectType])
+                    let typeForCreate = lockProjectType ? initialProjectType : projectTypes[selectedProjectType]
+                    onCreateProject(finalName, typeForCreate)
                     isPresented = false
                 }
                 .buttonStyle(.borderedProminent)

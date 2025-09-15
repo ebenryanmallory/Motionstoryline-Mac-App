@@ -70,7 +70,7 @@ struct SidebarView: View {
                 Section(header: Text("Tools")) {
                     HStack {
                         TextField("Search...", text: $searchText)
-                            .textFieldStyle(.roundedBorder)
+                            .textFieldStyle(.plain)
                         
                         if !searchText.isEmpty {
                             Button(action: { searchText = "" }) {

@@ -23,6 +23,10 @@ class AppStateManager: ObservableObject {
     @Published var currentTimelineOffset: Double = 0.0
     @Published var currentProjectName: String = "Untitled Project"
     
+    // Template seeding state: when set, the next new project will be
+    // initialized from the specified template ID (TemplateRegistry)
+    @Published var pendingTemplateID: String? = nil
+    
     // Helper function to clean project names by removing UUID suffix
     func cleanProjectName(_ rawName: String) -> String {
         // Remove UUID pattern: _XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX
