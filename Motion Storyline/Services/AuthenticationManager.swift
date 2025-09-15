@@ -193,6 +193,11 @@ class AuthenticationManager: ObservableObject {
                         self.isLoading = false
                     }
                 }
+            } else {
+                await MainActor.run {
+                    self.errorMessage = "No pending sign-in found. Please request a new code."
+                    self.isLoading = false
+                }
             }
         } catch {
             await MainActor.run {
@@ -261,6 +266,11 @@ class AuthenticationManager: ObservableObject {
                         self.errorMessage = "Verification incomplete"
                         self.isLoading = false
                     }
+                }
+            } else {
+                await MainActor.run {
+                    self.errorMessage = "No pending sign-up found. Please start again."
+                    self.isLoading = false
                 }
             }
         } catch {

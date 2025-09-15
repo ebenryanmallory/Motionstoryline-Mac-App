@@ -104,6 +104,7 @@ struct Motion_StorylineApp: App {
                     }
                 }
             }
+            .environment(\.clerk, clerk)
             .environmentObject(authManager)
             .task {
                 // Only configure Clerk if authentication is properly set up
@@ -213,14 +214,8 @@ struct Motion_StorylineApp: App {
                     Button("New Design") {
                         createNewProject(name: "Untitled", type: "Design")
                     }
-                    Button("New Prototype") {
-                        createNewProject(name: "Untitled", type: "Prototype")
-                    }
                     Button("New Component Library") {
                         createNewProject(name: "Untitled", type: "Component Library")
-                    }
-                    Button("New Style Guide") {
-                        createNewProject(name: "Untitled", type: "Style Guide")
                     }
                 }
                 .keyboardShortcut("n", modifiers: [.command])

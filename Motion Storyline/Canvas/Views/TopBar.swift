@@ -7,8 +7,6 @@ import Combine
 
 struct CanvasTopBar: View {
     @State private var isShowingPreferences = false
-    @State private var isShowingAuthenticationView = false
-    @State private var isShowingUserProfileView = false
     let projectName: String
     let project: Project? // Add full project parameter
     let onClose: () -> Void
@@ -420,138 +418,18 @@ struct CanvasTopBar: View {
                 .fixedSize()
                 .help("Export Project")
                 
-                Menu {
-                    if !authManager.isAuthenticationAvailable || authManager.isOfflineMode {
-                        // Offline mode menu
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Offline Mode")
-                                .font(.headline)
-                            Text("Authentication unavailable")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.vertical, 4)
-                        
-                        Divider()
-                        
-                        Button("Sign In") {
-                            if authManager.isAuthenticationAvailable {
-                                isShowingAuthenticationView = true
-                            } else {
-                                Task {
-                                    await authManager.retryAuthentication()
-                                }
-                            }
-                        }
-                        .disabled(authManager.isLoading)
-                        
-                        Button("Preferences") {
-                            isShowingPreferences = true
-                        }
-                        
-                        Divider()
-                        
-                        Button("Help & Support") {
-                            onHelpAndSupport()
-                        }
-                        
-                        Button("Check for Updates") {
-                            onCheckForUpdates()
-                        }
-                    } else if authManager.isAuthenticated {
-                        // Authenticated user menu
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(userDisplayName)
-                                .font(.headline)
-                            Text(authManager.user?.primaryEmailAddress?.emailAddress ?? "")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.vertical, 4)
-                        
-                        Divider()
-                        
-                        Button("Account Settings") {
-                            isShowingUserProfileView = true
-                        }
-                        
-                        Button("Preferences") {
-                            isShowingPreferences = true
-                        }
-                        
-                        Divider()
-                        
-                        Button("Help & Support") {
-                            onHelpAndSupport()
-                        }
-                        
-                        Button("Check for Updates") {
-                            onCheckForUpdates()
-                        }
-                        
-                        Divider()
-                        
-                        Button("Sign Out") {
-                            Task {
-                                await authManager.signOut()
-                            }
-                        }
-                    } else {
-                        // Not authenticated but auth is available
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Not Signed In")
-                                .font(.headline)
-                            Text("Sign in to sync your projects")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        .padding(.vertical, 4)
-                        
-                        Divider()
-                        
-                        Button("Sign In") {
-                            isShowingAuthenticationView = true
-                        }
-                        
-                        Button("Preferences") {
-                            isShowingPreferences = true
-                        }
-                        
-                        Divider()
-                        
-                        Button("Help & Support") {
-                            onHelpAndSupport()
-                        }
-                        
-                        Button("Check for Updates") {
-                            onCheckForUpdates()
-                        }
-                    }
-                } label: {
-                    Group {
-                        if authManager.isAuthenticationAvailable && authManager.isAuthenticated,
-                           let imageUrl = authManager.user?.imageUrl {
-                            AsyncImage(url: URL(string: imageUrl)) { image in
-                                image
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                            } placeholder: {
-                                Image(systemName: "person.circle")
-                                    .foregroundColor(.black)
-                            }
-                        } else {
-                            Image(systemName: "person.circle")
-                                .foregroundColor(.black)
-                        }
-                    }
-                    .frame(width: 20, height: 20)
-                    .clipShape(Circle())
-                    .padding(8)
-                    .contentShape(Rectangle())
+                // Preferences button (left of Sign In/AuthControls)
+                Button(action: { isShowingPreferences = true }) {
+                    Image(systemName: "gearshape")
+                        .foregroundColor(.black)
+                        .padding(8)
+                        .contentShape(Rectangle())
                 }
-                .menuStyle(BorderlessButtonMenuStyle())
-                .fixedSize()
-                .help("User Menu")
+                .buttonStyle(.plain)
+                .help("Preferences")
+                
+                // Auth controls (Clerk) — standalone button/profile
+                AuthControls()
             }
         }
         .padding(.horizontal)
@@ -561,16 +439,7 @@ struct CanvasTopBar: View {
         .sheet(isPresented: $isShowingPreferences) {
             PreferencesView()
         }
-        .sheet(isPresented: $isShowingAuthenticationView) {
-            AuthenticationView()
-                .environmentObject(authManager)
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: $isShowingUserProfileView) {
-            UserProfileView()
-                .environmentObject(authManager)
-        }
+        
         .sheet(isPresented: $showingExportModal) {
             ExportModal(
                 asset: AVAsset(url: URL(fileURLWithPath: "")), // Empty asset as placeholder
