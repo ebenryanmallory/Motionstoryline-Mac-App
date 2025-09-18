@@ -1,0 +1,30 @@
+Motion Storyline — First Run Guide
+==================================
+
+Why you see a warning
+- This app is distributed directly from the developer’s website, not the Mac App Store.
+- MacOS Gatekeeper shows a warning for unnotarized apps.
+- This is expected for independent distribution. If you downloaded this DMG from the official Motion Storyline website and you trust the developer, follow one of the options below.
+
+Option A — Open via context menu (recommended)
+1) Drag “Motion Storyline.app” to the Applications folder in this window.
+2) In Applications, Right‑click (or Control‑click) “Motion Storyline.app” and choose “Open”.
+3) In the dialog, click “Open”. You should only have to do this once per Mac.
+
+Option B — Allow from Privacy & Security
+1) Open System Settings → Privacy & Security.
+2) Scroll to the Security section.
+3) If you see “Motion Storyline was blocked from opening”, click “Open Anyway”, then confirm “Open”.
+
+Option C — Terminal (advanced users)
+1) After copying the app to Applications, run:
+   xattr -dr com.apple.quarantine "/Applications/Motion Storyline.app"
+2) Then open the app normally from Applications.
+
+Security notes
+- The app is unsigned/unnotarized in this build, so macOS can’t verify it automatically.
+- Only proceed if you obtained this DMG from the official Motion Storyline website.
+- This extra step will likely not be necessary in future releases.
+
+Questions or feedback?
+- If anything looks suspicious or unexpected, do not proceed and contact support@motionstoryline.com

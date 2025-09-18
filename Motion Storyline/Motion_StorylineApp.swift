@@ -15,7 +15,6 @@ struct Motion_StorylineApp: App {
     @StateObject private var documentManager = DocumentManager() // Add DocumentManager
     @StateObject private var authManager = AuthenticationManager() // Add Authentication Manager
     @StateObject private var preferencesViewModel = PreferencesViewModel() // Add Preferences Manager
-    @State private var clerk = Clerk.shared
     @Environment(\.scenePhase) private var scenePhase // Get scenePhase from environment
     @State private var isCreatingNewProject = false
     @AppStorage("recentProjects") private var recentProjectsData: Data = Data()
@@ -104,23 +103,7 @@ struct Motion_StorylineApp: App {
                     }
                 }
             }
-            .environment(\.clerk, clerk)
             .environmentObject(authManager)
-            .task {
-                // Only configure Clerk if authentication is properly set up
-                if ClerkConfig.isAuthenticationConfigured {
-                    do {
-                        // Configure Clerk with your publishable key
-                        clerk.configure(publishableKey: ClerkConfig.currentPublishableKey)
-                        try await clerk.load()
-                    } catch {
-                        print("Failed to load Clerk: \(error.localizedDescription)")
-                        // The AuthenticationManager will handle this gracefully
-                    }
-                } else {
-                    print("Clerk not configured - running in offline mode")
-                }
-            }
             .onAppear {
                 // Configure window to prevent automatic snapping during resize
                 if let window = NSApplication.shared.windows.first {

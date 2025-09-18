@@ -15,10 +15,16 @@ class AuthenticationManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var initializationTimeout: Timer?
     
-    init() {
+    // Lazy by default: do not initialize Clerk until explicitly requested
+    init() {}
+    
+    // Public entry to begin authentication setup when the user opts in
+    func beginAuthentication() {
+        // If we've already started or completed initialization, skip
+        if clerk != nil || isOfflineMode || isLoading { return }
         initializeAuthentication()
     }
-    
+
     private func initializeAuthentication() {
         isLoading = true
         
@@ -43,6 +49,16 @@ class AuthenticationManager: ObservableObject {
             
             // Try to initialize Clerk
             self.clerk = Clerk.shared
+            
+            // Configure and load Clerk on-demand to avoid early Keychain access
+            if let clerk = self.clerk {
+                // Use an environment-scoped keychain service to avoid dev/prod collisions
+                let serviceBase = Bundle.main.bundleIdentifier ?? "app"
+                let service = "\(serviceBase).\(ClerkConfig.environment)"
+                let settings = Clerk.Settings(keychainConfig: .init(service: service))
+                clerk.configure(publishableKey: ClerkConfig.currentPublishableKey, settings: settings)
+                try await clerk.load()
+            }
             
             // Check if Clerk is properly configured
             if let clerk = self.clerk {

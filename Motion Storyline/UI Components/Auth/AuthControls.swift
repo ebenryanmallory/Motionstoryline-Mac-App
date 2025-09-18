@@ -5,16 +5,19 @@ struct AuthControls: View {
     // Use the app's AuthenticationManager rather than an Environment(\.clerk) key
     // since the Clerk SDK does not define an EnvironmentValues.clerk key.
     @EnvironmentObject private var authManager: AuthenticationManager
-    private let clerk = Clerk.shared
     @State private var authIsPresented = false
 
     var body: some View {
         Group {
-            if authManager.isAuthenticated || clerk.user != nil {
+            if authManager.isAuthenticated {
                 AuthProfileButton()
                     .frame(width: 36, height: 36)
             } else {
-                Button(action: { authIsPresented = true }) {
+                Button(action: {
+                    // Initialize auth only when the user opts to sign in
+                    Task { await authManager.beginAuthentication() }
+                    authIsPresented = true
+                }) {
                     HStack(spacing: 4) {
                         Image(systemName: "person.crop.circle")
                         Text("Sign in")
