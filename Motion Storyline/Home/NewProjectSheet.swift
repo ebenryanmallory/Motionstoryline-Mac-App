@@ -76,7 +76,7 @@ struct NewProjectSheet: View {
                     .font(.headline)
                 
                 TextField("Untitled Project", text: $projectName)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
                     .accessibilityIdentifier("project-name-field")
                     .onChange(of: projectName) { oldValue, newValue in
                         validateProjectName(newValue)

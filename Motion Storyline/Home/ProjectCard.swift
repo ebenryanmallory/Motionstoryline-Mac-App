@@ -20,24 +20,34 @@ struct ProjectCard: View {
     private var cardBackground: Color {
         Color(NSColor.controlBackgroundColor)
     }
+    // Header backdrop to clearly define edges
+    private var headerBackdrop: Color {
+        Color(NSColor.darkGray)
+    }
     
     var body: some View {
         ZStack {
             // Main card container
             VStack(alignment: .leading, spacing: 0) {
-                // Thumbnail - full width
-                if project.thumbnail.isEmpty {
-                    Rectangle()
-                        .fill(Color.gray.opacity(0.2))
-                        .aspectRatio(16/9, contentMode: .fill)
-                        .accessibilityHidden(true)
-                } else {
-                    PlaceholderView.create(for: project.thumbnail)
-                        .aspectRatio(contentMode: .fill)
-                        .frame(height: 140)
-                        .clipped()
-                        .accessibilityLabel("Project thumbnail")
+                // Thumbnail - full width with defined dark backdrop
+                ZStack {
+                    if project.thumbnail.isEmpty {
+                        Rectangle()
+                            .fill(Color.gray.opacity(0.2))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .accessibilityHidden(true)
+                    } else {
+                        PlaceholderView.create(for: project.thumbnail)
+                            .aspectRatio(contentMode: .fill)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .clipped()
+                            .accessibilityLabel("Project thumbnail")
+                    }
                 }
+                .frame(maxWidth: .infinity)
+                .frame(height: 140)
+                .background(headerBackdrop)
+                .cornerRadius(8, corners: .top)
                 
                 // Project info
                 VStack(alignment: .leading, spacing: 4) {
@@ -58,8 +68,10 @@ struct ProjectCard: View {
                     .accessibilityLabel("Last modified \(formattedDate(project.lastModified))")
                 }
                 .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .background(cardBackground)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .shadow(color: Color.primary.opacity(0.1), radius: 4, x: 0, y: 2)
             

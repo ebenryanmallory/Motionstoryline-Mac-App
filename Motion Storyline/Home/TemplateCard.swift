@@ -24,34 +24,38 @@ struct TemplateCard: View {
             ZStack {
                 Rectangle()
                     .fill(Color.blue.opacity(0.1))
-                    .aspectRatio(16/9, contentMode: .fill)
-                    .frame(height: 140)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityHidden(true)
-                
+
                 VStack(spacing: 8) {
                     Image(systemName: "doc.badge.plus")
                         .font(.largeTitle)
                         .foregroundColor(.blue)
                         .accessibilityHidden(true)
-                    
+
                     Text("Start with \(type)")
                         .font(.caption)
                         .foregroundColor(.blue)
                 }
             }
-            
+            .frame(maxWidth: .infinity)
+            .frame(height: 140)
+            // Keep header clean without additional backdrop
+
             // Template info
             VStack(alignment: .leading, spacing: 4) {
                 Text(name)
                     .font(.headline)
-                
+
                 Text(type)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
             .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(cardBackground)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .shadow(color: Color.primary.opacity(0.1), radius: 4, x: 0, y: 2)
         .scaleEffect(isHovered ? 1.02 : 1.0)
