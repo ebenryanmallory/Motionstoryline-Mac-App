@@ -52,11 +52,8 @@ class AuthenticationManager: ObservableObject {
             
             // Configure and load Clerk on-demand to avoid early Keychain access
             if let clerk = self.clerk {
-                // Use an environment-scoped keychain service to avoid dev/prod collisions
-                let serviceBase = Bundle.main.bundleIdentifier ?? "app"
-                let service = "\(serviceBase).\(ClerkConfig.environment)"
-                let settings = Clerk.Settings(keychainConfig: .init(service: service))
-                clerk.configure(publishableKey: ClerkConfig.currentPublishableKey, settings: settings)
+                // Configure Clerk with the publishable key
+                clerk.configure(publishableKey: ClerkConfig.currentPublishableKey)
                 try await clerk.load()
             }
             

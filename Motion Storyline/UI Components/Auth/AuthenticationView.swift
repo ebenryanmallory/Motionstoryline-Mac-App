@@ -139,7 +139,7 @@ struct AuthenticationView: View {
         .background(Color(NSColor.windowBackgroundColor))
         .cornerRadius(16)
         .shadow(color: .black.opacity(0.1), radius: 20, x: 0, y: 10)
-        .onChange(of: authManager.isAuthenticated) { isAuthed in
+        .onChange(of: authManager.isAuthenticated) { _, isAuthed in
             // When authentication completes successfully, dismiss and reset form
             if isAuthed {
                 dismiss()
@@ -168,7 +168,7 @@ struct AuthenticationView: View {
                             TextField("First name", text: $firstName)
                                 .textFieldStyle(.plain)
                                 .focused($focusedField, equals: .firstName)
-                                .onChange(of: focusedField) { new in
+                                .onChange(of: focusedField) { _, new in
                                     updateTouched(previous: .firstName, new: new)
                                 }
                         }
@@ -181,7 +181,7 @@ struct AuthenticationView: View {
                             TextField("Last name", text: $lastName)
                                 .textFieldStyle(.plain)
                                 .focused($focusedField, equals: .lastName)
-                                .onChange(of: focusedField) { new in
+                                .onChange(of: focusedField) { _, new in
                                     updateTouched(previous: .lastName, new: new)
                                 }
                         }
@@ -197,7 +197,7 @@ struct AuthenticationView: View {
                     TextField("you@example.com", text: $email)
                         .textFieldStyle(.plain)
                         .focused($focusedField, equals: .email)
-                        .onChange(of: focusedField) { new in
+                        .onChange(of: focusedField) { _, new in
                             updateTouched(previous: .email, new: new)
                         }
                         .onSubmit(handleSubmitNavigation)
@@ -213,7 +213,7 @@ struct AuthenticationView: View {
                     ) {
                         PasswordField(text: $password)
                             .focused($focusedField, equals: .password)
-                            .onChange(of: focusedField) { new in
+                            .onChange(of: focusedField) { _, new in
                                 updateTouched(previous: .password, new: new)
                             }
                             .onSubmit(handleSubmitNavigation)
@@ -228,7 +228,7 @@ struct AuthenticationView: View {
                         ) {
                             PasswordField(text: $confirmPassword)
                                 .focused($focusedField, equals: .confirmPassword)
-                                .onChange(of: focusedField) { new in
+                                .onChange(of: focusedField) { _, new in
                                     updateTouched(previous: .confirmPassword, new: new)
                                 }
                                 .onSubmit(handleSubmitNavigation)
@@ -334,7 +334,7 @@ struct AuthenticationView: View {
                 TextField("123456", text: $verificationCode)
                     .textFieldStyle(.plain)
                     .focused($focusedField, equals: .verificationCode)
-                    .onChange(of: focusedField) { new in
+                    .onChange(of: focusedField) { _, new in
                         updateTouched(previous: .verificationCode, new: new)
                     }
                     .monospaced()
@@ -391,7 +391,7 @@ struct AuthenticationView: View {
                     ) {
                         TextField("you@example.com", text: $email)
                             .focused($focusedField, equals: .email)
-                            .onChange(of: focusedField) { new in
+                            .onChange(of: focusedField) { _, new in
                                 updateTouched(previous: .email, new: new)
                             }
                     }
@@ -432,7 +432,7 @@ struct AuthenticationView: View {
                         TextField("123456", text: $verificationCode)
                             .textFieldStyle(.plain)
                             .focused($focusedField, equals: .verificationCode)
-                            .onChange(of: focusedField) { new in
+                            .onChange(of: focusedField) { _, new in
                                 updateTouched(previous: .verificationCode, new: new)
                             }
                             .monospaced()
@@ -446,7 +446,7 @@ struct AuthenticationView: View {
                     ) {
                         PasswordField(text: $newPassword)
                             .focused($focusedField, equals: .newPassword)
-                            .onChange(of: focusedField) { new in
+                            .onChange(of: focusedField) { _, new in
                                 updateTouched(previous: .newPassword, new: new)
                             }
                     }
@@ -459,7 +459,7 @@ struct AuthenticationView: View {
                     ) {
                         PasswordField(text: $confirmNewPassword)
                             .focused($focusedField, equals: .confirmNewPassword)
-                            .onChange(of: focusedField) { new in
+                            .onChange(of: focusedField) { _, new in
                                 updateTouched(previous: .confirmNewPassword, new: new)
                             }
                     }

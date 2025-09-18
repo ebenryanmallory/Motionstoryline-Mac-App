@@ -15,7 +15,7 @@ struct AuthControls: View {
             } else {
                 Button(action: {
                     // Initialize auth only when the user opts to sign in
-                    Task { await authManager.beginAuthentication() }
+                    Task { authManager.beginAuthentication() }
                     authIsPresented = true
                 }) {
                     HStack(spacing: 4) {
