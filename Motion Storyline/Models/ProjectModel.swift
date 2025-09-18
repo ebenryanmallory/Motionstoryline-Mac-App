@@ -96,39 +96,23 @@ public struct MediaAsset: Identifiable, Hashable, Codable {
 
 // MARK: - MediaAsset Dimension Utilities
 extension MediaAsset {
-    /// Extract dimensions from image or video file
+    /// Deprecated synchronous dimension extraction. Use `extractDimensionsAsync` or `MediaMetadataLoader`.
+    @available(*, deprecated, message: "Use extractDimensionsAsync(from:type:) or MediaMetadataLoader.getDimensions(for:type) instead.")
     public static func extractDimensions(from url: URL, type: MediaType) -> CGSize? {
         switch type {
         case .image:
-            return extractImageDimensions(from: url)
+            return NSImage(contentsOf: url)?.size
         case .video, .cameraRecording:
-            return extractVideoDimensions(from: url)
+            // Avoid deprecated synchronous AVFoundation APIs; return nil to encourage async path.
+            return nil
         case .audio:
-            return nil // Audio files don't have dimensions
+            return nil
         }
     }
-    
-    private static func extractImageDimensions(from url: URL) -> CGSize? {
-        guard let image = NSImage(contentsOf: url) else { return nil }
-        return image.size
-    }
-    
-    private static func extractVideoDimensions(from url: URL) -> CGSize? {
-        let asset = AVAsset(url: url)
-        
-        // Get video tracks
-        let videoTracks = asset.tracks(withMediaType: .video)
-        guard let videoTrack = videoTracks.first else { return nil }
-        
-        // Get the natural size of the video
-        let naturalSize = videoTrack.naturalSize
-        let transform = videoTrack.preferredTransform
-        
-        // Apply transform to get the actual display size
-        let videoSize = naturalSize.applying(transform)
-        
-        // Return absolute values to handle rotations
-        return CGSize(width: abs(videoSize.width), height: abs(videoSize.height))
+
+    /// Async dimension extraction powered by AVFoundation's async loaders.
+    public static func extractDimensionsAsync(from url: URL, type: MediaType) async throws -> CGSize? {
+        return try await MediaMetadataLoader.shared.getDimensions(for: url, type: type)
     }
 }
 

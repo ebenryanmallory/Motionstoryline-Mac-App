@@ -100,7 +100,7 @@ class CanvasAudioRenderer: @unchecked Sendable {
         os_log("Total audio layers processed: %d", log: CanvasAudioRenderer.logger, type: .info, audioLayers.count)
         os_log("Tracks actually added to composition: %d", log: CanvasAudioRenderer.logger, type: .info, actuallyAddedTracks)
         
-        let finalAudioTracks = composition.tracks(withMediaType: .audio)
+        let finalAudioTracks = try await composition.loadTracks(withMediaType: .audio)
         os_log("Final composition audio tracks: %d", log: CanvasAudioRenderer.logger, type: .info, finalAudioTracks.count)
         
         if actuallyAddedTracks == 0 {
@@ -138,7 +138,7 @@ class CanvasAudioRenderer: @unchecked Sendable {
             }
             
             // Find the corresponding composition track
-            let audioTracks = composition.tracks(withMediaType: .audio)
+            let audioTracks = try await composition.loadTracks(withMediaType: .audio)
             os_log("Looking for track for layer %d (unmuted index: %d), total tracks: %d", log: CanvasAudioRenderer.logger, type: .info, index, unmutedLayerIndex, audioTracks.count)
             
             if unmutedLayerIndex < audioTracks.count {

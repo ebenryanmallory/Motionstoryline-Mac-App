@@ -357,68 +357,77 @@ public struct MediaImportView: View {
         do {
             // Copy the file to our app's documents directory
             try FileManager.default.copyItem(at: fileURL, to: destinationURL)
-            
+
             // Now we can stop accessing the security scoped resource
             fileURL.stopAccessingSecurityScopedResource()
-            
+
             importProgress = 0.7
-            
-            // Create the media asset
-            let dimensions = MediaAsset.extractDimensions(from: destinationURL, type: selectedMediaType)
-            let asset = MediaAsset(
-                name: assetName,
-                type: selectedMediaType,
-                url: destinationURL,
-                duration: assetDuration,
-                thumbnail: selectedMediaType == .video ? "video_thumbnail" : selectedMediaType == .audio ? "audio_thumbnail" : "image_thumbnail",
-                width: dimensions?.width,
-                height: dimensions?.height
-            )
-            
-            // If extract audio is enabled and this is a video, also create an audio asset
-            if extractAudioTrack && selectedMediaType == .video, let currentAsset = self.currentAsset {
-                Task {
-                    do {
-                        let audioURL = try await extractAudio(from: currentAsset, to: mediaDirectoryURL)
-                        let audioAsset = MediaAsset(
-                            name: "\(assetName) - Audio",
-                            type: .audio,
-                            url: audioURL,
-                            duration: assetDuration,
-                            thumbnail: "audio_thumbnail",
-                            width: nil,
-                            height: nil
-                        )
-                        
-                        DispatchQueue.main.async {
-                            // Call the import handler for both assets
-                            self.onImport?(asset)
-                            self.onImport?(audioAsset)
-                            
-                            self.importProgress = 1.0
-                            self.isImporting = false
-                            self.presentationMode.wrappedValue.dismiss()
+
+            // Load dimensions asynchronously using the new metadata loader
+            Task {
+                do {
+                    let dims = try await MediaMetadataLoader.shared.getDimensions(for: destinationURL, type: selectedMediaType)
+
+                    let asset = MediaAsset(
+                        name: assetName,
+                        type: selectedMediaType,
+                        url: destinationURL,
+                        duration: assetDuration,
+                        thumbnail: selectedMediaType == .video ? "video_thumbnail" : selectedMediaType == .audio ? "audio_thumbnail" : "image_thumbnail",
+                        width: dims?.width,
+                        height: dims?.height
+                    )
+
+                    if extractAudioTrack && selectedMediaType == .video, let currentAsset = self.currentAsset {
+                        do {
+                            let audioURL = try await extractAudio(from: currentAsset, to: mediaDirectoryURL)
+                            let audioAsset = MediaAsset(
+                                name: "\(assetName) - Audio",
+                                type: .audio,
+                                url: audioURL,
+                                duration: assetDuration,
+                                thumbnail: "audio_thumbnail",
+                                width: nil,
+                                height: nil
+                            )
+
+                            DispatchQueue.main.async {
+                                // Call the import handler for both assets
+                                self.onImport?(asset)
+                                self.onImport?(audioAsset)
+
+                                self.importProgress = 1.0
+                                self.isImporting = false
+                                self.presentationMode.wrappedValue.dismiss()
+                            }
+                        } catch {
+                            DispatchQueue.main.async {
+                                // Still import the video even if audio extraction fails
+                                self.onImport?(asset)
+
+                                self.importProgress = 1.0
+                                self.isImporting = false
+                                self.presentationMode.wrappedValue.dismiss()
+
+                                self.showAlert(message: "Imported video, but failed to extract audio: \(error.localizedDescription)")
+                            }
                         }
-                    } catch {
+                    } else {
                         DispatchQueue.main.async {
-                            // Still import the video even if audio extraction fails
+                            // Call the import handler
                             self.onImport?(asset)
-                            
+
                             self.importProgress = 1.0
                             self.isImporting = false
                             self.presentationMode.wrappedValue.dismiss()
-                            
-                            self.showAlert(message: "Imported video, but failed to extract audio: \(error.localizedDescription)")
                         }
                     }
+                } catch {
+                    DispatchQueue.main.async {
+                        self.showAlert(message: "Failed to read media metadata: \(error.localizedDescription)")
+                        self.isImporting = false
+                    }
                 }
-            } else {
-                // Call the import handler
-                self.onImport?(asset)
-                
-                importProgress = 1.0
-                isImporting = false
-                presentationMode.wrappedValue.dismiss()
             }
         } catch {
             // Make sure to stop accessing the resource in case of error

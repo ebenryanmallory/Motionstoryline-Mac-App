@@ -282,9 +282,10 @@ public class VideoExporter: @unchecked Sendable {
                 let videoCompositionTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
                 
                 // Add video tracks to the composition
+                let assetDuration = (try? await asset.load(.duration)) ?? CMTime(seconds: 0, preferredTimescale: 600)
                 for track in videoTracks {
                     try? videoCompositionTrack?.insertTimeRange(
-                        timeRange ?? CMTimeRange(start: .zero, duration: asset.duration),
+                        timeRange ?? CMTimeRange(start: .zero, duration: assetDuration),
                         of: track,
                         at: .zero
                     )
@@ -313,7 +314,10 @@ public class VideoExporter: @unchecked Sendable {
             if let audioTracks = originalAudioTracks, !audioTracks.isEmpty {
                 print("Audio tracks available for export: \(audioTracks.count)")
                 for (index, track) in audioTracks.enumerated() {
-                    print("  Audio track \(index): enabled=\(track.isEnabled), playable=\(track.isPlayable)")
+                    async let enabled = track.load(.isEnabled)
+                    async let playable = track.load(.isPlayable)
+                    let (isEnabled, isPlayable) = (try? await (enabled, playable)) ?? (false, false)
+                    print("  Audio track \(index): enabled=\(isEnabled), playable=\(isPlayable)")
                 }
             } else {
                 print("WARNING: No audio tracks found in asset, even though includeAudio is true")
@@ -478,9 +482,10 @@ public class VideoExporter: @unchecked Sendable {
                 let videoCompositionTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
                 
                 // Add video tracks to the composition
+                let assetDuration = (try? await asset.load(.duration)) ?? CMTime(seconds: 0, preferredTimescale: 600)
                 for track in videoTracks {
                     try? videoCompositionTrack?.insertTimeRange(
-                        timeRange ?? CMTimeRange(start: .zero, duration: asset.duration),
+                        timeRange ?? CMTimeRange(start: .zero, duration: assetDuration),
                         of: track,
                         at: .zero
                     )
@@ -509,7 +514,10 @@ public class VideoExporter: @unchecked Sendable {
             if let audioTracks = originalAudioTracks, !audioTracks.isEmpty {
                 print("Audio tracks available for export: \(audioTracks.count)")
                 for (index, track) in audioTracks.enumerated() {
-                    print("  Audio track \(index): enabled=\(track.isEnabled), playable=\(track.isPlayable)")
+                    async let enabled = track.load(.isEnabled)
+                    async let playable = track.load(.isPlayable)
+                    let (isEnabled, isPlayable) = (try? await (enabled, playable)) ?? (false, false)
+                    print("  Audio track \(index): enabled=\(isEnabled), playable=\(isPlayable)")
                 }
             } else {
                 print("WARNING: No audio tracks found in asset, even though includeAudio is true")

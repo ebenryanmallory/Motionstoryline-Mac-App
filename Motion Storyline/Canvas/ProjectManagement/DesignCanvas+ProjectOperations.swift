@@ -335,28 +335,37 @@ extension DesignCanvas {
             // Listen for new screen recordings and import into project
             NotificationCenter.default.addObserver(forName: Notification.Name("NewScreenRecordingAvailable"), object: nil, queue: .main) { notification in
                 guard var project = self.appState.selectedProject else { return }
-                if let userInfo = notification.userInfo, let url = userInfo["url"] as? URL {
-                    let name = url.lastPathComponent
-                    let dimensions = MediaAsset.extractDimensions(from: url, type: .video)
-                    let asset = MediaAsset(
-                        name: name,
-                        type: .video,
-                        url: url,
-                        duration: AVAsset(url: url).duration.seconds,
-                        thumbnail: "video_thumbnail",
-                        width: dimensions?.width,
-                        height: dimensions?.height
-                    )
-                    project.addMediaAsset(asset)
-                    self.appState.selectedProject = project
-                    // Mark as changed and optionally show media browser
-                    self.markDocumentAsChanged(actionName: "Import Screen Recording")
-                    
-                    // Show success notification
-                    withAnimation {
-                        self.notificationMessage = "Screen recording saved and added to Media Browser"
-                        self.isNotificationError = false
-                        self.showSuccessNotification = true
+                guard let userInfo = notification.userInfo, let url = userInfo["url"] as? URL else { return }
+
+                Task { @MainActor in
+                    do {
+                        let name = url.lastPathComponent
+                        async let dims = MediaMetadataLoader.shared.getDimensions(for: url, type: .video)
+                        async let dur = AVAsset(url: url).load(.duration)
+                        let (dimensions, duration) = try await (dims, dur)
+
+                        let asset = MediaAsset(
+                            name: name,
+                            type: .video,
+                            url: url,
+                            duration: duration.seconds,
+                            thumbnail: "video_thumbnail",
+                            width: dimensions?.width,
+                            height: dimensions?.height
+                        )
+
+                        project.addMediaAsset(asset)
+                        self.appState.selectedProject = project
+                        self.markDocumentAsChanged(actionName: "Import Screen Recording")
+
+                        withAnimation {
+                            self.notificationMessage = "Screen recording saved and added to Media Browser"
+                            self.isNotificationError = false
+                            self.showSuccessNotification = true
+                        }
+                    } catch {
+                        // Optional: surface an error notification (kept minimal per scope)
+                        print("Failed to load screen recording metadata: \(error)")
                     }
                 }
             }
